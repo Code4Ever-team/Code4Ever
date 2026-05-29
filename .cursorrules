@@ -1,0 +1,20 @@
+{
+  "project_name": "Code4Ever (C4E)",
+  "arch_vision": "Decentralized, E2EE-First, Bilingual Social-Coding Network",
+  "rules": {
+    "security": "WebCrypto API only, No cleartext on server, Zero-Trust relay architecture.",
+    "frontend": "Next.js 14+, Tailwind, Framer Motion. Cyberpunk dark-mode is mandatory.",
+    "i18n": "All strings must be handled via i18n translation keys. Default locale: 'en', support: 'tr'.",
+    "auth": "Guest access: Read-Only. Interaction: Authenticated-Only.",
+    "routing": "c4e.com/[slug] resolution logic: User, Community, or Server entity types.",
+    "performance": "Server Actions for DB, WebSockets for Relay. Prisma for all DB interactions.",
+    "error_handling": "Try-Catch blocks mandatory. Custom error types for network failures."
+  },
+  "visuals": {
+    "background": "#000000",
+    "accent": "#007acc",
+    "text_primary": "#ffffff",
+    "border_style": "Sharp/Rigid edges (Shadcn minimal)",
+    "font": "JetBrains Mono / Inter"
+  }
+}

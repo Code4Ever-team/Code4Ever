@@ -1,0 +1,259 @@
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CommunityRole {
+  ADMIN
+  MODERATOR
+  MEMBER
+}
+
+enum FollowTargetType {
+  USER
+  COMMUNITY
+}
+
+enum BadgeType {
+  VERIFIED_COMMUNITY
+  VERIFIED_DEVELOPER
+  CORE_TEAM_ADMIN
+}
+
+model User {
+  id            String            @id @default(cuid())
+  email         String            @unique
+  username      String            @unique
+  passwordHash  String
+  bio           String?
+  avatarUrl     String?
+  bannerUrl     String?
+  chatPublicKey String?           @db.Text
+  isFounder     Boolean           @default(false)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  communitiesOwned Community[]    @relation("CommunityOwner")
+  communityMembers CommunityMember[]
+  reposOwned       Repo[]         @relation("UserOwnedRepos")
+  forks            Fork[]
+  feeds            Feed[]
+  likes            Like[]
+
+  sentMessages     E2EEMessage[]  @relation("SentMessages")
+  receivedMessages E2EEMessage[]  @relation("ReceivedMessages")
+
+  userBadges       UserBadge[]
+  followerEdges    Follow[]       @relation("FollowTargetUser")
+  followingEdges   Follow[]       @relation("FollowActor")
+
+  @@index([createdAt])
+}
+
+model Community {
+  id           String            @id @default(cuid())
+  name         String            @unique
+  displayName  String            @map("display_name")
+  description  String?
+  ownerId      String
+  logoUrl      String?
+  bannerUrl    String?
+  createdAt    DateTime          @default(now())
+
+  owner        User              @relation("CommunityOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members      CommunityMember[]
+  repos        Repo[]            @relation("CommunityOwnedRepos")
+  feeds        Feed[]
+  communityBadges CommunityBadge[]
+  followers    Follow[]          @relation("FollowTargetCommunity")
+
+  @@index([ownerId])
+  @@index([createdAt])
+}
+
+model CommunityMember {
+  id          String        @id @default(cuid())
+  userId      String
+  communityId String
+  role        CommunityRole @default(MEMBER)
+  joinedAt    DateTime      @default(now())
+
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  community   Community     @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, communityId])
+  @@index([communityId, role])
+  @@index([userId])
+}
+
+model Repo {
+  id            String    @id @default(cuid())
+  name          String
+  description   String?
+  isPrivate     Boolean   @default(false)
+  encryptedKey  String?   // E2EE için istemci tarafında üretilmiş şifrelenmiş/hashed anahtar
+  ownerId       String?
+  communityId   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  owner         User?     @relation("UserOwnedRepos", fields: [ownerId], references: [id], onDelete: SetNull)
+  community     Community? @relation("CommunityOwnedRepos", fields: [communityId], references: [id], onDelete: SetNull)
+
+  sourceForks   Fork[]    @relation("SourceRepoForks")
+  childForks    Fork[]    @relation("ForkedRepoChildren")
+  feeds         Feed[]
+  likes         Like[]
+  files         RepoFile[]
+
+  @@index([ownerId])
+  @@index([communityId])
+  @@index([isPrivate])
+  @@unique([ownerId, name])
+  @@unique([communityId, name])
+}
+
+model Fork {
+  id            String   @id @default(cuid())
+  sourceRepoId  String
+  forkedRepoId  String   @unique
+  userId        String
+  createdAt     DateTime @default(now())
+
+  sourceRepo    Repo     @relation("SourceRepoForks", fields: [sourceRepoId], references: [id], onDelete: Cascade)
+  forkedRepo    Repo     @relation("ForkedRepoChildren", fields: [forkedRepoId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([sourceRepoId])
+  @@index([userId])
+  @@unique([sourceRepoId, userId])
+}
+
+model Feed {
+  id           String    @id @default(cuid())
+  content      String
+  userId       String
+  repoId       String?
+  communityId  String?
+  createdAt    DateTime  @default(now())
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repo         Repo?     @relation(fields: [repoId], references: [id], onDelete: SetNull)
+  community    Community? @relation(fields: [communityId], references: [id], onDelete: SetNull)
+  likes        Like[]
+
+  @@index([userId, createdAt])
+  @@index([repoId])
+  @@index([communityId])
+}
+
+model Like {
+  id         String   @id @default(cuid())
+  userId     String
+  feedId     String
+  repoId     String?
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feed       Feed     @relation(fields: [feedId], references: [id], onDelete: Cascade)
+  repo       Repo?    @relation(fields: [repoId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, feedId])
+  @@index([feedId])
+  @@index([userId, createdAt])
+}
+
+model Follow {
+  id                String           @id @default(cuid())
+  followerId        String
+  targetType        FollowTargetType
+  targetUserId      String?
+  targetCommunityId String?
+  createdAt         DateTime         @default(now())
+
+  follower          User             @relation("FollowActor", fields: [followerId], references: [id], onDelete: Cascade)
+  targetUser        User?            @relation("FollowTargetUser", fields: [targetUserId], references: [id], onDelete: Cascade)
+  targetCommunity   Community?       @relation("FollowTargetCommunity", fields: [targetCommunityId], references: [id], onDelete: Cascade)
+
+  @@index([followerId, createdAt])
+  @@index([targetUserId])
+  @@index([targetCommunityId])
+  @@unique([followerId, targetUserId])
+  @@unique([followerId, targetCommunityId])
+}
+
+model Badge {
+  id          String     @id @default(cuid())
+  name        String
+  type        BadgeType
+  svgIcon     String     // Inline SVG string veya bir path/URL
+  createdAt   DateTime   @default(now())
+
+  users       UserBadge[]
+  communities CommunityBadge[]
+
+  @@unique([type, name])
+}
+
+model UserBadge {
+  id        String   @id @default(cuid())
+  userId    String
+  badgeId   String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge     Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+  @@index([badgeId])
+}
+
+model CommunityBadge {
+  id          String    @id @default(cuid())
+  communityId String
+  badgeId     String
+  createdAt   DateTime  @default(now())
+
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  badge       Badge     @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([communityId, badgeId])
+  @@index([badgeId])
+}
+
+model RepoFile {
+  id               String   @id @default(cuid())
+  repoId           String
+  path             String
+  content          String?  @db.Text
+  encryptedContent String?  @db.Text
+  mimeType         String?
+  size             Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  repo             Repo     @relation(fields: [repoId], references: [id], onDelete: Cascade)
+
+  @@unique([repoId, path])
+  @@index([repoId])
+}
+
+model E2EEMessage {
+  id               String   @id @default(cuid())
+  senderId         String
+  receiverId       String
+  encryptedContent String   @db.Text
+  nonce            String
+  createdAt        DateTime @default(now())
+
+  sender           User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver         User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([senderId, receiverId, createdAt])
+  @@index([receiverId, createdAt])
+}

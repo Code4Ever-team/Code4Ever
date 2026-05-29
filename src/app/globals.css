@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* C4E theme tokens (VS Code dark inspired) */
+@layer base {
+  :root {
+    --background: 0 0% 0%; /* #000000 */
+    --foreground: 0 0% 100%; /* #ffffff */
+    --card: 222 47% 11%; /* #0f172a */
+    --card-foreground: 0 0% 100%;
+    --popover: 222 47% 11%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 204 100% 40%; /* #007acc */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 47% 11%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 215 20% 65%; /* #64748b */
+    --muted-foreground: 210 20% 78%;
+    --accent: 204 100% 40%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 217 33% 23%;
+    --input: 217 33% 23%;
+    --ring: 204 100% 40%;
+    --radius: 0.625rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body {
+    @apply min-h-screen bg-background text-foreground antialiased;
+  }
+
+  body {
+    background-color: #000000;
+    background-image:
+      radial-gradient(circle at 50% -20%, rgba(0, 122, 204, 0.14), transparent 45%),
+      radial-gradient(circle at top, rgba(15, 23, 42, 0.4) 0%, #000000 55%);
+  }
+}
