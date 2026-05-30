@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { saveMediaUpload } from "@/lib/media-upload";
-import { isS3Configured } from "@/lib/s3-client";
+import { isBlobConfigured, saveMediaUpload } from "@/lib/media-upload";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -15,18 +14,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    if (!isS3Configured()) {
-      console.error("[UPLOAD_ERROR] storage not configured", {
-        hasAccessKey: Boolean(process.env.AWS_ACCESS_KEY_ID ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
-        hasSecret: Boolean(process.env.AWS_SECRET_ACCESS_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY),
-        hasBucket: Boolean(process.env.AWS_S3_BUCKET),
-        hasEndpoint: Boolean(process.env.AWS_S3_ENDPOINT),
-      });
+    if (!isBlobConfigured()) {
+      console.error("[UPLOAD_ERROR] BLOB_READ_WRITE_TOKEN missing");
       return NextResponse.json(
         {
           error: "storage",
-          message:
-            "Set AWS_S3_ENDPOINT, AWS_S3_BUCKET, AWS_ACCESS_KEY_ID (anon), AWS_SECRET_ACCESS_KEY (service_role)",
+          message: "Vercel Dashboard → Storage → Blob → BLOB_READ_WRITE_TOKEN",
         },
         { status: 503 }
       );
@@ -39,7 +32,7 @@ export async function POST(request: Request) {
 
     const saved = await saveMediaUpload(file, "chat-media");
 
-    console.info("[media-upload] ok", {
+    console.info("[media-upload] blob ok", {
       userId: session.id,
       kind: saved.kind,
       ms: Date.now() - started,
