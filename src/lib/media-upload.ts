@@ -1,6 +1,11 @@
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
 import { randomBytes } from "crypto";
+import path from "path";
+import { mkdir, writeFile } from "fs/promises";
+import {
+  getStorageBucket,
+  getSupabaseAdmin,
+  isSupabaseStorageConfigured,
+} from "@/lib/supabase-admin";
 
 const CHAT_MAX = 15 * 1024 * 1024;
 const FEED_MAX = 10 * 1024 * 1024;
@@ -22,68 +27,150 @@ const FILE_TYPES = new Set<string>([
 
 export type MediaFolder = "chat-media" | "feed-media";
 
+export type SavedMedia = {
+  url: string;
+  mimeType: string;
+  kind: "image" | "video" | "file";
+  fileName: string;
+};
+
 function maxFor(folder: MediaFolder) {
   return folder === "chat-media" ? CHAT_MAX : FEED_MAX;
 }
 
-async function saveToVercelBlob(
-  buffer: Buffer,
-  folder: MediaFolder,
-  filename: string,
-  mime: string
-): Promise<string | null> {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) return null;
-  try {
-    const { put } = await import("@vercel/blob");
-    const blob = await put(`${folder}/${filename}`, buffer, {
-      access: "public",
-      contentType: mime,
-    });
-    return blob.url;
-  } catch {
-    return null;
-  }
+function buildObjectName(folder: MediaFolder, originalName: string): string {
+  const ext = path.extname(originalName).replace(/[^a-zA-Z0-9.]/g, "") || "";
+  const filename = `${Date.now()}-${randomBytes(8).toString("hex")}${ext}`;
+  return `${folder}/${filename}`;
 }
 
-export async function saveMediaUpload(
+function classifyKind(mime: string): "image" | "video" | "file" {
+  if (IMAGE_TYPES.has(mime)) return "image";
+  if (VIDEO_TYPES.has(mime)) return "video";
+  return "file";
+}
+
+/**
+ * Supabase Storage — File.stream() ile belleğe tamponlamadan yükleme.
+ * Bucket public olmalı; dönen URL getPublicUrl ile üretilir.
+ */
+async function saveToSupabaseStorage(
   file: File,
-  folder: MediaFolder
-): Promise<{ url: string; mimeType: string; kind: "image" | "video" | "file"; fileName: string }> {
+  objectPath: string,
+  mime: string
+): Promise<string> {
+  const supabase = getSupabaseAdmin();
+  const bucket = getStorageBucket();
+
+  const { error } = await supabase.storage.from(bucket).upload(objectPath, file.stream(), {
+    contentType: mime,
+    upsert: false,
+    duplex: "half",
+  });
+
+  if (error) {
+    throw new Error(`SUPABASE_UPLOAD_FAILED: ${error.message}`);
+  }
+
+  const { data } = supabase.storage.from(bucket).getPublicUrl(objectPath);
+  if (!data.publicUrl) {
+    throw new Error("SUPABASE_PUBLIC_URL_MISSING");
+  }
+
+  return data.publicUrl;
+}
+
+/** Vercel Blob — stream veya buffer ile yükleme. */
+async function saveToVercelBlob(
+  file: File,
+  objectPath: string,
+  mime: string,
+  useStream: boolean
+): Promise<string> {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    throw new Error("BLOB_NOT_CONFIGURED");
+  }
+
+  const body = useStream ? file.stream() : Buffer.from(await file.arrayBuffer());
+  const { put } = await import("@vercel/blob");
+  const blob = await put(objectPath, body, {
+    access: "public",
+    contentType: mime,
+    addRandomSuffix: false,
+  });
+
+  if (!blob.url?.startsWith("http")) {
+    throw new Error("BLOB_URL_INVALID");
+  }
+
+  return blob.url;
+}
+
+/** Yalnızca yerel geliştirme — Vercel'de kullanılmaz. */
+async function saveToLocalDisk(
+  file: File,
+  objectPath: string
+): Promise<string> {
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const dir = path.join(process.cwd(), "public", "uploads", path.dirname(objectPath));
+  await mkdir(dir, { recursive: true });
+  await writeFile(path.join(process.cwd(), "public", "uploads", objectPath), buffer);
+  return `/uploads/${objectPath}`;
+}
+
+export async function saveMediaUpload(file: File, folder: MediaFolder): Promise<SavedMedia> {
   const max = maxFor(folder);
   if (file.size > max) throw new Error("FILE_TOO_LARGE");
 
   const mime = file.type || "application/octet-stream";
   if (!FILE_TYPES.has(mime)) throw new Error("FILE_TYPE_BLOCKED");
 
-  let kind: "image" | "video" | "file" = "file";
-  if (IMAGE_TYPES.has(mime)) kind = "image";
-  else if (VIDEO_TYPES.has(mime)) kind = "video";
+  const kind = classifyKind(mime);
+  const objectPath = buildObjectName(folder, file.name);
 
-  const ext = path.extname(file.name).replace(/[^a-zA-Z0-9.]/g, "") || "";
-  const filename = `${Date.now()}-${randomBytes(8).toString("hex")}${ext}`;
-  const buffer = Buffer.from(await file.arrayBuffer());
+  let url: string | null = null;
+  const errors: string[] = [];
+  let streamConsumed = false;
 
-  const blobUrl = await saveToVercelBlob(buffer, folder, filename, mime);
-  if (blobUrl) {
-    return { url: blobUrl, mimeType: mime, kind, fileName: file.name };
+  if (isSupabaseStorageConfigured()) {
+    try {
+      url = await saveToSupabaseStorage(file, objectPath, mime);
+      streamConsumed = true;
+      console.info("[media-upload] supabase ok", { objectPath, bytes: file.size });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`supabase: ${msg}`);
+      streamConsumed = true;
+      console.error("[media-upload] supabase failed", { objectPath, error: msg });
+    }
   }
 
-  if (process.env.VERCEL) {
+  if (!url && process.env.BLOB_READ_WRITE_TOKEN) {
+    try {
+      url = await saveToVercelBlob(file, objectPath, mime, !streamConsumed);
+      console.info("[media-upload] vercel blob ok", { objectPath });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`blob: ${msg}`);
+      console.error("[media-upload] vercel blob failed", { objectPath, error: msg });
+    }
+  }
+
+  if (!url && !process.env.VERCEL) {
+    try {
+      url = await saveToLocalDisk(file, objectPath);
+      console.info("[media-upload] local disk ok", { objectPath });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`local: ${msg}`);
+      console.error("[media-upload] local failed", { objectPath, error: msg });
+    }
+  }
+
+  if (!url) {
+    console.error("[media-upload] all backends failed", { errors, folder, size: file.size });
     throw new Error("STORAGE_UNAVAILABLE");
   }
 
-  try {
-    const dir = path.join(process.cwd(), "public", "uploads", folder);
-    await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, filename), buffer);
-  } catch {
-    throw new Error("STORAGE_UNAVAILABLE");
-  }
-
-  return {
-    url: `/uploads/${folder}/${filename}`,
-    mimeType: mime,
-    kind,
-    fileName: file.name,
-  };
+  return { url, mimeType: mime, kind, fileName: file.name };
 }

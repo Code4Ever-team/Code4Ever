@@ -4,12 +4,15 @@ const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
 };
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: process.env.NODE_ENV === "development" ? ["query", "warn", "error"] : ["error"],
+function createPrismaClient(): PrismaClient {
+  return new PrismaClient({
+    log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
   });
+}
 
-if (process.env.NODE_ENV !== "production") {
+/** Serverless ortamlarda bağlantı sızıntısını önlemek için singleton. */
+export const prisma = globalForPrisma.prisma ?? createPrismaClient();
+
+if (!globalForPrisma.prisma) {
   globalForPrisma.prisma = prisma;
 }

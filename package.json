@@ -28,6 +28,7 @@
     "@radix-ui/react-scroll-area": "^1.2.10",
     "@radix-ui/react-separator": "^1.1.8",
     "@radix-ui/react-slot": "^1.2.4",
+    "@supabase/supabase-js": "^2.106.2",
     "@vercel/blob": "^2.4.0",
     "bcryptjs": "^2.4.3",
     "class-variance-authority": "^0.7.1",
