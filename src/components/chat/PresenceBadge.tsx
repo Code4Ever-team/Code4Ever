@@ -32,10 +32,8 @@ export function PresenceBadge({ userId, className }: PresenceBadgeProps) {
     };
 
     load();
-    const timer = window.setInterval(load, 20_000);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
     };
   }, [userId]);
 

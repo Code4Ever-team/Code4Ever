@@ -15,7 +15,7 @@ import {
 import { EmojiPicker } from "@/components/chat/EmojiPicker";
 import { MessageMedia } from "@/components/chat/MessageMedia";
 import { PresenceBadge } from "@/components/chat/PresenceBadge";
-import { usePresenceHeartbeat } from "@/hooks/usePresenceHeartbeat";
+import { useChatPoll } from "@/hooks/useChatPoll";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,8 +23,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import type { ChatMessageRow } from "@/lib/chat-data";
-
-const POLL_MS = 2_000;
 
 interface DecryptedMessage {
   id: string;
@@ -106,7 +104,6 @@ export function ChatThread({
   const fileRef = useRef<HTMLInputElement>(null);
   const mediaRef = useRef<HTMLInputElement>(null);
 
-  usePresenceHeartbeat(true);
   rowsRef.current = rows;
 
   useEffect(() => {
@@ -137,18 +134,7 @@ export function ChatThread({
     }
   }, []);
 
-  useEffect(() => {
-    void syncConversation();
-    const timer = window.setInterval(() => void syncConversation(), POLL_MS);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void syncConversation();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [peer.id, syncConversation]);
+  useChatPoll(syncConversation, true, 5_000);
 
   useEffect(() => {
     let cancelled = false;
@@ -253,7 +239,6 @@ export function ChatThread({
       if (data.messageId) {
         setRows((prev) => prev.map((m) => (m.id === tempId ? { ...m, id: data.messageId! } : m)));
       }
-      void syncConversation();
     } catch {
       setRows((prev) => prev.filter((m) => m.id !== tempId));
       setText(trimmed);
@@ -324,7 +309,6 @@ export function ChatThread({
       if (data.messageId) {
         setRows((prev) => prev.map((m) => (m.id === tempId ? { ...m, id: data.messageId! } : m)));
       }
-      void syncConversation();
     } catch {
       setRows((prev) => prev.filter((m) => m.id !== tempId));
       setError(t("uploadFailed"));

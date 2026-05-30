@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { TopBar } from "@/components/layout/TopBar";
 import { MessageNotificationProvider } from "@/components/notifications/MessageNotificationProvider";
+import { usePresenceHeartbeat } from "@/hooks/usePresenceHeartbeat";
 interface ShellSession {
   id: string;
   username: string;
@@ -34,6 +35,7 @@ interface AppShellProps {
 
 export function AppShell({ locale, session, children }: AppShellProps) {
   const [nav, setNav] = useState<NavPayload | null>(null);
+  usePresenceHeartbeat(session !== null);
 
   useEffect(() => {
     if (!session) {

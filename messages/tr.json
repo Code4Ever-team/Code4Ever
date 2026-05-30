@@ -184,7 +184,19 @@
     "emptyMessage": "Mesaj boş olamaz.",
     "sent": "Mesaj gönderildi.",
     "live": "Canlı",
-    "keysSaved": "Mesaj anahtarı kaydedildi."
+    "keysSaved": "Mesaj anahtarı kaydedildi.",
+    "groupBadge": "Grup",
+    "close": "Kapat",
+    "loading": "Yükleniyor…",
+    "groupManageTitle": "Grup yönetimi",
+    "groupAdmin": "Grup yöneticisi",
+    "adminBadge": "Yönetici",
+    "changeGroupAvatar": "Grup simgesini değiştir",
+    "saveGroup": "Kaydet",
+    "saving": "Kaydediliyor…",
+    "groupSaveFailed": "Kaydedilemedi.",
+    "groupAdminOnlyHint": "Yalnızca grup kurucusu (yönetici) ayarları değiştirebilir.",
+    "storageUnavailable": "Dosya depolama bu ortamda yapılandırılmamış. Vercel Blob token ekleyin."
   },
   "profile": {
     "followers": "Takipçi",

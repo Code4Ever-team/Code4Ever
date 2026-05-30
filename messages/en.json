@@ -184,7 +184,19 @@
     "emptyMessage": "Message cannot be empty.",
     "sent": "Message sent.",
     "live": "Live",
-    "keysSaved": "Message key saved."
+    "keysSaved": "Message key saved.",
+    "groupBadge": "Group",
+    "close": "Close",
+    "loading": "Loading…",
+    "groupManageTitle": "Group settings",
+    "groupAdmin": "Group admin",
+    "adminBadge": "Admin",
+    "changeGroupAvatar": "Change group icon",
+    "saveGroup": "Save",
+    "saving": "Saving…",
+    "groupSaveFailed": "Could not save.",
+    "groupAdminOnlyHint": "Only the group creator (admin) can change settings.",
+    "storageUnavailable": "File storage is not configured. Add a Vercel Blob token."
   },
   "profile": {
     "followers": "Followers",

@@ -6,15 +6,14 @@ import Link from "next/link";
 import { ArrowLeft, ImagePlus, Loader2, Paperclip, Send } from "lucide-react";
 import { EmojiPicker } from "@/components/chat/EmojiPicker";
 import { MessageMedia } from "@/components/chat/MessageMedia";
-import { usePresenceHeartbeat } from "@/hooks/usePresenceHeartbeat";
+import { useChatPoll } from "@/hooks/useChatPoll";
+import { GroupManagePanel } from "@/components/chat/GroupManagePanel";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-
-const POLL_MS = 2_000;
 
 interface GroupMessage {
   id: string;
@@ -48,11 +47,10 @@ export function GroupChatThread({
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [manageOpen, setManageOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const mediaRef = useRef<HTMLInputElement>(null);
-
-  usePresenceHeartbeat(true);
 
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
@@ -80,10 +78,7 @@ export function GroupChatThread({
     }
   }, [groupId]);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => void sync(), POLL_MS);
-    return () => window.clearInterval(timer);
-  }, [sync]);
+  useChatPoll(sync, true, 5_000);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -128,7 +123,6 @@ export function GroupChatThread({
       if (data.messageId) {
         setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, id: data.messageId! } : m)));
       }
-      void sync();
     } catch {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setText(trimmed);
@@ -162,7 +156,6 @@ export function GroupChatThread({
         mediaMimeType: uploaded.mimeType,
         fileName: uploaded.fileName,
       });
-      void sync();
     } catch {
       setError(t("uploadFailed"));
     } finally {
@@ -178,9 +171,21 @@ export function GroupChatThread({
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
-        <CardTitle className="text-base">{groupName}</CardTitle>
+        <button
+          type="button"
+          className="text-left text-base font-semibold hover:text-primary"
+          onClick={() => setManageOpen(true)}
+        >
+          {groupName}
+        </button>
         <span className="ml-auto text-[10px] text-muted-foreground">{t("live")}</span>
       </CardHeader>
+      <GroupManagePanel
+        locale={locale}
+        groupId={groupId}
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+      />
       <Separator />
       <CardContent className="p-0">
         <ScrollArea className="h-[min(28rem,55vh)] px-4 py-4">

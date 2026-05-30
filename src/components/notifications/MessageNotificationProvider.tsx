@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 
 const LAST_CHECK_KEY = "c4e_msg_last_check";
 const NOTIFIED_IDS_KEY = "c4e_msg_notified_ids";
 const NOTIFY_SOUND = "/voices/bildirim.mp3";
-const POLL_MS = 8_000;
+const POLL_MS = 20_000;
 const MAX_NOTIFIED_CACHE = 200;
 
 interface RelayMessage {
@@ -51,7 +52,10 @@ export function MessageNotificationProvider({
   locale,
 }: MessageNotificationProviderProps) {
   const t = useTranslations("notifications");
+  const pathname = usePathname();
+  const onChatRoute = pathname?.includes("/chat") ?? false;
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const inFlightRef = useRef(false);
   const notifiedRef = useRef<Set<string>>(new Set());
   const permissionRef = useRef<NotificationPermission>("default");
 
@@ -119,6 +123,9 @@ export function MessageNotificationProvider({
   );
 
   const pollRecent = useCallback(async () => {
+    if (onChatRoute || document.visibilityState === "hidden") return;
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     const since = getLastCheck().toISOString();
     const url = new URL("/api/relay/messages/recent", window.location.origin);
     url.searchParams.set("since", since);
@@ -135,8 +142,10 @@ export function MessageNotificationProvider({
       }
     } catch {
       /* ağ hatası */
+    } finally {
+      inFlightRef.current = false;
     }
-  }, [handleIncoming]);
+  }, [handleIncoming, onChatRoute]);
 
   useEffect(() => {
     notifiedRef.current = loadNotifiedIds();
