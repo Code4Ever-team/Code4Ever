@@ -21,6 +21,8 @@
     "db:check": "bun run scripts/db-check.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1057.0",
+    "@aws-sdk/lib-storage": "^3.1057.0",
     "@elysiajs/cors": "^1.4.2",
     "@elysiajs/node": "^1.4.5",
     "@prisma/client": "^6.9.0",

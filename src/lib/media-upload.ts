@@ -1,11 +1,15 @@
 import { randomBytes } from "crypto";
 import path from "path";
+import { Readable } from "stream";
+import type { ReadableStream as NodeReadableStream } from "stream/web";
 import { mkdir, writeFile } from "fs/promises";
+import { Upload } from "@aws-sdk/lib-storage";
 import {
-  getStorageBucket,
-  getSupabaseAdmin,
-  isSupabaseStorageConfigured,
-} from "@/lib/supabase-admin";
+  buildS3PublicUrl,
+  getS3Bucket,
+  getS3Client,
+  isS3Configured,
+} from "@/lib/s3-client";
 
 const CHAT_MAX = 15 * 1024 * 1024;
 const FEED_MAX = 10 * 1024 * 1024;
@@ -38,7 +42,7 @@ function maxFor(folder: MediaFolder) {
   return folder === "chat-media" ? CHAT_MAX : FEED_MAX;
 }
 
-function buildObjectName(folder: MediaFolder, originalName: string): string {
+function buildObjectKey(folder: MediaFolder, originalName: string): string {
   const ext = path.extname(originalName).replace(/[^a-zA-Z0-9.]/g, "") || "";
   const filename = `${Date.now()}-${randomBytes(8).toString("hex")}${ext}`;
   return `${folder}/${filename}`;
@@ -50,72 +54,52 @@ function classifyKind(mime: string): "image" | "video" | "file" {
   return "file";
 }
 
+function fileToNodeStream(file: File): Readable {
+  return Readable.fromWeb(file.stream() as unknown as NodeReadableStream);
+}
+
 /**
- * Supabase Storage — File.stream() ile belleğe tamponlamadan yükleme.
- * Bucket public olmalı; dönen URL getPublicUrl ile üretilir.
+ * Multipart stream upload — dosya belleğe tamponlanmaz.
  */
-async function saveToSupabaseStorage(
+async function saveToS3Stream(
   file: File,
-  objectPath: string,
+  objectKey: string,
   mime: string
 ): Promise<string> {
-  const supabase = getSupabaseAdmin();
-  const bucket = getStorageBucket();
+  const client = getS3Client();
+  const bucket = getS3Bucket();
 
-  const { error } = await supabase.storage.from(bucket).upload(objectPath, file.stream(), {
-    contentType: mime,
-    upsert: false,
-    duplex: "half",
+  const upload = new Upload({
+    client,
+    params: {
+      Bucket: bucket,
+      Key: objectKey,
+      Body: fileToNodeStream(file),
+      ContentType: mime,
+      ContentLength: file.size,
+    },
+    queueSize: 2,
+    partSize: 5 * 1024 * 1024,
+    leavePartsOnError: false,
   });
 
-  if (error) {
-    throw new Error(`SUPABASE_UPLOAD_FAILED: ${error.message}`);
+  await upload.done();
+
+  const publicUrl = buildS3PublicUrl(objectKey);
+  if (!publicUrl.startsWith("http")) {
+    throw new Error("S3_PUBLIC_URL_INVALID");
   }
 
-  const { data } = supabase.storage.from(bucket).getPublicUrl(objectPath);
-  if (!data.publicUrl) {
-    throw new Error("SUPABASE_PUBLIC_URL_MISSING");
-  }
-
-  return data.publicUrl;
+  return publicUrl;
 }
 
-/** Vercel Blob — stream veya buffer ile yükleme. */
-async function saveToVercelBlob(
-  file: File,
-  objectPath: string,
-  mime: string,
-  useStream: boolean
-): Promise<string> {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    throw new Error("BLOB_NOT_CONFIGURED");
-  }
-
-  const body = useStream ? file.stream() : Buffer.from(await file.arrayBuffer());
-  const { put } = await import("@vercel/blob");
-  const blob = await put(objectPath, body, {
-    access: "public",
-    contentType: mime,
-    addRandomSuffix: false,
-  });
-
-  if (!blob.url?.startsWith("http")) {
-    throw new Error("BLOB_URL_INVALID");
-  }
-
-  return blob.url;
-}
-
-/** Yalnızca yerel geliştirme — Vercel'de kullanılmaz. */
-async function saveToLocalDisk(
-  file: File,
-  objectPath: string
-): Promise<string> {
+/** Yalnızca yerel geliştirme — production'da S3 zorunlu. */
+async function saveToLocalDisk(file: File, objectKey: string): Promise<string> {
   const buffer = Buffer.from(await file.arrayBuffer());
-  const dir = path.join(process.cwd(), "public", "uploads", path.dirname(objectPath));
+  const dir = path.join(process.cwd(), "public", "uploads", path.dirname(objectKey));
   await mkdir(dir, { recursive: true });
-  await writeFile(path.join(process.cwd(), "public", "uploads", objectPath), buffer);
-  return `/uploads/${objectPath}`;
+  await writeFile(path.join(process.cwd(), "public", "uploads", objectKey), buffer);
+  return `/uploads/${objectKey}`;
 }
 
 export async function saveMediaUpload(file: File, folder: MediaFolder): Promise<SavedMedia> {
@@ -126,50 +110,32 @@ export async function saveMediaUpload(file: File, folder: MediaFolder): Promise<
   if (!FILE_TYPES.has(mime)) throw new Error("FILE_TYPE_BLOCKED");
 
   const kind = classifyKind(mime);
-  const objectPath = buildObjectName(folder, file.name);
+  const objectKey = buildObjectKey(folder, file.name);
 
-  let url: string | null = null;
-  const errors: string[] = [];
-  let streamConsumed = false;
+  let url: string;
 
-  if (isSupabaseStorageConfigured()) {
-    try {
-      url = await saveToSupabaseStorage(file, objectPath, mime);
-      streamConsumed = true;
-      console.info("[media-upload] supabase ok", { objectPath, bytes: file.size });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      errors.push(`supabase: ${msg}`);
-      streamConsumed = true;
-      console.error("[media-upload] supabase failed", { objectPath, error: msg });
+  try {
+    if (isS3Configured()) {
+      url = await saveToS3Stream(file, objectKey, mime);
+      console.info("[media-upload] s3 ok", { objectKey, bytes: file.size });
+    } else if (!process.env.VERCEL) {
+      url = await saveToLocalDisk(file, objectKey);
+      console.info("[media-upload] local ok", { objectKey });
+    } else {
+      throw new Error("S3_NOT_CONFIGURED");
     }
-  }
-
-  if (!url && process.env.BLOB_READ_WRITE_TOKEN) {
-    try {
-      url = await saveToVercelBlob(file, objectPath, mime, !streamConsumed);
-      console.info("[media-upload] vercel blob ok", { objectPath });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      errors.push(`blob: ${msg}`);
-      console.error("[media-upload] vercel blob failed", { objectPath, error: msg });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[UPLOAD_ERROR] saveMediaUpload failed", {
+      objectKey,
+      bytes: file.size,
+      message,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    if (message === "S3_NOT_CONFIGURED" || message.startsWith("S3_")) {
+      throw new Error("STORAGE_UNAVAILABLE");
     }
-  }
-
-  if (!url && !process.env.VERCEL) {
-    try {
-      url = await saveToLocalDisk(file, objectPath);
-      console.info("[media-upload] local disk ok", { objectPath });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      errors.push(`local: ${msg}`);
-      console.error("[media-upload] local failed", { objectPath, error: msg });
-    }
-  }
-
-  if (!url) {
-    console.error("[media-upload] all backends failed", { errors, folder, size: file.size });
-    throw new Error("STORAGE_UNAVAILABLE");
+    throw error;
   }
 
   return { url, mimeType: mime, kind, fileName: file.name };

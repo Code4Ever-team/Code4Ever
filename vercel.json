@@ -1,0 +1,9 @@
+{
+  "regions": ["fra1"],
+  "functions": {
+    "src/app/api/chat/upload/route.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  }
+}
