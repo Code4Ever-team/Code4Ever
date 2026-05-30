@@ -16,6 +16,7 @@ import { EmojiPicker } from "@/components/chat/EmojiPicker";
 import { MessageMedia } from "@/components/chat/MessageMedia";
 import { PresenceBadge } from "@/components/chat/PresenceBadge";
 import { useChatPoll } from "@/hooks/useChatPoll";
+import { fetchDeduped } from "@/lib/fetch-dedupe";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -123,7 +124,7 @@ export function ChatThread({
     if (last) url.searchParams.set("since", new Date(last.createdAt).toISOString());
 
     try {
-      const res = await fetch(url.toString(), { credentials: "include", cache: "no-store" });
+      const res = await fetchDeduped(url.toString(), { credentials: "include", cache: "no-store" });
       if (!res.ok || peerIdRef.current !== currentPeerId) return;
       const data = (await res.json()) as { messages?: ChatMessageRow[] };
       if (data.messages?.length) {
@@ -134,7 +135,7 @@ export function ChatThread({
     }
   }, []);
 
-  useChatPoll(syncConversation, true, 5_000);
+  useChatPoll(`dm:${peer.id}`, syncConversation, true, 10_000, true);
 
   useEffect(() => {
     let cancelled = false;
@@ -262,7 +263,13 @@ export function ChatThread({
         credentials: "include",
         body: fd,
       });
-      if (!up.ok) throw new Error("upload_failed");
+      if (!up.ok) {
+        const errBody = (await up.json().catch(() => ({}))) as { error?: string };
+        if (errBody.error === "storage") {
+          setError(t("storageUnavailable"));
+        }
+        throw new Error("upload_failed");
+      }
       const uploaded = (await up.json()) as {
         url: string;
         mimeType: string;
@@ -321,7 +328,7 @@ export function ChatThread({
     <Card className="flex flex-col overflow-hidden">
       <CardHeader className="flex flex-row items-center gap-3 space-y-0 pb-3">
         <Button variant="ghost" size="icon" asChild>
-          <Link href={`/${locale}/chat`} prefetch aria-label={t("back")}>
+          <Link href={`/${locale}/chat`} prefetch={false} aria-label={t("back")}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>

@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { fetchDeduped } from "@/lib/fetch-dedupe";
+import { subscribePoll } from "@/lib/poll-scheduler";
 
 const LAST_CHECK_KEY = "c4e_msg_last_check";
 const NOTIFIED_IDS_KEY = "c4e_msg_notified_ids";
 const NOTIFY_SOUND = "/voices/bildirim.mp3";
-const POLL_MS = 20_000;
+const POLL_MS = 30_000;
 const MAX_NOTIFIED_CACHE = 200;
 
 interface RelayMessage {
@@ -55,7 +57,6 @@ export function MessageNotificationProvider({
   const pathname = usePathname();
   const onChatRoute = pathname?.includes("/chat") ?? false;
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const inFlightRef = useRef(false);
   const notifiedRef = useRef<Set<string>>(new Set());
   const permissionRef = useRef<NotificationPermission>("default");
 
@@ -124,14 +125,12 @@ export function MessageNotificationProvider({
 
   const pollRecent = useCallback(async () => {
     if (onChatRoute || document.visibilityState === "hidden") return;
-    if (inFlightRef.current) return;
-    inFlightRef.current = true;
     const since = getLastCheck().toISOString();
     const url = new URL("/api/relay/messages/recent", window.location.origin);
     url.searchParams.set("since", since);
 
     try {
-      const res = await fetch(url.toString(), {
+      const res = await fetchDeduped(url.toString(), {
         credentials: "include",
         cache: "no-store",
       });
@@ -142,8 +141,6 @@ export function MessageNotificationProvider({
       }
     } catch {
       /* ağ hatası */
-    } finally {
-      inFlightRef.current = false;
     }
   }, [handleIncoming, onChatRoute]);
 
@@ -159,13 +156,10 @@ export function MessageNotificationProvider({
       }
     }
 
-    void pollRecent();
-    const pollTimer = window.setInterval(() => void pollRecent(), POLL_MS);
+    if (onChatRoute) return;
 
-    return () => {
-      window.clearInterval(pollTimer);
-    };
-  }, [userId, pollRecent]);
+    return subscribePoll(`notify:${userId}`, pollRecent, POLL_MS, true);
+  }, [userId, pollRecent, onChatRoute]);
 
   return null;
 }

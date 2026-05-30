@@ -11,6 +11,11 @@ import { getSession } from "@/lib/auth";
 export const metadata: Metadata = {
   title: "Code4Ever",
   description: "Social coding network — feed, repos, and messages.",
+  icons: {
+    icon: "/icon",
+    shortcut: "/icon",
+    apple: "/icon",
+  },
 };
 
 interface LocaleLayoutProps {

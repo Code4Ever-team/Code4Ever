@@ -7,6 +7,7 @@ import { ArrowLeft, ImagePlus, Loader2, Paperclip, Send } from "lucide-react";
 import { EmojiPicker } from "@/components/chat/EmojiPicker";
 import { MessageMedia } from "@/components/chat/MessageMedia";
 import { useChatPoll } from "@/hooks/useChatPoll";
+import { fetchDeduped } from "@/lib/fetch-dedupe";
 import { GroupManagePanel } from "@/components/chat/GroupManagePanel";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -61,7 +62,7 @@ export function GroupChatThread({
     const url = new URL(`/api/chat/groups/${groupId}/messages`, window.location.origin);
     if (last) url.searchParams.set("since", last.createdAt);
     try {
-      const res = await fetch(url.toString(), { credentials: "include", cache: "no-store" });
+      const res = await fetchDeduped(url.toString(), { credentials: "include", cache: "no-store" });
       if (!res.ok) return;
       const data = (await res.json()) as { messages?: GroupMessage[] };
       if (data.messages?.length) {
@@ -78,7 +79,7 @@ export function GroupChatThread({
     }
   }, [groupId]);
 
-  useChatPoll(sync, true, 5_000);
+  useChatPoll(`group:${groupId}`, sync, true, 10_000, true);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -167,7 +168,7 @@ export function GroupChatThread({
     <Card className="flex flex-col overflow-hidden">
       <CardHeader className="flex flex-row items-center gap-3 pb-3">
         <Button variant="ghost" size="icon" asChild>
-          <Link href={`/${locale}/chat`} prefetch>
+          <Link href={`/${locale}/chat`} prefetch={false}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>

@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import { fetchDeduped } from "@/lib/fetch-dedupe";
 import { cn } from "@/lib/utils";
+
+const CACHE_MS = 60_000;
+const cache = new Map<string, { online: boolean; at: number }>();
 
 interface PresenceBadgeProps {
   userId: string;
@@ -11,27 +15,34 @@ interface PresenceBadgeProps {
 
 export function PresenceBadge({ userId, className }: PresenceBadgeProps) {
   const t = useTranslations("chat");
-  const [online, setOnline] = useState<boolean | null>(null);
+  const [online, setOnline] = useState<boolean | null>(() => {
+    const hit = cache.get(userId);
+    return hit && Date.now() - hit.at < CACHE_MS ? hit.online : null;
+  });
 
   useEffect(() => {
     let cancelled = false;
+    const hit = cache.get(userId);
+    if (hit && Date.now() - hit.at < CACHE_MS) {
+      setOnline(hit.online);
+      return;
+    }
 
-    const load = () => {
-      void fetch(`/api/presence?ids=${encodeURIComponent(userId)}`, {
-        credentials: "include",
+    void fetchDeduped(`/api/presence?ids=${encodeURIComponent(userId)}`, {
+      credentials: "include",
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { users?: Record<string, { online: boolean }> } | null) => {
+        if (!cancelled && data?.users?.[userId]) {
+          const value = data.users[userId].online;
+          cache.set(userId, { online: value, at: Date.now() });
+          setOnline(value);
+        }
       })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data: { users?: Record<string, { online: boolean }> } | null) => {
-          if (!cancelled && data?.users?.[userId]) {
-            setOnline(data.users[userId].online);
-          }
-        })
-        .catch(() => {
-          /* ignore */
-        });
-    };
+      .catch(() => {
+        /* ignore */
+      });
 
-    load();
     return () => {
       cancelled = true;
     };

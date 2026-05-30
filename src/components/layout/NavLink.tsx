@@ -22,7 +22,7 @@ export function NavLink({ href, label, icon, match = "prefix", className }: NavL
   return (
     <Link
       href={href}
-      prefetch
+      prefetch={false}
       className={cn(
         "group flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
         active
@@ -55,7 +55,7 @@ export function DockLink({ href, label, icon, match = "prefix" }: DockLinkProps)
   return (
     <Link
       href={href}
-      prefetch
+      prefetch={false}
       className={cn(
         "relative flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[10px] font-medium transition-colors",
         active ? "text-c4e-neon" : "text-c4e-muted hover:text-foreground"
