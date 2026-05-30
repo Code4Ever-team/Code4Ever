@@ -3,7 +3,8 @@ import { getTranslations } from "next-intl/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isDatabaseAvailable } from "@/lib/db-safe";
-import { loadConversation, getFollowStatus, hasConversation } from "@/lib/chat-data";
+import { loadConversation } from "@/lib/chat-data";
+import { canAccessDirectThread } from "@/lib/chat-permissions";
 import { ChatThread } from "@/components/chat/ChatThread";
 import { ChatKeySetup } from "@/components/chat/ChatKeySetup";
 import { DbOffline } from "@/components/system/DbOffline";
@@ -37,15 +38,11 @@ export default async function ChatThreadPage({ params }: ChatThreadPageProps) {
 
   if (!peer) notFound();
 
-  const [following, conversation] = await Promise.all([
-    getFollowStatus(session.id, peer.id),
-    hasConversation(session.id, peer.id),
-  ]);
-
-  if (!following && !conversation) {
+  const allowed = await canAccessDirectThread(session.id, peer.id);
+  if (!allowed) {
     return (
       <main className="mx-auto max-w-3xl py-10">
-        <p className="text-sm text-destructive">{t("mustFollow")}</p>
+        <p className="text-sm text-destructive">{t("cannotMessage")}</p>
       </main>
     );
   }

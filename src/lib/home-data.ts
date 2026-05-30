@@ -4,6 +4,8 @@ import { safeDbQuery } from "@/lib/db-safe";
 export interface HomeFeedItem {
   id: string;
   content: string;
+  mediaUrl: string | null;
+  mediaType: string | null;
   createdAt: Date;
   user: { username: string };
 }
@@ -40,6 +42,8 @@ export async function loadHomeFeedAndRepos(userId: string | null): Promise<{
             select: {
               id: true,
               content: true,
+              mediaUrl: true,
+              mediaType: true,
               createdAt: true,
               user: { select: { username: true } },
             },
@@ -77,6 +81,8 @@ export async function loadHomeFeedAndRepos(userId: string | null): Promise<{
           select: {
             id: true,
             content: true,
+            mediaUrl: true,
+            mediaType: true,
             createdAt: true,
             user: { select: { username: true } },
           },
@@ -118,6 +124,8 @@ export async function loadFeedList(): Promise<HomeFeedItem[]> {
         select: {
           id: true,
           content: true,
+          mediaUrl: true,
+          mediaType: true,
           createdAt: true,
           user: { select: { username: true } },
         },

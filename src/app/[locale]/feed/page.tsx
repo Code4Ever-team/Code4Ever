@@ -41,6 +41,8 @@ export default async function FeedPage({ params }: FeedPageProps) {
             key={item.id}
             id={item.id}
             content={item.content}
+            mediaUrl={item.mediaUrl}
+            mediaType={item.mediaType}
             createdAt={item.createdAt}
             locale={locale}
             authorUsername={item.user.username}

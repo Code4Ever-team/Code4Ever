@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { savePublicUpload } from "@/lib/upload";
+import { saveMediaUpload } from "@/lib/media-upload";
 import { logger } from "@/lib/logger";
 import { msg } from "@/lib/messages";
 import { isPlatformFounder } from "@/lib/platform-admin";
@@ -33,13 +34,27 @@ export async function createFeedAction(
   try {
     const session = await requireSession();
     const content = String(formData.get("content") ?? "").trim();
+    const media = formData.get("media");
 
-    if (content.length < 1) {
+    if (content.length < 1 && !(media instanceof File)) {
       return { success: false, message: msg(locale, "errors.feedEmpty") };
     }
 
+    let mediaUrl: string | null = null;
+    let mediaType: string | null = null;
+    if (media instanceof File && media.size > 0) {
+      const saved = await saveMediaUpload(media, "feed-media");
+      mediaUrl = saved.url;
+      mediaType = saved.kind;
+    }
+
     await prisma.feed.create({
-      data: { content, userId: session.id },
+      data: {
+        content: content || " ",
+        mediaUrl,
+        mediaType,
+        userId: session.id,
+      },
     });
 
     revalidatePath(`/${locale}`);
@@ -49,6 +64,12 @@ export async function createFeedAction(
   } catch (error) {
     if (error instanceof Error && error.message === "AUTH_REQUIRED") {
       return { success: false, message: msg(locale, "errors.authRequired") };
+    }
+    if (error instanceof Error && error.message === "FILE_TOO_LARGE") {
+      return { success: false, message: msg(locale, "errors.fileTooLarge") };
+    }
+    if (error instanceof Error && error.message === "FILE_TYPE_BLOCKED") {
+      return { success: false, message: msg(locale, "errors.fileTypeBlocked") };
     }
     logger.error("createFeedAction failed", { error });
     return { success: false, message: msg(locale, "errors.server") };

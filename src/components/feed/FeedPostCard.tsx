@@ -5,6 +5,8 @@ import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { deleteFeedAction } from "@/lib/actions/platform.actions";
 import type { PlatformResult } from "@/lib/actions/platform.actions";
+import { ExpandableFeedContent } from "@/components/feed/ExpandableFeedContent";
+import { MessageMedia } from "@/components/chat/MessageMedia";
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/Form";
 
@@ -23,6 +25,8 @@ function DeleteBtn() {
 interface FeedPostCardProps {
   id: string;
   content: string;
+  mediaUrl?: string | null;
+  mediaType?: string | null;
   createdAt: Date;
   locale: string;
   authorUsername: string;
@@ -33,6 +37,8 @@ interface FeedPostCardProps {
 export function FeedPostCard({
   id,
   content,
+  mediaUrl,
+  mediaType,
   createdAt,
   locale,
   authorUsername,
@@ -53,9 +59,17 @@ export function FeedPostCard({
               @{authorUsername}
             </Link>
           )}
-          <p className={`text-sm leading-relaxed text-foreground ${showAuthor ? "mt-2" : ""}`}>
-            {content}
-          </p>
+          <div className={showAuthor ? "mt-2 space-y-3" : "space-y-3"}>
+            {content.trim() && <ExpandableFeedContent content={content} locale={locale} />}
+            {mediaUrl && mediaType && (
+              <MessageMedia
+                kind={mediaType}
+                mediaUrl={mediaUrl}
+                mediaMimeType={mediaType === "image" ? "image/jpeg" : "video/mp4"}
+                locale={locale}
+              />
+            )}
+          </div>
           <time
             className="mt-2 block text-xs text-c4e-muted"
             dateTime={createdAt.toISOString()}

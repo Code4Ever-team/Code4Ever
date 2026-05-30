@@ -52,7 +52,7 @@ export function CreateFeedForm({ locale, isLoggedIn }: CreateFeedFormProps) {
 
   return (
     <Card className="mb-6 p-4">
-      <Form action={action} className="space-y-3">
+      <Form action={action} className="space-y-3" encType="multipart/form-data">
         <input type="hidden" name="locale" value={locale} />
         <div className="space-y-2">
           <Label htmlFor="feed-content">{t("postFeed")}</Label>
@@ -60,8 +60,18 @@ export function CreateFeedForm({ locale, isLoggedIn }: CreateFeedFormProps) {
             id="feed-content"
             name="content"
             placeholder={t("feedPlaceholder")}
-            required
-            maxLength={2000}
+            rows={4}
+            maxLength={10000}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="feed-media">{t("feedMedia")}</Label>
+          <input
+            id="feed-media"
+            name="media"
+            type="file"
+            accept="image/*,video/*"
+            className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-primary-foreground"
           />
         </div>
         <SubmitBtn />

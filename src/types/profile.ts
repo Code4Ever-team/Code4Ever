@@ -3,6 +3,8 @@ export type CommunityRole = "ADMIN" | "MODERATOR" | "MEMBER";
 export interface UserFeedItem {
   id: string;
   content: string;
+  mediaUrl: string | null;
+  mediaType: string | null;
   createdAt: Date;
 }
 

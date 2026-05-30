@@ -35,18 +35,22 @@ model User {
   bannerUrl     String?
   chatPublicKey String?           @db.Text
   isFounder     Boolean           @default(false)
+  lastSeenAt    DateTime?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
   communitiesOwned Community[]    @relation("CommunityOwner")
+  groupMemberships ChatGroupMember[]
+  groupsCreated    ChatGroup[]     @relation("GroupCreator")
   communityMembers CommunityMember[]
   reposOwned       Repo[]         @relation("UserOwnedRepos")
   forks            Fork[]
   feeds            Feed[]
   likes            Like[]
 
-  sentMessages     E2EEMessage[]  @relation("SentMessages")
-  receivedMessages E2EEMessage[]  @relation("ReceivedMessages")
+  sentMessages     E2EEMessage[]      @relation("SentMessages")
+  receivedMessages E2EEMessage[]      @relation("ReceivedMessages")
+  groupMessages    ChatGroupMessage[]
 
   userBadges       UserBadge[]
   followerEdges    Follow[]       @relation("FollowTargetUser")
@@ -136,7 +140,9 @@ model Fork {
 
 model Feed {
   id           String    @id @default(cuid())
-  content      String
+  content      String    @db.Text
+  mediaUrl     String?
+  mediaType    String?
   userId       String
   repoId       String?
   communityId  String?
@@ -247,8 +253,12 @@ model E2EEMessage {
   id               String   @id @default(cuid())
   senderId         String
   receiverId       String
-  encryptedContent String   @db.Text
-  nonce            String
+  encryptedContent String   @default("") @db.Text
+  nonce            String   @default("")
+  messageKind      String   @default("text")
+  mediaUrl         String?
+  mediaMimeType    String?
+  fileName         String?
   createdAt        DateTime @default(now())
 
   sender           User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
@@ -256,4 +266,51 @@ model E2EEMessage {
 
   @@index([senderId, receiverId, createdAt])
   @@index([receiverId, createdAt])
+}
+
+model ChatGroup {
+  id          String   @id @default(cuid())
+  name        String
+  createdById String
+  avatarUrl   String?
+  createdAt   DateTime @default(now())
+
+  creator  User              @relation("GroupCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  members  ChatGroupMember[]
+  messages ChatGroupMessage[]
+
+  @@index([createdById])
+}
+
+model ChatGroupMember {
+  id       String   @id @default(cuid())
+  groupId  String
+  userId   String
+  role     String   @default("MEMBER")
+  joinedAt DateTime @default(now())
+
+  group ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId])
+}
+
+model ChatGroupMessage {
+  id               String   @id @default(cuid())
+  groupId          String
+  senderId         String
+  encryptedContent String   @default("") @db.Text
+  nonce            String   @default("")
+  messageKind      String   @default("text")
+  mediaUrl         String?
+  mediaMimeType    String?
+  fileName         String?
+  createdAt        DateTime @default(now())
+
+  group  ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sender User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, createdAt])
+  @@index([senderId])
 }

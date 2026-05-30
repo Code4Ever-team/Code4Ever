@@ -16,8 +16,20 @@ export interface ChatMessageRow {
   receiverId: string;
   encryptedContent: string;
   nonce: string;
+  messageKind: string;
+  mediaUrl: string | null;
+  mediaMimeType: string | null;
+  fileName: string | null;
   createdAt: Date;
   sender: { username: string };
+}
+
+export interface ChatGroupSummary {
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+  memberCount: number;
+  lastMessageAt: Date | null;
 }
 
 export interface IncomingMessageNotice {
@@ -159,6 +171,10 @@ export async function loadConversation(
           receiverId: true,
           encryptedContent: true,
           nonce: true,
+          messageKind: true,
+          mediaUrl: true,
+          mediaMimeType: true,
+          fileName: true,
           createdAt: true,
           sender: { select: { username: true } },
         },

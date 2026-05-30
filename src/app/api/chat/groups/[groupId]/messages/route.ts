@@ -1,46 +1,30 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canAccessDirectThread } from "@/lib/chat-permissions";
+import { isGroupMember } from "@/lib/chat-groups";
 
-export async function GET(request: Request) {
+interface RouteParams {
+  params: Promise<{ groupId: string }>;
+}
+
+export async function GET(request: Request, { params }: RouteParams) {
   try {
     const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
+    if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-    const { searchParams } = new URL(request.url);
-    const peerId = searchParams.get("peerId") ?? "";
-    const sinceRaw = searchParams.get("since") ?? "";
-
-    if (!peerId) {
-      return NextResponse.json({ error: "peer_required" }, { status: 400 });
-    }
-
-    const peer = await prisma.user.findUnique({
-      where: { id: peerId },
-      select: { id: true },
-    });
-    if (!peer) {
-      return NextResponse.json({ error: "not_found" }, { status: 404 });
-    }
-
-    const allowed = await canAccessDirectThread(session.id, peerId);
-    if (!allowed) {
+    const { groupId } = await params;
+    if (!(await isGroupMember(session.id, groupId))) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
 
+    const sinceRaw = new URL(request.url).searchParams.get("since") ?? "";
     const since = sinceRaw ? new Date(sinceRaw) : null;
     const sinceFilter =
       since && !Number.isNaN(since.getTime()) ? { gt: since } : undefined;
 
-    const messages = await prisma.e2EEMessage.findMany({
+    const messages = await prisma.chatGroupMessage.findMany({
       where: {
-        OR: [
-          { senderId: session.id, receiverId: peerId },
-          { senderId: peerId, receiverId: session.id },
-        ],
+        groupId,
         ...(sinceFilter ? { createdAt: sinceFilter } : {}),
       },
       orderBy: { createdAt: "asc" },
@@ -48,9 +32,7 @@ export async function GET(request: Request) {
       select: {
         id: true,
         senderId: true,
-        receiverId: true,
         encryptedContent: true,
-        nonce: true,
         messageKind: true,
         mediaUrl: true,
         mediaMimeType: true,

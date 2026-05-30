@@ -172,6 +172,8 @@ export function UserProfile({
                 key={feed.id}
                 id={feed.id}
                 content={feed.content}
+                mediaUrl={feed.mediaUrl}
+                mediaType={feed.mediaType}
                 createdAt={feed.createdAt}
                 locale={locale}
                 authorUsername={user.username}

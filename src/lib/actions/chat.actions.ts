@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { logger } from "@/lib/logger";
 import { msg } from "@/lib/messages";
+import { canSendDirectMessage } from "@/lib/chat-permissions";
 import { pushMessageToRelay } from "@/lib/relay";
 import { clientRateLimitKey, rateLimit } from "@/lib/rate-limit";
 
@@ -149,9 +150,9 @@ export async function sendChatMessageAction(
       return { success: false, message: msg(locale, "errors.rateLimited") };
     }
 
-    const following = await isFollowing(session.id, receiverId);
-    if (!following) {
-      return { success: false, message: msg(locale, "chat.mustFollow") };
+    const allowed = await canSendDirectMessage(session.id, receiverId);
+    if (!allowed) {
+      return { success: false, message: msg(locale, "chat.cannotMessage") };
     }
 
     const receiver = await prisma.user.findUnique({

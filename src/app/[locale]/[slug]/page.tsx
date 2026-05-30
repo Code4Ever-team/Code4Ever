@@ -16,6 +16,7 @@ const RESERVED_SLUGS = new Set([
   "repos",
   "repo",
   "chat",
+  "groups",
   "login",
   "register",
   "dashboard",
@@ -85,7 +86,13 @@ async function fetchUserProfile(
           feeds: {
             take: 20,
             orderBy: { createdAt: "desc" },
-            select: { id: true, content: true, createdAt: true },
+            select: {
+              id: true,
+              content: true,
+              mediaUrl: true,
+              mediaType: true,
+              createdAt: true,
+            },
           },
           reposOwned: {
             where:
