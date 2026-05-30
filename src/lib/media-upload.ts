@@ -8,6 +8,7 @@ import {
   buildS3PublicUrl,
   getS3Bucket,
   getS3Client,
+  isInvalidAccessKeyError,
   isS3Configured,
 } from "@/lib/s3-client";
 
@@ -44,8 +45,7 @@ function maxFor(folder: MediaFolder) {
 
 function buildObjectKey(folder: MediaFolder, originalName: string): string {
   const ext = path.extname(originalName).replace(/[^a-zA-Z0-9.]/g, "") || "";
-  const filename = `${Date.now()}-${randomBytes(8).toString("hex")}${ext}`;
-  return `${folder}/${filename}`;
+  return `${folder}/${Date.now()}-${randomBytes(8).toString("hex")}${ext}`;
 }
 
 function classifyKind(mime: string): "image" | "video" | "file" {
@@ -54,46 +54,26 @@ function classifyKind(mime: string): "image" | "video" | "file" {
   return "file";
 }
 
-function fileToNodeStream(file: File): Readable {
-  return Readable.fromWeb(file.stream() as unknown as NodeReadableStream);
-}
+async function uploadStreamToS3(file: File, objectKey: string, mime: string): Promise<string> {
+  const body = Readable.fromWeb(file.stream() as unknown as NodeReadableStream);
 
-/**
- * Multipart stream upload — dosya belleğe tamponlanmaz.
- */
-async function saveToS3Stream(
-  file: File,
-  objectKey: string,
-  mime: string
-): Promise<string> {
-  const client = getS3Client();
-  const bucket = getS3Bucket();
-
-  const upload = new Upload({
-    client,
+  await new Upload({
+    client: getS3Client(),
     params: {
-      Bucket: bucket,
+      Bucket: getS3Bucket(),
       Key: objectKey,
-      Body: fileToNodeStream(file),
+      Body: body,
       ContentType: mime,
       ContentLength: file.size,
     },
     queueSize: 2,
     partSize: 5 * 1024 * 1024,
     leavePartsOnError: false,
-  });
+  }).done();
 
-  await upload.done();
-
-  const publicUrl = buildS3PublicUrl(objectKey);
-  if (!publicUrl.startsWith("http")) {
-    throw new Error("S3_PUBLIC_URL_INVALID");
-  }
-
-  return publicUrl;
+  return buildS3PublicUrl(objectKey);
 }
 
-/** Yalnızca yerel geliştirme — production'da S3 zorunlu. */
 async function saveToLocalDisk(file: File, objectKey: string): Promise<string> {
   const buffer = Buffer.from(await file.arrayBuffer());
   const dir = path.join(process.cwd(), "public", "uploads", path.dirname(objectKey));
@@ -103,40 +83,41 @@ async function saveToLocalDisk(file: File, objectKey: string): Promise<string> {
 }
 
 export async function saveMediaUpload(file: File, folder: MediaFolder): Promise<SavedMedia> {
-  const max = maxFor(folder);
-  if (file.size > max) throw new Error("FILE_TOO_LARGE");
+  if (file.size > maxFor(folder)) throw new Error("FILE_TOO_LARGE");
 
   const mime = file.type || "application/octet-stream";
   if (!FILE_TYPES.has(mime)) throw new Error("FILE_TYPE_BLOCKED");
 
-  const kind = classifyKind(mime);
   const objectKey = buildObjectKey(folder, file.name);
-
-  let url: string;
+  const kind = classifyKind(mime);
 
   try {
+    let url: string;
+
     if (isS3Configured()) {
-      url = await saveToS3Stream(file, objectKey, mime);
-      console.info("[media-upload] s3 ok", { objectKey, bytes: file.size });
+      url = await uploadStreamToS3(file, objectKey, mime);
     } else if (!process.env.VERCEL) {
       url = await saveToLocalDisk(file, objectKey);
-      console.info("[media-upload] local ok", { objectKey });
     } else {
       throw new Error("S3_NOT_CONFIGURED");
     }
+
+    if (!url.startsWith("http")) throw new Error("S3_PUBLIC_URL_INVALID");
+    return { url, mimeType: mime, kind, fileName: file.name };
   } catch (error) {
+    if (isInvalidAccessKeyError(error)) {
+      console.error("[UPLOAD_ERROR] InvalidAccessKeyId — Supabase S3 credentials", {
+        hint: "AWS_ACCESS_KEY_ID=anon key, AWS_SECRET_ACCESS_KEY=service_role key",
+        endpoint: process.env.AWS_S3_ENDPOINT ? "set" : "missing",
+      });
+      throw new Error("STORAGE_UNAVAILABLE");
+    }
+
     const message = error instanceof Error ? error.message : String(error);
-    console.error("[UPLOAD_ERROR] saveMediaUpload failed", {
-      objectKey,
-      bytes: file.size,
-      message,
-      stack: error instanceof Error ? error.stack : undefined,
-    });
+    console.error("[UPLOAD_ERROR] saveMediaUpload", { objectKey, message });
     if (message === "S3_NOT_CONFIGURED" || message.startsWith("S3_")) {
       throw new Error("STORAGE_UNAVAILABLE");
     }
     throw error;
   }
-
-  return { url, mimeType: mime, kind, fileName: file.name };
 }
