@@ -22,6 +22,7 @@ const RESERVED_SLUGS = new Set([
   "dashboard",
   "settings",
   "admin",
+  "p",
 ]);
 
 export async function generateMetadata({

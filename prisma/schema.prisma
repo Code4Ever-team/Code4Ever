@@ -101,6 +101,8 @@ model Repo {
   description   String?
   isPrivate     Boolean   @default(false)
   encryptedKey  String?   // E2EE için istemci tarafında üretilmiş şifrelenmiş/hashed anahtar
+  showroomSlug      String?   @unique
+  showroomPublished Boolean   @default(false)
   ownerId       String?
   communityId   String?
   createdAt     DateTime  @default(now())

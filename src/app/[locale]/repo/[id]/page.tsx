@@ -5,10 +5,13 @@ import { getTranslations } from "next-intl/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { safeDbQuery, isDatabaseAvailable } from "@/lib/db-safe";
+import { readFileContent } from "@/lib/showroom";
 import { DbOffline } from "@/components/system/DbOffline";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { ForkRepoButton } from "@/components/platform/ForkRepoButton";
 import { RepoFileUploadForm } from "@/components/platform/RepoFileUploadForm";
+import { RepoWorkspace } from "@/components/repo/RepoWorkspace";
 
 interface RepoPageProps {
   params: Promise<{ locale: string; id: string }>;
@@ -17,6 +20,7 @@ interface RepoPageProps {
 export default async function RepoPage({ params }: RepoPageProps) {
   const { locale, id } = await params;
   const t = await getTranslations("platform");
+  const tShow = await getTranslations("showroom");
   const dbOk = await isDatabaseAvailable();
 
   if (!dbOk) {
@@ -48,8 +52,13 @@ export default async function RepoPage({ params }: RepoPageProps) {
   const isOwner = session?.id === repo.ownerId;
   const canFork = !isOwner && !repo.isPrivate;
 
+  const fileItems = repo.files.map((f) => ({
+    path: f.path,
+    content: readFileContent(f),
+  }));
+
   return (
-    <main className="mx-auto max-w-3xl px-4 py-10">
+    <main className="mx-auto max-w-5xl px-4 py-10">
       <Card className="p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -71,40 +80,33 @@ export default async function RepoPage({ params }: RepoPageProps) {
               {repo._count.sourceForks} fork
             </p>
           </div>
-          <ForkRepoButton
-            locale={locale}
-            repoId={repo.id}
-            isLoggedIn={session !== null}
-            canFork={canFork}
-          />
+          <div className="flex flex-wrap gap-2">
+            {isOwner && (
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/${locale}/repo/${repo.id}/settings`}>{tShow("settingsLink")}</Link>
+              </Button>
+            )}
+            {repo.showroomSlug && repo.showroomPublished && (
+              <Button variant="secondary" size="sm" asChild>
+                <Link href={`/${locale}/p/${repo.showroomSlug}`}>{tShow("openShowroom")}</Link>
+              </Button>
+            )}
+            <ForkRepoButton
+              locale={locale}
+              repoId={repo.id}
+              isLoggedIn={session !== null}
+              canFork={canFork}
+            />
+          </div>
         </div>
       </Card>
 
-      <section className="mt-6">
-        <h2 className="mb-3 text-sm font-semibold text-foreground">{t("files")}</h2>
-        {repo.files.length === 0 ? (
-          <p className="text-sm text-c4e-muted">{t("noFiles")}</p>
-        ) : (
-          <ul className="space-y-2">
-            {repo.files.map((file) => (
-              <li
-                key={file.id}
-                className="rounded-md border border-border bg-card/40 px-4 py-3"
-              >
-                <p className="font-mono text-sm text-c4e-neon">{file.path}</p>
-                <p className="mt-1 text-xs text-c4e-muted">
-                  {file.mimeType ?? "text"} · {file.size} bytes
-                </p>
-                {(file.content ?? file.encryptedContent) && (
-                  <pre className="mt-2 max-h-48 overflow-auto rounded bg-black/50 p-2 text-xs text-foreground">
-                    {(file.content ?? file.encryptedContent ?? "").slice(0, 2000)}
-                  </pre>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <RepoWorkspace
+        locale={locale}
+        repoId={repo.id}
+        files={fileItems}
+        canEdit={isOwner}
+      />
 
       <RepoFileUploadForm locale={locale} repoId={repo.id} canUpload={isOwner} />
     </main>

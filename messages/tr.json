@@ -74,7 +74,21 @@
     "emailTaken": "Bu e-posta kayıtlı.",
     "registerSuccess": "Kayıt tamam. Giriş yapabilirsin.",
     "rateLimited": "Çok fazla deneme. Biraz bekleyip tekrar dene.",
-    "invalidInput": "Geçersiz veya çok büyük veri."
+    "invalidInput": "Geçersiz veya çok büyük veri.",
+    "fileSaved": "Dosya kaydedildi.",
+    "fileSaveFailed": "Dosya kaydedilemedi.",
+    "fileDeleted": "Dosya silindi.",
+    "fileDeleteFailed": "Dosya silinemedi.",
+    "showroomSlugLength": "Showroom adresi 3–40 karakter olmalı.",
+    "showroomSlugFormat": "Yalnızca küçük harf, rakam ve tire kullan.",
+    "showroomSlugReserved": "Bu adres kullanılamaz.",
+    "showroomSlugTaken": "Bu showroom adresi alınmış.",
+    "showroomSlugRequired": "Yayınlamak için showroom adresi gerekli.",
+    "showroomPrivateDenied": "Gizli depolar yayınlanamaz.",
+    "showroomMissingIndex": ".pub/index.html dosyası gerekli.",
+    "showroomPublished": "Showroom yayında.",
+    "showroomSaved": "Showroom ayarları kaydedildi.",
+    "showroomSaveFailed": "Showroom kaydedilemedi."
   },
   "notifications": {
     "title": "Yeni mesaj",
@@ -140,6 +154,27 @@
   "reposPage": {
     "title": "Depolar",
     "subtitle": "Projelerini yönet, dosya yükle, çatalla."
+  },
+  "showroom": {
+    "settingsTitle": "Showroom",
+    "settingsDesc": "{repo} deposunu tanıtan statik sayfa.",
+    "settingsLink": "Showroom",
+    "slugLabel": "Showroom adresi",
+    "slugHint": "Ziyaretçiler /p/adres üzerinden ulaşır.",
+    "publishLabel": "Showroom'u yayınla",
+    "saveShowroom": "Kaydet",
+    "saving": "Kaydediliyor…",
+    "missingPubIndex": "Önce editörde {path} oluştur.",
+    "liveAt": "Canlı:",
+    "openShowroom": "Showroom'u aç",
+    "viewRepo": "Depo",
+    "backToRepo": "Depoya dön",
+    "editorTitle": "Kod editörü",
+    "saveFile": "Kaydet",
+    "deleteFile": "Sil",
+    "newFile": "Yeni dosya",
+    "selectFile": "Düzenlemek için dosya seç.",
+    "addPubTemplate": ".pub şablonu"
   },
   "chat": {
     "title": "Mesajlar",

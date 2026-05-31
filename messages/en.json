@@ -74,7 +74,21 @@
     "emailTaken": "Email already registered.",
     "registerSuccess": "Registration complete. You can sign in.",
     "rateLimited": "Too many attempts. Wait a moment and try again.",
-    "invalidInput": "Invalid or oversized data."
+    "invalidInput": "Invalid or oversized data.",
+    "fileSaved": "File saved.",
+    "fileSaveFailed": "Could not save file.",
+    "fileDeleted": "File deleted.",
+    "fileDeleteFailed": "Could not delete file.",
+    "showroomSlugLength": "Showroom slug must be 3–40 characters.",
+    "showroomSlugFormat": "Use lowercase letters, numbers, and hyphens only.",
+    "showroomSlugReserved": "This slug is reserved.",
+    "showroomSlugTaken": "This showroom slug is taken.",
+    "showroomSlugRequired": "A showroom slug is required to publish.",
+    "showroomPrivateDenied": "Private repos cannot be published.",
+    "showroomMissingIndex": ".pub/index.html is required.",
+    "showroomPublished": "Showroom is live.",
+    "showroomSaved": "Showroom settings saved.",
+    "showroomSaveFailed": "Could not save showroom."
   },
   "notifications": {
     "title": "New message",
@@ -140,6 +154,27 @@
   "reposPage": {
     "title": "Repos",
     "subtitle": "Manage projects, upload files, fork."
+  },
+  "showroom": {
+    "settingsTitle": "Showroom",
+    "settingsDesc": "Static page showcasing repo {repo}.",
+    "settingsLink": "Showroom",
+    "slugLabel": "Showroom URL slug",
+    "slugHint": "Visitors reach your page at /p/slug.",
+    "publishLabel": "Publish showroom",
+    "saveShowroom": "Save",
+    "saving": "Saving…",
+    "missingPubIndex": "Create {path} in the editor first.",
+    "liveAt": "Live at:",
+    "openShowroom": "Open showroom",
+    "viewRepo": "Repo",
+    "backToRepo": "Back to repo",
+    "editorTitle": "Code editor",
+    "saveFile": "Save",
+    "deleteFile": "Delete",
+    "newFile": "New file",
+    "selectFile": "Select a file to edit.",
+    "addPubTemplate": ".pub template"
   },
   "chat": {
     "title": "Messages",
