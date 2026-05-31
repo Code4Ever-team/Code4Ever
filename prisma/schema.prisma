@@ -100,7 +100,11 @@ model Repo {
   name          String
   description   String?
   isPrivate     Boolean   @default(false)
-  encryptedKey  String?   // E2EE için istemci tarafında üretilmiş şifrelenmiş/hashed anahtar
+  encryptedKey  String?   // @deprecated → keyEnvelope
+  isEncrypted   Boolean   @default(false)
+  keyEnvelope   String?   @db.Text
+  keyVersion    Int       @default(1)
+  collabEnabled Boolean   @default(true)
   showroomSlug      String?   @unique
   showroomPublished Boolean   @default(false)
   ownerId       String?
@@ -240,6 +244,9 @@ model RepoFile {
   path             String
   content          String?  @db.Text
   encryptedContent String?  @db.Text
+  ciphertext       String?  @db.Text
+  nonce            String?
+  revision         Int      @default(0)
   mimeType         String?
   size             Int      @default(0)
   createdAt        DateTime @default(now())

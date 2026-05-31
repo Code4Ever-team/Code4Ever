@@ -1,10 +1,26 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { saveRepoFileContentAction, deleteRepoFileAction } from "@/lib/actions/repo.actions";
+import * as Y from "yjs";
+import {
+  deleteRepoFileAction,
+  saveRepoFileContentAction,
+  saveRepoFileEncryptedAction,
+} from "@/lib/actions/repo.actions";
+import {
+  decryptText,
+  encryptText,
+  getRepoDek,
+  storeRepoDek,
+  unlockDekFromEnvelope,
+} from "@/lib/crypto/e2ee-repo";
+import { collabColorForUser } from "@/lib/collab/collab-colors";
+import { useCollabSession } from "@/hooks/useCollabSession";
+import type { RemotePresence } from "@/hooks/useCollabSession";
 import { SHOWROOM_ENTRY } from "@/lib/showroom";
+import { RepoMonacoEditor } from "@/components/repo/RepoMonacoEditor";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,6 +30,8 @@ import { cn } from "@/lib/utils";
 export interface RepoFileItem {
   path: string;
   content: string;
+  ciphertext?: string | null;
+  nonce?: string | null;
 }
 
 interface RepoWorkspaceProps {
@@ -21,18 +39,89 @@ interface RepoWorkspaceProps {
   repoId: string;
   files: RepoFileItem[];
   canEdit: boolean;
+  isEncrypted: boolean;
+  keyEnvelope: string | null;
+  collabEnabled: boolean;
+  userId?: string;
+  username?: string;
 }
 
-export function RepoWorkspace({ locale, repoId, files, canEdit }: RepoWorkspaceProps) {
+export function RepoWorkspace({
+  locale,
+  repoId,
+  files,
+  canEdit,
+  isEncrypted,
+  keyEnvelope,
+  collabEnabled,
+  userId,
+  username,
+}: RepoWorkspaceProps) {
   const t = useTranslations("showroom");
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [unlockPending, startUnlock] = useTransition();
+  const [unlocked, setUnlocked] = useState(() => !isEncrypted || Boolean(getRepoDek(repoId)));
+  const [unlockPassword, setUnlockPassword] = useState("");
+  const [unlockError, setUnlockError] = useState<string | null>(null);
   const [selectedPath, setSelectedPath] = useState(files[0]?.path ?? "");
   const [drafts, setDrafts] = useState<Record<string, string>>(() =>
     Object.fromEntries(files.map((f) => [f.path, f.content]))
   );
+  const draftsRef = useRef(drafts);
+  draftsRef.current = drafts;
+
   const [newPath, setNewPath] = useState("");
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [yDoc, setYDoc] = useState<Y.Doc | null>(null);
+  const [remotePresence, setRemotePresence] = useState<Map<string, RemotePresence>>(new Map());
+  const localYjsEdit = useRef(false);
+
+  const collabColor = userId ? collabColorForUser(userId) : "#007acc";
+  const collabActive =
+    collabEnabled && canEdit && unlocked && Boolean(userId) && Boolean(selectedPath);
+
+  const { connected: collabConnected, sendPresence } = useCollabSession({
+    repoId,
+    filePath: selectedPath,
+    userId: userId ?? "",
+    username: username ?? "",
+    color: collabColor,
+    enabled: collabActive,
+    yDoc,
+    onRemotePresence: setRemotePresence,
+  });
+
+  useEffect(() => {
+    if (!isEncrypted || !canEdit || unlocked || !keyEnvelope) return;
+    if (getRepoDek(repoId)) setUnlocked(true);
+  }, [isEncrypted, canEdit, unlocked, keyEnvelope, repoId]);
+
+  useEffect(() => {
+    if (!selectedPath || !unlocked) {
+      setYDoc(null);
+      return;
+    }
+
+    const doc = new Y.Doc();
+    const ytext = doc.getText("content");
+    const initial = draftsRef.current[selectedPath] ?? "";
+    if (initial) ytext.insert(0, initial);
+
+    const observer = () => {
+      if (localYjsEdit.current) return;
+      const val = ytext.toString();
+      setDrafts((prev) => (prev[selectedPath] === val ? prev : { ...prev, [selectedPath]: val }));
+    };
+    ytext.observe(observer);
+    setYDoc(doc);
+
+    return () => {
+      ytext.unobserve(observer);
+      doc.destroy();
+      setYDoc(null);
+    };
+  }, [selectedPath, unlocked]);
 
   const paths = useMemo(() => {
     const set = new Set(files.map((f) => f.path));
@@ -41,16 +130,34 @@ export function RepoWorkspace({ locale, repoId, files, canEdit }: RepoWorkspaceP
   }, [files, drafts]);
 
   const currentContent = drafts[selectedPath] ?? "";
+  const viewerEncrypted = isEncrypted && !unlocked && !canEdit;
 
   function selectPath(path: string) {
     setSelectedPath(path);
     setStatus(null);
+    setRemotePresence(new Map());
   }
 
-  function updateDraft(value: string) {
-    if (!selectedPath) return;
-    setDrafts((prev) => ({ ...prev, [selectedPath]: value }));
-  }
+  const handleEditorChange = useCallback(
+    (value: string) => {
+      if (!selectedPath) return;
+      setDrafts((prev) => ({ ...prev, [selectedPath]: value }));
+
+      const doc = yDoc;
+      if (!doc) return;
+      const ytext = doc.getText("content");
+      localYjsEdit.current = true;
+      doc.transact(() => {
+        const cur = ytext.toString();
+        if (cur !== value) {
+          ytext.delete(0, cur.length);
+          ytext.insert(0, value);
+        }
+      });
+      localYjsEdit.current = false;
+    },
+    [selectedPath, yDoc]
+  );
 
   function createFile() {
     const path = newPath.trim();
@@ -88,16 +195,54 @@ export function RepoWorkspace({ locale, repoId, files, canEdit }: RepoWorkspaceP
     setSelectedPath(SHOWROOM_ENTRY);
   }
 
+  function handleUnlock() {
+    if (!keyEnvelope) return;
+    startUnlock(async () => {
+      setUnlockError(null);
+      try {
+        const dek = await unlockDekFromEnvelope(unlockPassword, keyEnvelope);
+        storeRepoDek(repoId, dek);
+        const next: Record<string, string> = {};
+        for (const f of files) {
+          if (f.ciphertext && f.nonce) {
+            next[f.path] = await decryptText(dek, f.ciphertext, f.nonce);
+          } else {
+            next[f.path] = f.content;
+          }
+        }
+        setDrafts(next);
+        setUnlocked(true);
+        setUnlockPassword("");
+      } catch {
+        setUnlockError(t("unlockFailed"));
+      }
+    });
+  }
+
   function saveFile() {
-    if (!selectedPath || !canEdit) return;
-    const fd = new FormData();
-    fd.set("locale", locale);
-    fd.set("repoId", repoId);
-    fd.set("path", selectedPath);
-    fd.set("content", drafts[selectedPath] ?? "");
+    if (!selectedPath || !canEdit || !unlocked) return;
+    const content = drafts[selectedPath] ?? "";
+    const dek = getRepoDek(repoId);
 
     startTransition(async () => {
-      const result = await saveRepoFileContentAction({ success: false, message: "" }, fd);
+      let result;
+      if (isEncrypted && dek) {
+        const blob = await encryptText(dek, content);
+        const fd = new FormData();
+        fd.set("locale", locale);
+        fd.set("repoId", repoId);
+        fd.set("path", selectedPath);
+        fd.set("ciphertext", blob.ciphertext);
+        fd.set("nonce", blob.nonce);
+        result = await saveRepoFileEncryptedAction({ success: false, message: "" }, fd);
+      } else {
+        const fd = new FormData();
+        fd.set("locale", locale);
+        fd.set("repoId", repoId);
+        fd.set("path", selectedPath);
+        fd.set("content", content);
+        result = await saveRepoFileContentAction({ success: false, message: "" }, fd);
+      }
       setStatus({ ok: result.success, text: result.message });
       if (result.success) router.refresh();
     });
@@ -125,11 +270,48 @@ export function RepoWorkspace({ locale, repoId, files, canEdit }: RepoWorkspaceP
     });
   }
 
+  if (isEncrypted && canEdit && !unlocked) {
+    return (
+      <Card className="mt-6 p-6">
+        <h2 className="text-lg font-semibold text-foreground">{t("unlockTitle")}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{t("unlockDesc")}</p>
+        <div className="mt-4 max-w-sm space-y-3">
+          <div className="space-y-1">
+            <Label htmlFor="unlock-pass">{t("unlockPassword")}</Label>
+            <Input
+              id="unlock-pass"
+              type="password"
+              value={unlockPassword}
+              onChange={(e) => setUnlockPassword(e.target.value)}
+              autoComplete="current-password"
+            />
+          </div>
+          <Button type="button" disabled={unlockPending} onClick={handleUnlock}>
+            {unlockPending ? t("unlocking") : t("unlockButton")}
+          </Button>
+          {unlockError && <p className="text-sm text-destructive">{unlockError}</p>}
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <Card className="mt-6 overflow-hidden border-border">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold text-foreground">{t("editorTitle")}</h2>
-        {canEdit && (
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold text-foreground">{t("editorTitle")}</h2>
+          {collabActive && (
+            <span
+              className={cn(
+                "text-xs font-mono",
+                collabConnected ? "text-primary" : "text-muted-foreground"
+              )}
+            >
+              {collabConnected ? t("collabConnected") : t("collabOffline")}
+            </span>
+          )}
+        </div>
+        {canEdit && unlocked && (
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" variant="outline" onClick={ensurePubTemplate}>
               {t("addPubTemplate")}
@@ -161,8 +343,8 @@ export function RepoWorkspace({ locale, repoId, files, canEdit }: RepoWorkspaceP
               </li>
             ))}
           </ul>
-          {canEdit && (
-            <div className="border-t border-border p-2 space-y-2">
+          {canEdit && unlocked && (
+            <div className="space-y-2 border-t border-border p-2">
               <Label htmlFor="new-file" className="text-xs">
                 {t("newFile")}
               </Label>
@@ -183,22 +365,25 @@ export function RepoWorkspace({ locale, repoId, files, canEdit }: RepoWorkspaceP
         </aside>
 
         <div className="flex flex-col">
-          {selectedPath ? (
+          {viewerEncrypted ? (
+            <p className="p-6 text-sm text-muted-foreground">{t("encryptedViewerNote")}</p>
+          ) : selectedPath ? (
             <>
               <div className="flex items-center justify-between border-b border-border px-3 py-2">
                 <span className="font-mono text-xs text-primary">{selectedPath}</span>
-                {canEdit && (
+                {canEdit && unlocked && (
                   <Button type="button" size="sm" variant="ghost" onClick={removeFile} disabled={pending}>
                     {t("deleteFile")}
                   </Button>
                 )}
               </div>
-              <textarea
+              <RepoMonacoEditor
+                path={selectedPath}
                 value={currentContent}
-                onChange={(e) => updateDraft(e.target.value)}
-                readOnly={!canEdit}
-                spellCheck={false}
-                className="min-h-[24rem] flex-1 resize-none bg-black/60 p-4 font-mono text-xs leading-relaxed text-foreground outline-none"
+                readOnly={!canEdit || !unlocked}
+                onChange={handleEditorChange}
+                onCursorMove={(line, col) => sendPresence(line, col)}
+                remotePresence={remotePresence}
               />
             </>
           ) : (

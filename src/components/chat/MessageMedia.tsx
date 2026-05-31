@@ -49,6 +49,7 @@ export function MessageMedia({
           controls
           playsInline
           preload="metadata"
+          crossOrigin="anonymous"
           className="max-h-64 max-w-full rounded-md bg-black"
         >
           <track kind="captions" />

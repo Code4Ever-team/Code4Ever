@@ -88,7 +88,14 @@
     "showroomMissingIndex": ".pub/index.html dosyası gerekli.",
     "showroomPublished": "Showroom yayında.",
     "showroomSaved": "Showroom ayarları kaydedildi.",
-    "showroomSaveFailed": "Showroom kaydedilemedi."
+    "showroomSaveFailed": "Showroom kaydedilemedi.",
+    "repoEncryptedUseClient": "Şifreli depolar istemciden kaydedilmelidir.",
+    "repoNotEncrypted": "Depo şifreli değil.",
+    "repoAlreadyEncrypted": "Depo zaten şifreli.",
+    "repoEncrypted": "Depo şifrelemesi etkin.",
+    "encryptFailed": "Şifreleme başarısız.",
+    "showroomEncryptedDenied": "Şifreli depolar showroom olarak yayınlanamaz.",
+    "encryptedForkDenied": "Şifreli depolar çatallanamaz."
   },
   "notifications": {
     "title": "Yeni mesaj",
@@ -158,7 +165,7 @@
   "showroom": {
     "settingsTitle": "Showroom",
     "settingsDesc": "{repo} deposunu tanıtan statik sayfa.",
-    "settingsLink": "Showroom",
+    "settingsLink": "Ayarlar",
     "slugLabel": "Showroom adresi",
     "slugHint": "Ziyaretçiler /p/adres üzerinden ulaşır.",
     "publishLabel": "Showroom'u yayınla",
@@ -174,7 +181,32 @@
     "deleteFile": "Sil",
     "newFile": "Yeni dosya",
     "selectFile": "Düzenlemek için dosya seç.",
-    "addPubTemplate": ".pub şablonu"
+    "addPubTemplate": ".pub şablonu",
+    "saving": "Kaydediliyor…",
+    "encryptedBadge": "Şifreli",
+    "unlockTitle": "Şifreli depoyu aç",
+    "unlockDesc": "Depo parolanı gir. Anahtar tarayıcından çıkmaz.",
+    "unlockPassword": "Depo parolası",
+    "unlockButton": "Kilidi aç",
+    "unlocking": "Açılıyor…",
+    "unlockFailed": "Yanlış parola veya bozuk zarf.",
+    "encryptedViewerNote": "Bu depo şifrelidir. Yalnızca sahibi çözebilir.",
+    "collabConnected": "Ortak düzenleme aktif",
+    "collabOffline": "Ortak düzenleme kapalı",
+    "showroomEncryptedBlocked": "Showroom için şifrelemeyi kapatın veya herkese açık depo kullanın."
+  },
+  "repoSecurity": {
+    "title": "Şifreleme",
+    "desc": "Tüm dosyaları parola ile şifrele. Sunucuda yalnızca şifreli metin saklanır.",
+    "password": "Şifreleme parolası",
+    "passwordConfirm": "Parolayı doğrula",
+    "passwordShort": "Parola en az 8 karakter olmalı.",
+    "passwordMismatch": "Parolalar eşleşmiyor.",
+    "warning": "Parolayı kaybedersen dosyalar kurtarılamaz.",
+    "encryptButton": "Şifrelemeyi etkinleştir",
+    "encrypting": "Şifreleniyor…",
+    "encryptFailed": "Depo şifrelenemedi.",
+    "encryptedActive": "Bu depo şifrelidir. Düzenlemek için editörde kilidi aç."
   },
   "chat": {
     "title": "Mesajlar",

@@ -31,6 +31,7 @@ interface ShowroomSettingsFormProps {
   showroomSlug: string | null;
   showroomPublished: boolean;
   hasPubIndex: boolean;
+  isEncrypted?: boolean;
 }
 
 export function ShowroomSettingsForm({
@@ -40,6 +41,7 @@ export function ShowroomSettingsForm({
   showroomSlug,
   showroomPublished,
   hasPubIndex,
+  isEncrypted = false,
 }: ShowroomSettingsFormProps) {
   const t = useTranslations("showroom");
   const [state, action] = useFormState(updateShowroomAction, initial);
@@ -75,10 +77,15 @@ export function ShowroomSettingsForm({
             type="checkbox"
             name="publish"
             defaultChecked={showroomPublished}
+            disabled={isEncrypted}
             className="rounded border-border"
           />
           {t("publishLabel")}
         </label>
+
+        {isEncrypted && (
+          <p className="text-xs text-amber-400">{t("showroomEncryptedBlocked")}</p>
+        )}
 
         {!hasPubIndex && (
           <p className="text-xs text-amber-400">{t("missingPubIndex", { path: SHOWROOM_ENTRY })}</p>

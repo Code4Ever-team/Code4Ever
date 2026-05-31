@@ -1,7 +1,6 @@
-/**
- * İsteğe bağlı Elysia relay (Bun veya @elysiajs/node ile).
- * Bildirimler varsayılan olarak Next.js /api/relay üzerinden çalışır.
- */
+"use server";
+
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { PrismaClient } from "@prisma/client";
@@ -9,6 +8,11 @@ import {
   readSessionCookie,
   verifySessionToken,
 } from "../src/lib/session-verify";
+import {
+  attachNodeCollabWss,
+  bunCollabHandlers,
+  tryCollabUpgrade,
+} from "./collab-ws";
 
 const prisma = new PrismaClient();
 const PORT = Number(process.env.WS_PORT ?? 3002);
@@ -103,23 +107,63 @@ const app = new Elysia()
     return { ok: true };
   });
 
+async function readNodeBody(req: IncomingMessage): Promise<Buffer | undefined> {
+  if (req.method === "GET" || req.method === "HEAD") return undefined;
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  return chunks.length ? Buffer.concat(chunks) : undefined;
+}
+
+async function nodeRequest(req: IncomingMessage): Promise<Request> {
+  const host = req.headers.host ?? "127.0.0.1";
+  const url = `http://${host}${req.url ?? ""}`;
+  const body = await readNodeBody(req);
+  return new Request(url, {
+    method: req.method,
+    headers: req.headers as HeadersInit,
+    body: body as BodyInit | undefined,
+  });
+}
+
+async function writeNodeResponse(res: ServerResponse, response: Response) {
+  res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+  res.end(Buffer.from(await response.arrayBuffer()));
+}
+
 async function start() {
+  const hostname = process.env.WS_HOST ?? "127.0.0.1";
+
   if (process.versions.bun) {
     Bun.serve({
       port: PORT,
-      hostname: process.env.WS_HOST ?? "127.0.0.1",
-      fetch: app.fetch,
+      hostname,
+      fetch(req, server) {
+        return (async () => {
+          const collab = await tryCollabUpgrade(req, server);
+          if (collab !== undefined) return collab;
+          return app.fetch(req);
+        })();
+      },
+      websocket: bunCollabHandlers,
     });
-    console.log(`[c4e-relay] Bun listening on http://127.0.0.1:${PORT}`);
+    console.log(`[c4e-relay] Bun listening on http://${hostname}:${PORT} (HTTP + /collab WS)`);
     return;
   }
 
-  const { node } = await import("@elysiajs/node");
-  app.use(node()).listen({
-    port: PORT,
-    hostname: process.env.WS_HOST ?? "127.0.0.1",
+  const server = createServer(async (req, res) => {
+    try {
+      await writeNodeResponse(res, await app.fetch(await nodeRequest(req)));
+    } catch (err) {
+      console.error("[c4e-relay] request failed:", err);
+      res.writeHead(500);
+      res.end("error");
+    }
   });
-  console.log(`[c4e-relay] Node listening on http://127.0.0.1:${PORT}`);
+
+  attachNodeCollabWss(server);
+  server.listen(PORT, hostname, () => {
+    console.log(`[c4e-relay] Node listening on http://${hostname}:${PORT} (HTTP + /collab WS)`);
+  });
 }
 
 start().catch((err) => {

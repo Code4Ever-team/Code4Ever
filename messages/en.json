@@ -88,7 +88,14 @@
     "showroomMissingIndex": ".pub/index.html is required.",
     "showroomPublished": "Showroom is live.",
     "showroomSaved": "Showroom settings saved.",
-    "showroomSaveFailed": "Could not save showroom."
+    "showroomSaveFailed": "Could not save showroom.",
+    "repoEncryptedUseClient": "Encrypted repos must be saved from the client.",
+    "repoNotEncrypted": "Repo is not encrypted.",
+    "repoAlreadyEncrypted": "Repo is already encrypted.",
+    "repoEncrypted": "Repo encryption enabled.",
+    "encryptFailed": "Encryption failed.",
+    "showroomEncryptedDenied": "Encrypted repos cannot be published as showroom.",
+    "encryptedForkDenied": "Encrypted repos cannot be forked."
   },
   "notifications": {
     "title": "New message",
@@ -158,7 +165,7 @@
   "showroom": {
     "settingsTitle": "Showroom",
     "settingsDesc": "Static page showcasing repo {repo}.",
-    "settingsLink": "Showroom",
+    "settingsLink": "Settings",
     "slugLabel": "Showroom URL slug",
     "slugHint": "Visitors reach your page at /p/slug.",
     "publishLabel": "Publish showroom",
@@ -174,7 +181,32 @@
     "deleteFile": "Delete",
     "newFile": "New file",
     "selectFile": "Select a file to edit.",
-    "addPubTemplate": ".pub template"
+    "addPubTemplate": ".pub template",
+    "saving": "Saving…",
+    "encryptedBadge": "Encrypted",
+    "unlockTitle": "Unlock encrypted repo",
+    "unlockDesc": "Enter your repo password. The key never leaves your browser.",
+    "unlockPassword": "Repo password",
+    "unlockButton": "Unlock",
+    "unlocking": "Unlocking…",
+    "unlockFailed": "Wrong password or corrupted envelope.",
+    "encryptedViewerNote": "This repo is encrypted. Only the owner can decrypt it.",
+    "collabConnected": "Collab live",
+    "collabOffline": "Collab offline",
+    "showroomEncryptedBlocked": "Disable encryption or use a public repo to publish showroom."
+  },
+  "repoSecurity": {
+    "title": "Encryption",
+    "desc": "Encrypt all files with a password. Only ciphertext is stored on the server.",
+    "password": "Encryption password",
+    "passwordConfirm": "Confirm password",
+    "passwordShort": "Password must be at least 8 characters.",
+    "passwordMismatch": "Passwords do not match.",
+    "warning": "If you lose the password, files cannot be recovered.",
+    "encryptButton": "Enable encryption",
+    "encrypting": "Encrypting…",
+    "encryptFailed": "Could not encrypt repo.",
+    "encryptedActive": "This repo is encrypted. Unlock it in the editor to edit files."
   },
   "chat": {
     "title": "Messages",

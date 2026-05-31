@@ -5,6 +5,7 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 /** @type {import("next").NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  transpilePackages: ["monaco-editor", "@monaco-editor/react"],
   async headers() {
     return [
       {
@@ -26,7 +27,7 @@ const nextConfig = {
               "img-src 'self' data: blob: https:",
               "font-src 'self' data:",
               "connect-src 'self' ws: wss:",
-              "media-src 'self'",
+              "media-src 'self' blob: https:",
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",

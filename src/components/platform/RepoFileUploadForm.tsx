@@ -37,7 +37,7 @@ export function RepoFileUploadForm({ locale, repoId, canUpload }: RepoFileUpload
   return (
     <Card className="mt-6 p-4">
       <h3 className="mb-3 text-sm font-semibold text-foreground">{t("uploadCode")}</h3>
-      <Form action={action} encType="multipart/form-data" className="space-y-3">
+      <Form action={action} className="space-y-3">
         <input type="hidden" name="locale" value={locale} />
         <input type="hidden" name="repoId" value={repoId} />
         <div className="space-y-2">

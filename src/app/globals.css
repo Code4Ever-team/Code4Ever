@@ -45,3 +45,14 @@
       radial-gradient(circle at top, rgba(15, 23, 42, 0.4) 0%, #000000 55%);
   }
 }
+
+/* Monaco collab presence */
+.collab-line-highlight {
+  background: rgba(0, 122, 204, 0.12) !important;
+}
+
+.monaco-editor .collab-glyph {
+  width: 4px !important;
+  margin-left: 3px;
+  background: #007acc;
+}

@@ -5,7 +5,7 @@ import { getTranslations } from "next-intl/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { safeDbQuery, isDatabaseAvailable } from "@/lib/db-safe";
-import { readFileContent } from "@/lib/showroom";
+import { toWireFiles } from "@/lib/repo-files";
 import { DbOffline } from "@/components/system/DbOffline";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -50,12 +50,8 @@ export default async function RepoPage({ params }: RepoPageProps) {
   if (repo.isPrivate && repo.ownerId !== session?.id) notFound();
 
   const isOwner = session?.id === repo.ownerId;
-  const canFork = !isOwner && !repo.isPrivate;
-
-  const fileItems = repo.files.map((f) => ({
-    path: f.path,
-    content: readFileContent(f),
-  }));
+  const canFork = !isOwner && !repo.isPrivate && !repo.isEncrypted;
+  const wireFiles = toWireFiles(repo.files, repo.isEncrypted);
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
@@ -68,6 +64,7 @@ export default async function RepoPage({ params }: RepoPageProps) {
             )}
             <p className="mt-2 text-xs text-c4e-muted">
               {repo.isPrivate ? t("visibilityPrivate") : t("visibilityPublic")}
+              {repo.isEncrypted ? ` · ${tShow("encryptedBadge")}` : null}
               {repo.owner?.username ? (
                 <>
                   {" · "}
@@ -86,7 +83,7 @@ export default async function RepoPage({ params }: RepoPageProps) {
                 <Link href={`/${locale}/repo/${repo.id}/settings`}>{tShow("settingsLink")}</Link>
               </Button>
             )}
-            {repo.showroomSlug && repo.showroomPublished && (
+            {repo.showroomSlug && repo.showroomPublished && !repo.isEncrypted && (
               <Button variant="secondary" size="sm" asChild>
                 <Link href={`/${locale}/p/${repo.showroomSlug}`}>{tShow("openShowroom")}</Link>
               </Button>
@@ -104,11 +101,16 @@ export default async function RepoPage({ params }: RepoPageProps) {
       <RepoWorkspace
         locale={locale}
         repoId={repo.id}
-        files={fileItems}
+        files={wireFiles}
         canEdit={isOwner}
+        isEncrypted={repo.isEncrypted}
+        keyEnvelope={repo.keyEnvelope}
+        collabEnabled={repo.collabEnabled}
+        userId={session?.id}
+        username={session?.username}
       />
 
-      <RepoFileUploadForm locale={locale} repoId={repo.id} canUpload={isOwner} />
+      <RepoFileUploadForm locale={locale} repoId={repo.id} canUpload={isOwner && !repo.isEncrypted} />
     </main>
   );
 }

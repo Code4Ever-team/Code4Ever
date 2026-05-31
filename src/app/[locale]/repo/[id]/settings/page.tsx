@@ -5,7 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { safeDbQuery, isDatabaseAvailable } from "@/lib/db-safe";
 import { SHOWROOM_ENTRY, readFileContent } from "@/lib/showroom";
+import { readPlainFile } from "@/lib/repo-files";
 import { ShowroomSettingsForm } from "@/components/repo/ShowroomSettingsForm";
+import { RepoSecuritySettings } from "@/components/repo/RepoSecuritySettings";
 import { DbOffline } from "@/components/system/DbOffline";
 import { Button } from "@/components/ui/button";
 
@@ -37,7 +39,7 @@ export default async function RepoSettingsPage({ params }: RepoSettingsPageProps
       prisma.repo.findUnique({
         where: { id },
         include: {
-          files: { where: { path: SHOWROOM_ENTRY }, take: 1 },
+          files: { orderBy: { path: "asc" } },
         },
       }),
     null
@@ -45,7 +47,16 @@ export default async function RepoSettingsPage({ params }: RepoSettingsPageProps
 
   if (!repo || repo.ownerId !== session.id) notFound();
 
-  const hasPubIndex = repo.files.some((f) => readFileContent(f).trim().length > 0);
+  const hasPubIndex = repo.files.some(
+    (f) => f.path === SHOWROOM_ENTRY && readFileContent(f).trim().length > 0
+  );
+
+  const securityFiles = repo.isEncrypted
+    ? []
+    : repo.files.map((f) => ({
+        path: f.path,
+        content: readPlainFile(f),
+      }));
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
@@ -66,6 +77,14 @@ export default async function RepoSettingsPage({ params }: RepoSettingsPageProps
         showroomSlug={repo.showroomSlug}
         showroomPublished={repo.showroomPublished}
         hasPubIndex={hasPubIndex}
+        isEncrypted={repo.isEncrypted}
+      />
+
+      <RepoSecuritySettings
+        locale={locale}
+        repoId={repo.id}
+        isEncrypted={repo.isEncrypted}
+        files={securityFiles}
       />
     </main>
   );

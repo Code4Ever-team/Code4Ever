@@ -174,6 +174,9 @@ export async function forkRepoAction(
     if (source.isPrivate) {
       return { success: false, message: msg(locale, "errors.privateForkDenied") };
     }
+    if (source.isEncrypted) {
+      return { success: false, message: msg(locale, "errors.encryptedForkDenied") };
+    }
 
     const forkName = `${source.name}-fork-${session.username}`.slice(0, 60);
 

@@ -64,6 +64,7 @@ export async function loadShowroomBySlug(slug: string) {
           showroomSlug: slug,
           showroomPublished: true,
           isPrivate: false,
+          isEncrypted: false,
         },
         select: {
           id: true,
@@ -82,10 +83,17 @@ export async function loadShowroomBySlug(slug: string) {
 }
 
 export async function getShowroomHtml(repoId: string): Promise<string | null> {
+  const repo = await prisma.repo.findUnique({
+    where: { id: repoId },
+    select: { isEncrypted: true },
+  });
+  if (!repo || repo.isEncrypted) return null;
+
   const file = await prisma.repoFile.findUnique({
     where: { repoId_path: { repoId, path: SHOWROOM_ENTRY } },
-    select: { content: true, encryptedContent: true },
+    select: { content: true, encryptedContent: true, ciphertext: true },
   });
   if (!file) return null;
+  if (file.ciphertext) return null;
   return readFileContent(file);
 }

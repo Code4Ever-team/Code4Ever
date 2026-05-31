@@ -26,7 +26,13 @@ async function requireRepoOwner(repoId: string) {
 
   const repo = await prisma.repo.findUnique({
     where: { id: repoId },
-    select: { id: true, ownerId: true, isPrivate: true, showroomSlug: true },
+    select: {
+      id: true,
+      ownerId: true,
+      isPrivate: true,
+      isEncrypted: true,
+      showroomSlug: true,
+    },
   });
   if (!repo) throw new Error("REPO_NOT_FOUND");
   if (repo.ownerId !== session.id) throw new Error("FORBIDDEN");
@@ -42,8 +48,12 @@ export async function saveRepoFileContentAction(
     const repoId = String(formData.get("repoId") ?? "");
     const filePath = String(formData.get("path") ?? "").trim();
     const content = String(formData.get("content") ?? "");
+    const revision = Number(formData.get("revision") ?? 0);
 
     const { repo } = await requireRepoOwner(repoId);
+    if (repo.isEncrypted) {
+      return { success: false, message: msg(locale, "errors.repoEncryptedUseClient") };
+    }
     if (!filePath || filePath.includes("..")) {
       return { success: false, message: msg(locale, "errors.filePathRequired") };
     }
@@ -54,27 +64,148 @@ export async function saveRepoFileContentAction(
     const size = Buffer.byteLength(content, "utf8");
     const mimeType = guessMime(filePath);
 
-    if (repo.isPrivate) {
-      await prisma.repoFile.upsert({
-        where: { repoId_path: { repoId, path: filePath } },
-        create: { repoId, path: filePath, encryptedContent: content, mimeType, size },
-        update: { encryptedContent: content, mimeType, size },
-      });
-    } else {
-      await prisma.repoFile.upsert({
-        where: { repoId_path: { repoId, path: filePath } },
-        create: { repoId, path: filePath, content, mimeType, size },
-        update: { content, mimeType, size },
-      });
-    }
+    await prisma.repoFile.upsert({
+      where: { repoId_path: { repoId, path: filePath } },
+      create: {
+        repoId,
+        path: filePath,
+        content: repo.isPrivate ? null : content,
+        encryptedContent: repo.isPrivate ? content : null,
+        mimeType,
+        size,
+        revision: revision + 1,
+      },
+      update: {
+        content: repo.isPrivate ? null : content,
+        encryptedContent: repo.isPrivate ? content : null,
+        mimeType,
+        size,
+        revision: { increment: 1 },
+      },
+    });
 
-    revalidatePath(`/${locale}/repo/${repoId}`);
-    if (repo.showroomSlug) {
-      revalidatePath(`/${locale}/p/${repo.showroomSlug}`);
-    }
+    revalidateRepoPaths(locale, repoId, repo.showroomSlug);
     return { success: true, message: msg(locale, "errors.fileSaved") };
   } catch (error) {
     return repoActionError(error, locale, "errors.fileSaveFailed");
+  }
+}
+
+export async function saveRepoFileEncryptedAction(
+  _prev: PlatformResult,
+  formData: FormData
+): Promise<PlatformResult> {
+  const locale = localeOf(formData);
+  try {
+    const repoId = String(formData.get("repoId") ?? "");
+    const filePath = String(formData.get("path") ?? "").trim();
+    const ciphertext = String(formData.get("ciphertext") ?? "");
+    const nonce = String(formData.get("nonce") ?? "");
+
+    const { repo } = await requireRepoOwner(repoId);
+    if (!repo.isEncrypted) {
+      return { success: false, message: msg(locale, "errors.repoNotEncrypted") };
+    }
+    if (!filePath || !ciphertext || !nonce) {
+      return { success: false, message: msg(locale, "errors.filePathRequired") };
+    }
+    if (ciphertext.length > MAX_FILE_BYTES * 2) {
+      return { success: false, message: msg(locale, "errors.fileTooLarge") };
+    }
+
+    await prisma.repoFile.upsert({
+      where: { repoId_path: { repoId, path: filePath } },
+      create: {
+        repoId,
+        path: filePath,
+        ciphertext,
+        nonce,
+        content: null,
+        encryptedContent: null,
+        mimeType: guessMime(filePath),
+        size: ciphertext.length,
+        revision: 1,
+      },
+      update: {
+        ciphertext,
+        nonce,
+        content: null,
+        encryptedContent: null,
+        size: ciphertext.length,
+        revision: { increment: 1 },
+      },
+    });
+
+    revalidateRepoPaths(locale, repoId, repo.showroomSlug);
+    return { success: true, message: msg(locale, "errors.fileSaved") };
+  } catch (error) {
+    return repoActionError(error, locale, "errors.fileSaveFailed");
+  }
+}
+
+export async function enableRepoEncryptionAction(
+  _prev: PlatformResult,
+  formData: FormData
+): Promise<PlatformResult> {
+  const locale = localeOf(formData);
+  try {
+    const repoId = String(formData.get("repoId") ?? "");
+    const keyEnvelope = String(formData.get("keyEnvelope") ?? "").trim();
+    const encryptedFilesRaw = String(formData.get("encryptedFiles") ?? "[]");
+
+    const { repo } = await requireRepoOwner(repoId);
+    if (repo.isEncrypted) {
+      return { success: false, message: msg(locale, "errors.repoAlreadyEncrypted") };
+    }
+    if (!keyEnvelope) {
+      return { success: false, message: msg(locale, "errors.encryptFailed") };
+    }
+
+    const files = JSON.parse(encryptedFilesRaw) as Array<{
+      path: string;
+      ciphertext: string;
+      nonce: string;
+    }>;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.repo.update({
+        where: { id: repoId },
+        data: {
+          isEncrypted: true,
+          keyEnvelope,
+          keyVersion: 1,
+          showroomPublished: false,
+        },
+      });
+
+      for (const f of files) {
+        await tx.repoFile.upsert({
+          where: { repoId_path: { repoId, path: f.path } },
+          create: {
+            repoId,
+            path: f.path,
+            ciphertext: f.ciphertext,
+            nonce: f.nonce,
+            content: null,
+            encryptedContent: null,
+            mimeType: guessMime(f.path),
+            size: f.ciphertext.length,
+          },
+          update: {
+            ciphertext: f.ciphertext,
+            nonce: f.nonce,
+            content: null,
+            encryptedContent: null,
+            size: f.ciphertext.length,
+          },
+        });
+      }
+    });
+
+    revalidateRepoPaths(locale, repoId, repo.showroomSlug);
+    return { success: true, message: msg(locale, "errors.repoEncrypted") };
+  } catch (error) {
+    return repoActionError(error, locale, "errors.encryptFailed");
   }
 }
 
@@ -92,10 +223,7 @@ export async function deleteRepoFileAction(
       where: { repoId, path: filePath },
     });
 
-    revalidatePath(`/${locale}/repo/${repoId}`);
-    if (repo.showroomSlug) {
-      revalidatePath(`/${locale}/p/${repo.showroomSlug}`);
-    }
+    revalidateRepoPaths(locale, repoId, repo.showroomSlug);
     return { success: true, message: msg(locale, "errors.fileDeleted") };
   } catch (error) {
     return repoActionError(error, locale, "errors.fileDeleteFailed");
@@ -112,6 +240,10 @@ export async function updateShowroomAction(
     const rawSlug = String(formData.get("showroomSlug") ?? "").trim();
     const publish = formData.get("publish") === "on";
     const { repo } = await requireRepoOwner(repoId);
+
+    if (repo.isEncrypted && publish) {
+      return { success: false, message: msg(locale, "errors.showroomEncryptedDenied") };
+    }
 
     let nextSlug: string | null = repo.showroomSlug;
 
@@ -151,19 +283,24 @@ export async function updateShowroomAction(
       },
     });
 
-    revalidatePath(`/${locale}/repo/${repoId}`);
-    revalidatePath(`/${locale}/repo/${repoId}/settings`);
-    if (nextSlug) {
-      revalidatePath(`/${locale}/p/${nextSlug}`);
-    }
+    revalidateRepoPaths(locale, repoId, nextSlug);
     if (repo.showroomSlug && repo.showroomSlug !== nextSlug) {
       revalidatePath(`/${locale}/p/${repo.showroomSlug}`);
     }
 
-    return { success: true, message: msg(locale, publish ? "errors.showroomPublished" : "errors.showroomSaved") };
+    return {
+      success: true,
+      message: msg(locale, publish ? "errors.showroomPublished" : "errors.showroomSaved"),
+    };
   } catch (error) {
     return repoActionError(error, locale, "errors.showroomSaveFailed");
   }
+}
+
+function revalidateRepoPaths(locale: string, repoId: string, showroomSlug: string | null) {
+  revalidatePath(`/${locale}/repo/${repoId}`);
+  revalidatePath(`/${locale}/repo/${repoId}/settings`);
+  if (showroomSlug) revalidatePath(`/${locale}/p/${showroomSlug}`);
 }
 
 function guessMime(path: string): string {
