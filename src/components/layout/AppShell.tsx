@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { TopBar } from "@/components/layout/TopBar";
 import { MessageNotificationProvider } from "@/components/notifications/MessageNotificationProvider";
@@ -34,8 +35,11 @@ interface AppShellProps {
 }
 
 export function AppShell({ locale, session, children }: AppShellProps) {
+  const pathname = usePathname();
+  const isShowroom = /\/p\/[^/]+$/.test(pathname);
+
   const [nav, setNav] = useState<NavPayload | null>(null);
-  usePresenceHeartbeat(session !== null);
+  usePresenceHeartbeat(session !== null && !isShowroom);
 
   useEffect(() => {
     if (!session) {
@@ -67,6 +71,10 @@ export function AppShell({ locale, session, children }: AppShellProps) {
   const navUser =
     nav?.user ??
     (session ? { username: session.username, avatarUrl: null } : null);
+
+  if (isShowroom) {
+    return <>{children}</>;
+  }
 
   return (
     <>

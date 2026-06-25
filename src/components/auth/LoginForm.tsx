@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useFormState, useFormStatus } from "react-dom";
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
@@ -59,9 +60,17 @@ export function LoginForm({ locale }: LoginFormProps) {
         </div>
 
         <div className="mt-4 space-y-2">
-          <label htmlFor="password" className="text-sm font-medium text-foreground">
-            {t("auth.login.passwordLabel")}
-          </label>
+          <div className="flex items-center justify-between">
+            <label htmlFor="password" className="text-sm font-medium text-foreground">
+              {t("auth.login.passwordLabel")}
+            </label>
+            <Link
+              href={`/${locale}/forgot-password`}
+              className="text-xs text-c4e-neon hover:underline"
+            >
+              {t("auth.login.forgotPassword")}
+            </Link>
+          </div>
           <Input
             id="password"
             name="password"

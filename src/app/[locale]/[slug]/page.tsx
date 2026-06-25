@@ -19,6 +19,8 @@ const RESERVED_SLUGS = new Set([
   "groups",
   "login",
   "register",
+  "forgot-password",
+  "reset-password",
   "dashboard",
   "settings",
   "admin",

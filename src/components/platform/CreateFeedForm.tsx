@@ -52,7 +52,7 @@ export function CreateFeedForm({ locale, isLoggedIn }: CreateFeedFormProps) {
 
   return (
     <Card className="mb-6 p-4">
-      <Form action={action} className="space-y-3" encType="multipart/form-data">
+      <Form action={action} className="space-y-3">
         <input type="hidden" name="locale" value={locale} />
         <div className="space-y-2">
           <Label htmlFor="feed-content">{t("postFeed")}</Label>

@@ -5,7 +5,16 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 /** @type {import("next").NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["monaco-editor", "@monaco-editor/react"],
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        module: false,
+      };
+    }
+    return config;
+  },
   async headers() {
     return [
       {
@@ -22,11 +31,12 @@ const nextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
-              "font-src 'self' data:",
-              "connect-src 'self' ws: wss:",
+              "font-src 'self' data: blob:",
+              "connect-src 'self' ws: wss: blob:",
+              "worker-src 'self' blob:",
               "media-src 'self' blob: https:",
               "frame-ancestors 'none'",
               "base-uri 'self'",

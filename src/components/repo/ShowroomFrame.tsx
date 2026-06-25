@@ -5,14 +5,14 @@ interface ShowroomFrameProps {
   title: string;
 }
 
-/** Statik showroom — yalnızca .pub/index.html içeriği, sandbox iframe. */
+/** Kullanıcının .pub/index.html — tam ekran sandbox iframe, navbar yok. */
 export function ShowroomFrame({ html, title }: ShowroomFrameProps) {
   return (
     <iframe
       title={title}
-      sandbox="allow-scripts"
+      sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-modals"
       srcDoc={html}
-      className="h-[calc(100vh-4rem)] w-full border-0 bg-black"
+      className="block h-full w-full border-0 bg-black"
     />
   );
 }

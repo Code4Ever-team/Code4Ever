@@ -7,11 +7,18 @@ import { signToken, setSessionCookie, clearSessionCookie } from "@/lib/auth";
 import {
   LoginFormSchema,
   RegisterFormSchema,
+  ForgotPasswordFormSchema,
+  ResetPasswordFormSchema,
   type LoginFormValues,
   type RegisterFormValues,
+  type ForgotPasswordFormValues,
+  type ResetPasswordFormValues,
 } from "@/lib/validations/auth";
 import { msg } from "@/lib/messages";
 import { clientRateLimitKey, rateLimit } from "@/lib/rate-limit";
+import { generateResetToken, hashResetToken, resetExpiresAt } from "@/lib/password-reset";
+import { sendPasswordResetEmail, passwordResetUrl } from "@/lib/mail/password-reset-email";
+import { isSmtpConfigured } from "@/lib/mail/smtp";
 
 // ---------------------------------------------------------------------------
 // Sabitler
@@ -256,6 +263,159 @@ export async function loginAction(
   }
 
   redirect(redirectTo || `/${locale}`);
+}
+
+// ---------------------------------------------------------------------------
+// Password reset (SMTP)
+// ---------------------------------------------------------------------------
+
+const RESET_SENT_MSG = (locale: string) => msg(locale, "errors.resetEmailSent");
+
+export async function requestPasswordReset(
+  input: ForgotPasswordFormValues,
+  locale = "tr"
+): Promise<ActionResult> {
+  const trimmedEmail = input.email.trim().toLowerCase();
+
+  try {
+    const rlKey = clientRateLimitKey("password-reset", trimmedEmail);
+    if (!rateLimit(rlKey, 3, 15 * 60_000)) {
+      return { success: false, message: msg(locale, "errors.rateLimited") };
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email: trimmedEmail },
+      select: { id: true, email: true },
+    });
+
+    if (user) {
+      const { token, tokenHash } = generateResetToken();
+
+      await prisma.$transaction([
+        prisma.passwordResetToken.deleteMany({ where: { userId: user.id } }),
+        prisma.passwordResetToken.create({
+          data: {
+            userId: user.id,
+            tokenHash,
+            expiresAt: resetExpiresAt(),
+          },
+        }),
+      ]);
+
+      if (isSmtpConfigured()) {
+        try {
+          await sendPasswordResetEmail(user.email, locale, token);
+        } catch (err) {
+          console.error("[requestPasswordReset] SMTP send failed:", err);
+          if (process.env.NODE_ENV === "development") {
+            console.log("[password-reset] Dev link:", passwordResetUrl(locale, token));
+          }
+        }
+      } else if (process.env.NODE_ENV === "development") {
+        console.log("[password-reset] SMTP not configured. Dev link:", passwordResetUrl(locale, token));
+      } else {
+        console.error("[requestPasswordReset] SMTP not configured");
+      }
+    }
+
+    return { success: true, message: RESET_SENT_MSG(locale) };
+  } catch (err) {
+    console.error("[requestPasswordReset] Unexpected error:", err);
+    return { success: false, message: msg(locale, "errors.server") };
+  }
+}
+
+export async function resetPasswordWithToken(
+  input: ResetPasswordFormValues,
+  locale = "tr"
+): Promise<ActionResult> {
+  try {
+    const tokenHash = hashResetToken(input.token.trim());
+
+    const record = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      include: { user: { select: { id: true } } },
+    });
+
+    if (!record || record.usedAt || record.expiresAt < new Date()) {
+      return { success: false, message: msg(locale, "errors.resetTokenInvalid") };
+    }
+
+    const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: record.userId },
+        data: { passwordHash },
+      }),
+      prisma.passwordResetToken.update({
+        where: { id: record.id },
+        data: { usedAt: new Date() },
+      }),
+      prisma.passwordResetToken.deleteMany({
+        where: { userId: record.userId, id: { not: record.id } },
+      }),
+    ]);
+
+    return { success: true, message: msg(locale, "errors.resetPasswordDone") };
+  } catch (err) {
+    console.error("[resetPasswordWithToken] Unexpected error:", err);
+    return { success: false, message: msg(locale, "errors.server") };
+  }
+}
+
+export async function forgotPasswordAction(
+  _prevState: AuthFormState,
+  formData: FormData
+): Promise<AuthFormState> {
+  const locale = String(formData.get("locale") ?? "en");
+
+  try {
+    const raw: ForgotPasswordFormValues = {
+      email: String(formData.get("email") ?? ""),
+    };
+
+    const parsed = ForgotPasswordFormSchema.safeParse(raw);
+    if (!parsed.success) {
+      return { success: false, message: parsed.error.issues[0].message };
+    }
+
+    const res = await requestPasswordReset(parsed.data, locale);
+    return { success: res.success, message: res.message };
+  } catch (err) {
+    console.error("[forgotPasswordAction] Unexpected error:", err);
+    return { success: false, message: msg(locale, "errors.server") };
+  }
+}
+
+export async function resetPasswordAction(
+  _prevState: AuthFormState,
+  formData: FormData
+): Promise<AuthFormState> {
+  const locale = String(formData.get("locale") ?? "en");
+
+  try {
+    const raw: ResetPasswordFormValues = {
+      token: String(formData.get("token") ?? ""),
+      password: String(formData.get("password") ?? ""),
+      confirmPassword: String(formData.get("confirmPassword") ?? ""),
+    };
+
+    const parsed = ResetPasswordFormSchema.safeParse(raw);
+    if (!parsed.success) {
+      return { success: false, message: parsed.error.issues[0].message };
+    }
+
+    const res = await resetPasswordWithToken(parsed.data, locale);
+    if (!res.success) {
+      return { success: false, message: res.message };
+    }
+  } catch (err) {
+    console.error("[resetPasswordAction] Unexpected error:", err);
+    return { success: false, message: msg(locale, "errors.server") };
+  }
+
+  redirect(`/${locale}/login`);
 }
 
 // ---------------------------------------------------------------------------

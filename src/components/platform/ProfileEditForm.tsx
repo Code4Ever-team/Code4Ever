@@ -34,7 +34,7 @@ export function ProfileEditForm({ locale, bio }: ProfileEditFormProps) {
 
   return (
     <Card className="p-4">
-      <Form action={action} encType="multipart/form-data" className="space-y-3">
+      <Form action={action} className="space-y-3">
         <input type="hidden" name="locale" value={locale} />
         <div className="space-y-2">
           <Label htmlFor="bio">{t("bio")}</Label>

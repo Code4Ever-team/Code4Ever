@@ -27,7 +27,32 @@
       "passwordLabel": "Password",
       "passwordPlaceholder": "••••••",
       "submit": "Sign in",
-      "submitting": "Signing in…"
+      "submitting": "Signing in…",
+      "forgotPassword": "Forgot password?"
+    },
+    "forgot": {
+      "title": "Reset password",
+      "subtitle": "We will email you a reset link if the address is registered.",
+      "emailLabel": "Email",
+      "emailPlaceholder": "you@example.com",
+      "submit": "Send reset link",
+      "submitting": "Sending…",
+      "backToLogin": "Back to sign in",
+      "successMessage": "If that email is registered, a reset link has been sent.",
+      "successSpamHint": "If you do not see it in your inbox, check your spam or junk folder."
+    },
+    "reset": {
+      "title": "New password",
+      "subtitle": "Choose a new password for your account.",
+      "passwordLabel": "New password",
+      "passwordPlaceholder": "••••••",
+      "confirmLabel": "Confirm password",
+      "confirmPlaceholder": "••••••",
+      "submit": "Update password",
+      "submitting": "Updating…",
+      "invalidLink": "Invalid or expired reset link.",
+      "requestNew": "Request a new link",
+      "backToLogin": "Back to sign in"
     },
     "register": {
       "title": "Register",
@@ -95,7 +120,10 @@
     "repoEncrypted": "Repo encryption enabled.",
     "encryptFailed": "Encryption failed.",
     "showroomEncryptedDenied": "Encrypted repos cannot be published as showroom.",
-    "encryptedForkDenied": "Encrypted repos cannot be forked."
+    "encryptedForkDenied": "Encrypted repos cannot be forked.",
+    "resetEmailSent": "If that email is registered, a reset link has been sent. Check your spam folder if you do not see it.",
+    "resetTokenInvalid": "Invalid or expired reset link.",
+    "resetPasswordDone": "Password updated. You can sign in now."
   },
   "notifications": {
     "title": "New message",

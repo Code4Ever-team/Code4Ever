@@ -27,7 +27,32 @@
       "passwordLabel": "Şifre",
       "passwordPlaceholder": "••••••",
       "submit": "Giriş yap",
-      "submitting": "Giriş yapılıyor…"
+      "submitting": "Giriş yapılıyor…",
+      "forgotPassword": "Şifremi unuttum"
+    },
+    "forgot": {
+      "title": "Şifre sıfırlama",
+      "subtitle": "Kayıtlı e-posta adresine sıfırlama bağlantısı göndeririz.",
+      "emailLabel": "E-posta",
+      "emailPlaceholder": "ornek@mail.com",
+      "submit": "Bağlantı gönder",
+      "submitting": "Gönderiliyor…",
+      "backToLogin": "Girişe dön",
+      "successMessage": "Bu e-posta kayıtlıysa sıfırlama bağlantısı gönderildi.",
+      "successSpamHint": "Gelen kutunda göremiyorsan spam veya gereksiz klasörünü de kontrol et."
+    },
+    "reset": {
+      "title": "Yeni şifre",
+      "subtitle": "Hesabın için yeni bir şifre belirle.",
+      "passwordLabel": "Yeni şifre",
+      "passwordPlaceholder": "••••••",
+      "confirmLabel": "Şifre tekrar",
+      "confirmPlaceholder": "••••••",
+      "submit": "Şifreyi güncelle",
+      "submitting": "Güncelleniyor…",
+      "invalidLink": "Geçersiz veya süresi dolmuş bağlantı.",
+      "requestNew": "Yeni bağlantı iste",
+      "backToLogin": "Girişe dön"
     },
     "register": {
       "title": "Kayıt",
@@ -95,7 +120,10 @@
     "repoEncrypted": "Depo şifrelemesi etkin.",
     "encryptFailed": "Şifreleme başarısız.",
     "showroomEncryptedDenied": "Şifreli depolar showroom olarak yayınlanamaz.",
-    "encryptedForkDenied": "Şifreli depolar çatallanamaz."
+    "encryptedForkDenied": "Şifreli depolar çatallanamaz.",
+    "resetEmailSent": "Bu e-posta kayıtlıysa sıfırlama bağlantısı gönderildi. Gelen kutunda yoksa spam klasörünü de kontrol et.",
+    "resetTokenInvalid": "Bağlantı geçersiz veya süresi dolmuş.",
+    "resetPasswordDone": "Şifren güncellendi. Giriş yapabilirsin."
   },
   "notifications": {
     "title": "Yeni mesaj",

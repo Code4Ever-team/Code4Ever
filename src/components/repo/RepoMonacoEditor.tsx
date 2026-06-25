@@ -1,18 +1,12 @@
 "use client";
 
-import dynamic from "next/dynamic";
+import Editor, { loader } from "@monaco-editor/react";
+import * as monaco from "monaco-editor";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { editor as MonacoEditor } from "monaco-editor";
 import type { RemotePresence } from "@/hooks/useCollabSession";
 
-const Monaco = dynamic(() => import("@monaco-editor/react"), {
-  ssr: false,
-  loading: () => (
-    <div className="flex min-h-[24rem] items-center justify-center bg-black/60 font-mono text-xs text-muted-foreground">
-      …
-    </div>
-  ),
-});
+loader.config({ monaco });
 
 interface RepoMonacoEditorProps {
   path: string;
@@ -47,8 +41,6 @@ export function RepoMonacoEditor({
   const applyDecorations = useCallback(() => {
     const ed = editorRef.current;
     if (!ed) return;
-    const monaco = (window as unknown as { monaco?: typeof import("monaco-editor") }).monaco;
-    if (!monaco) return;
 
     const decs: MonacoEditor.IModelDeltaDecoration[] = [];
     for (const p of Array.from(remotePresence.values())) {
@@ -72,7 +64,7 @@ export function RepoMonacoEditor({
   }, [applyDecorations]);
 
   return (
-    <Monaco
+    <Editor
       height="24rem"
       language={language}
       theme="vs-dark"

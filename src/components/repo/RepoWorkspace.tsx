@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -20,12 +21,23 @@ import { collabColorForUser } from "@/lib/collab/collab-colors";
 import { useCollabSession } from "@/hooks/useCollabSession";
 import type { RemotePresence } from "@/hooks/useCollabSession";
 import { SHOWROOM_ENTRY } from "@/lib/showroom";
-import { RepoMonacoEditor } from "@/components/repo/RepoMonacoEditor";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+
+const RepoMonacoEditor = dynamic(
+  () => import("@/components/repo/RepoMonacoEditor").then((m) => m.RepoMonacoEditor),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-[24rem] items-center justify-center bg-black/60 font-mono text-xs text-muted-foreground">
+        …
+      </div>
+    ),
+  }
+);
 
 export interface RepoFileItem {
   path: string;
