@@ -14,6 +14,7 @@ import {
   decryptText,
   encryptText,
   getRepoDek,
+  loadPersistedRepoDek,
   storeRepoDek,
   unlockDekFromEnvelope,
 } from "@/lib/crypto/e2ee-repo";
@@ -105,9 +106,28 @@ export function RepoWorkspace({
   });
 
   useEffect(() => {
-    if (!isEncrypted || !canEdit || unlocked || !keyEnvelope) return;
-    if (getRepoDek(repoId)) setUnlocked(true);
-  }, [isEncrypted, canEdit, unlocked, keyEnvelope, repoId]);
+    if (!isEncrypted || unlocked) return;
+
+    void (async () => {
+      const dek = await loadPersistedRepoDek(repoId);
+      if (!dek) return;
+
+      try {
+        const next: Record<string, string> = {};
+        for (const f of files) {
+          if (f.ciphertext && f.nonce) {
+            next[f.path] = await decryptText(dek, f.ciphertext, f.nonce);
+          } else {
+            next[f.path] = f.content;
+          }
+        }
+        setDrafts(next);
+        setUnlocked(true);
+      } catch {
+        /* invalid persisted key */
+      }
+    })();
+  }, [isEncrypted, unlocked, repoId, files]);
 
   useEffect(() => {
     if (!selectedPath || !unlocked) {
@@ -142,7 +162,6 @@ export function RepoWorkspace({
   }, [files, drafts]);
 
   const currentContent = drafts[selectedPath] ?? "";
-  const viewerEncrypted = isEncrypted && !unlocked && !canEdit;
 
   function selectPath(path: string) {
     setSelectedPath(path);
@@ -213,7 +232,7 @@ export function RepoWorkspace({
       setUnlockError(null);
       try {
         const dek = await unlockDekFromEnvelope(unlockPassword, keyEnvelope);
-        storeRepoDek(repoId, dek);
+        await storeRepoDek(repoId, dek);
         const next: Record<string, string> = {};
         for (const f of files) {
           if (f.ciphertext && f.nonce) {
@@ -282,7 +301,7 @@ export function RepoWorkspace({
     });
   }
 
-  if (isEncrypted && canEdit && !unlocked) {
+  if (isEncrypted && !unlocked) {
     return (
       <Card className="mt-6 p-6">
         <h2 className="text-lg font-semibold text-foreground">{t("unlockTitle")}</h2>
@@ -296,9 +315,12 @@ export function RepoWorkspace({
               value={unlockPassword}
               onChange={(e) => setUnlockPassword(e.target.value)}
               autoComplete="current-password"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleUnlock();
+              }}
             />
           </div>
-          <Button type="button" disabled={unlockPending} onClick={handleUnlock}>
+          <Button type="button" disabled={unlockPending || !unlockPassword} onClick={handleUnlock}>
             {unlockPending ? t("unlocking") : t("unlockButton")}
           </Button>
           {unlockError && <p className="text-sm text-destructive">{unlockError}</p>}
@@ -377,9 +399,7 @@ export function RepoWorkspace({
         </aside>
 
         <div className="flex flex-col">
-          {viewerEncrypted ? (
-            <p className="p-6 text-sm text-muted-foreground">{t("encryptedViewerNote")}</p>
-          ) : selectedPath ? (
+          {selectedPath ? (
             <>
               <div className="flex items-center justify-between border-b border-border px-3 py-2">
                 <span className="font-mono text-xs text-primary">{selectedPath}</span>

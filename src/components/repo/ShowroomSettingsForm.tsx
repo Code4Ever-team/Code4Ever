@@ -100,7 +100,7 @@ export function ShowroomSettingsForm({
         )}
       </Form>
 
-      {showroomSlug && showroomPublished && (
+      {showroomSlug && showroomPublished && !isEncrypted && (
         <p className="mt-4 text-sm">
           {t("liveAt")}{" "}
           <Link href={`/${locale}/p/${previewSlug}`} className="font-mono text-primary hover:underline">

@@ -6,6 +6,9 @@ export interface HomeFeedItem {
   content: string;
   mediaUrl: string | null;
   mediaType: string | null;
+  mediaNonce: string | null;
+  mediaKey: string | null;
+  mediaMimeType: string | null;
   createdAt: Date;
   user: { username: string };
 }
@@ -44,6 +47,9 @@ export async function loadHomeFeedAndRepos(userId: string | null): Promise<{
               content: true,
               mediaUrl: true,
               mediaType: true,
+              mediaNonce: true,
+              mediaKey: true,
+              mediaMimeType: true,
               createdAt: true,
               user: { select: { username: true } },
             },
@@ -83,6 +89,9 @@ export async function loadHomeFeedAndRepos(userId: string | null): Promise<{
             content: true,
             mediaUrl: true,
             mediaType: true,
+            mediaNonce: true,
+            mediaKey: true,
+            mediaMimeType: true,
             createdAt: true,
             user: { select: { username: true } },
           },
@@ -126,6 +135,9 @@ export async function loadFeedList(): Promise<HomeFeedItem[]> {
           content: true,
           mediaUrl: true,
           mediaType: true,
+          mediaNonce: true,
+          mediaKey: true,
+          mediaMimeType: true,
           createdAt: true,
           user: { select: { username: true } },
         },

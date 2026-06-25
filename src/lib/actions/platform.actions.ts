@@ -7,7 +7,6 @@ import { savePublicUpload } from "@/lib/upload";
 import { saveMediaUpload } from "@/lib/media-upload";
 import { logger } from "@/lib/logger";
 import { msg } from "@/lib/messages";
-import { isPlatformFounder } from "@/lib/platform-admin";
 
 export interface PlatformResult {
   success: boolean;
@@ -42,10 +41,21 @@ export async function createFeedAction(
 
     let mediaUrl: string | null = null;
     let mediaType: string | null = null;
+    let mediaNonce: string | null = null;
+    let mediaKey: string | null = null;
+    let mediaMimeType: string | null = null;
     if (media instanceof File && media.size > 0) {
       const saved = await saveMediaUpload(media, "feed-media");
       mediaUrl = saved.url;
       mediaType = saved.kind;
+      const nonce = String(formData.get("mediaNonce") ?? "").trim();
+      const key = String(formData.get("mediaKey") ?? "").trim();
+      const originalMime = String(formData.get("originalMime") ?? "").trim();
+      if (nonce && key) {
+        mediaNonce = nonce;
+        mediaKey = key;
+        mediaMimeType = originalMime || null;
+      }
     }
 
     await prisma.feed.create({
@@ -53,6 +63,9 @@ export async function createFeedAction(
         content: content || " ",
         mediaUrl,
         mediaType,
+        mediaNonce,
+        mediaKey,
+        mediaMimeType,
         userId: session.id,
       },
     });
@@ -94,8 +107,7 @@ export async function deleteFeedAction(
       return { success: false, message: msg(locale, "errors.feedDeleteFailed") };
     }
 
-    const founder = await isPlatformFounder(session.id);
-    if (feed.userId !== session.id && !founder) {
+    if (feed.userId !== session.id) {
       return { success: false, message: msg(locale, "errors.forbidden") };
     }
 
@@ -281,6 +293,9 @@ export async function uploadRepoFileAction(
     if (!repo) return { success: false, message: msg(locale, "errors.repoNotFound") };
     if (repo.ownerId !== session.id) {
       return { success: false, message: msg(locale, "errors.uploadNoPermission") };
+    }
+    if (repo.isEncrypted) {
+      return { success: false, message: msg(locale, "errors.repoEncryptedUseClient") };
     }
     if (!(file instanceof File) || file.size === 0) {
       return { success: false, message: msg(locale, "errors.fileNotSelected") };

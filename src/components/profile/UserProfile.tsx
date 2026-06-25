@@ -174,10 +174,13 @@ export function UserProfile({
                 content={feed.content}
                 mediaUrl={feed.mediaUrl}
                 mediaType={feed.mediaType}
+                mediaNonce={feed.mediaNonce}
+                mediaKey={feed.mediaKey}
+                mediaMimeType={feed.mediaMimeType}
                 createdAt={feed.createdAt}
                 locale={locale}
                 authorUsername={user.username}
-                canDelete={isOwnProfile || canModerateFeeds}
+                canDelete={isOwnProfile}
               />
             ))
           ))}

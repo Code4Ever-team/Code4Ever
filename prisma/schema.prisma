@@ -164,6 +164,9 @@ model Feed {
   content      String    @db.Text
   mediaUrl     String?
   mediaType    String?
+  mediaNonce   String?
+  mediaKey     String?
+  mediaMimeType String?
   userId       String
   repoId       String?
   communityId  String?

@@ -126,3 +126,28 @@ export function serializePayload(payload: EncryptedPayload): string {
 export function parsePayload(raw: string): EncryptedPayload {
   return JSON.parse(raw) as EncryptedPayload;
 }
+
+export async function encryptBinaryWithPeer(
+  data: ArrayBuffer,
+  myPrivateKey: CryptoKey,
+  theirPublicKey: CryptoKey
+): Promise<EncryptedPayload> {
+  const aesKey = await deriveAesKey(myPrivateKey, theirPublicKey);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, aesKey, data);
+  return { ciphertext: bufToB64(ciphertext), iv: bufToB64(iv.buffer) };
+}
+
+export async function decryptBinaryWithPeer(
+  payload: EncryptedPayload,
+  myPrivateKey: CryptoKey,
+  theirPublicKey: CryptoKey
+): Promise<ArrayBuffer> {
+  const aesKey = await deriveAesKey(myPrivateKey, theirPublicKey);
+  const iv = new Uint8Array(b64ToBuf(payload.iv));
+  return crypto.subtle.decrypt(
+    { name: "AES-GCM", iv },
+    aesKey,
+    b64ToBuf(payload.ciphertext)
+  );
+}

@@ -19,6 +19,7 @@ export async function POST(request: Request, { params }: RouteParams) {
 
     const body = (await request.json()) as {
       text?: string;
+      nonce?: string;
       messageKind?: string;
       mediaUrl?: string | null;
       mediaMimeType?: string | null;
@@ -41,7 +42,7 @@ export async function POST(request: Request, { params }: RouteParams) {
         groupId,
         senderId: session.id,
         encryptedContent: text,
-        nonce: "",
+        nonce: String(body.nonce ?? ""),
         messageKind,
         mediaUrl: body.mediaUrl ?? null,
         mediaMimeType: body.mediaMimeType ?? null,

@@ -138,18 +138,44 @@ export async function decryptText(
   return new TextDecoder().decode(plain);
 }
 
+const DEK_STORAGE_PREFIX = "c4e_repo_dek_";
 const dekByRepo = new Map<string, CryptoKey>();
 
-export function storeRepoDek(repoId: string, dek: CryptoKey) {
+export async function storeRepoDek(repoId: string, dek: CryptoKey): Promise<void> {
   dekByRepo.set(repoId, dek);
+  if (typeof window !== "undefined") {
+    const raw = await exportDekRaw(dek);
+    localStorage.setItem(`${DEK_STORAGE_PREFIX}${repoId}`, bufToB64(raw));
+  }
 }
 
 export function getRepoDek(repoId: string): CryptoKey | null {
   return dekByRepo.get(repoId) ?? null;
 }
 
+export async function loadPersistedRepoDek(repoId: string): Promise<CryptoKey | null> {
+  const cached = dekByRepo.get(repoId);
+  if (cached) return cached;
+  if (typeof window === "undefined") return null;
+
+  const stored = localStorage.getItem(`${DEK_STORAGE_PREFIX}${repoId}`);
+  if (!stored) return null;
+
+  try {
+    const dek = await importDekRaw(b64ToBuf(stored));
+    dekByRepo.set(repoId, dek);
+    return dek;
+  } catch {
+    localStorage.removeItem(`${DEK_STORAGE_PREFIX}${repoId}`);
+    return null;
+  }
+}
+
 export function clearRepoDek(repoId: string) {
   dekByRepo.delete(repoId);
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(`${DEK_STORAGE_PREFIX}${repoId}`);
+  }
 }
 
 export function serializeEnvelope(envelope: KeyEnvelope): string {

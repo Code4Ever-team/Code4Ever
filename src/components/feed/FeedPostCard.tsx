@@ -6,6 +6,7 @@ import Link from "next/link";
 import { deleteFeedAction } from "@/lib/actions/platform.actions";
 import type { PlatformResult } from "@/lib/actions/platform.actions";
 import { ExpandableFeedContent } from "@/components/feed/ExpandableFeedContent";
+import { EncryptedMedia } from "@/components/media/EncryptedMedia";
 import { MessageMedia } from "@/components/chat/MessageMedia";
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/Form";
@@ -27,6 +28,9 @@ interface FeedPostCardProps {
   content: string;
   mediaUrl?: string | null;
   mediaType?: string | null;
+  mediaNonce?: string | null;
+  mediaKey?: string | null;
+  mediaMimeType?: string | null;
   createdAt: Date;
   locale: string;
   authorUsername: string;
@@ -39,6 +43,9 @@ export function FeedPostCard({
   content,
   mediaUrl,
   mediaType,
+  mediaNonce,
+  mediaKey,
+  mediaMimeType,
   createdAt,
   locale,
   authorUsername,
@@ -61,14 +68,23 @@ export function FeedPostCard({
           )}
           <div className={showAuthor ? "mt-2 space-y-3" : "space-y-3"}>
             {content.trim() && <ExpandableFeedContent content={content} locale={locale} />}
-            {mediaUrl && mediaType && (
+            {mediaUrl && mediaType && mediaNonce && mediaKey ? (
+              <EncryptedMedia
+                kind={mediaType}
+                mediaUrl={mediaUrl}
+                mediaNonce={mediaNonce}
+                mediaKey={mediaKey}
+                mediaMimeType={mediaMimeType}
+                locale={locale}
+              />
+            ) : mediaUrl && mediaType ? (
               <MessageMedia
                 kind={mediaType}
                 mediaUrl={mediaUrl}
-                mediaMimeType={mediaType === "image" ? "image/jpeg" : "video/mp4"}
+                mediaMimeType={mediaMimeType ?? (mediaType === "image" ? "image/jpeg" : "video/mp4")}
                 locale={locale}
               />
-            )}
+            ) : null}
           </div>
           <time
             className="mt-2 block text-xs text-c4e-muted"

@@ -5,6 +5,9 @@ export interface UserFeedItem {
   content: string;
   mediaUrl: string | null;
   mediaType: string | null;
+  mediaNonce: string | null;
+  mediaKey: string | null;
+  mediaMimeType: string | null;
   createdAt: Date;
 }
 

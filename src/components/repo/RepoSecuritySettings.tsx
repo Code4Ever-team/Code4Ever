@@ -51,7 +51,7 @@ export function RepoSecuritySettings({
       try {
         const dek = await generateDek();
         const envelope = await createKeyEnvelope(password, dek);
-        storeRepoDek(repoId, dek);
+        await storeRepoDek(repoId, dek);
 
         const encryptedFiles = await Promise.all(
           files.map(async (f) => {

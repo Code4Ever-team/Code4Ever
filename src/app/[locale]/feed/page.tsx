@@ -1,6 +1,5 @@
 import { getSession } from "@/lib/auth";
 import { isDatabaseAvailable } from "@/lib/db-safe";
-import { isPlatformFounder } from "@/lib/platform-admin";
 import { loadFeedList } from "@/lib/home-data";
 import { CreateFeedForm } from "@/components/platform/CreateFeedForm";
 import { FeedPostCard } from "@/components/feed/FeedPostCard";
@@ -26,7 +25,6 @@ export default async function FeedPage({ params }: FeedPageProps) {
   }
 
   const feedItems = await loadFeedList();
-  const founder = session ? await isPlatformFounder(session.id) : false;
 
   return (
     <main className="mx-auto max-w-3xl py-6 md:py-10">
@@ -43,13 +41,13 @@ export default async function FeedPage({ params }: FeedPageProps) {
             content={item.content}
             mediaUrl={item.mediaUrl}
             mediaType={item.mediaType}
+            mediaNonce={item.mediaNonce}
+            mediaKey={item.mediaKey}
+            mediaMimeType={item.mediaMimeType}
             createdAt={item.createdAt}
             locale={locale}
             authorUsername={item.user.username}
-            canDelete={
-              session !== null &&
-              (item.user.username === session.username || founder)
-            }
+            canDelete={session !== null && item.user.username === session.username}
             showAuthor
           />
         ))}
