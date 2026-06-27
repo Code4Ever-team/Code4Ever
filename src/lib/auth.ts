@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 import { cookies } from "next/headers";
+import { prisma } from "@/lib/prisma";
 
 // ---------------------------------------------------------------------------
 // Sabitler
@@ -122,7 +123,23 @@ export async function getSession(): Promise<SessionPayload | null> {
 
     if (!token) return null;
 
-    return await verifyToken(token);
+    const payload = await verifyToken(token);
+    if (!payload) return null;
+
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: payload.id },
+        select: { suspendedAt: true },
+      });
+      if (user?.suspendedAt) {
+        cookieStore.delete(COOKIE_NAME);
+        return null;
+      }
+    } catch {
+      /* DB offline — keep session for read paths */
+    }
+
+    return payload;
   } catch (err) {
     console.error("[getSession] Unexpected error:", err);
     return null;

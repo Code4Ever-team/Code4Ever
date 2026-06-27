@@ -25,7 +25,8 @@ interface NavUser {
 interface NavPayload {
   user: NavUser | null;
   communities: NavCommunity[];
-  isFounder: boolean;
+  isPanelAdmin: boolean;
+  isFounder?: boolean;
 }
 
 interface AppShellProps {
@@ -58,7 +59,7 @@ export function AppShell({ locale, session, children }: AppShellProps) {
           setNav({
             user: { username: session.username, avatarUrl: null },
             communities: [],
-            isFounder: false,
+            isPanelAdmin: false,
           });
         }
       });
@@ -82,7 +83,7 @@ export function AppShell({ locale, session, children }: AppShellProps) {
         user={navUser}
         communities={nav?.communities ?? []}
         isLoggedIn={session !== null}
-        isFounder={nav?.isFounder ?? false}
+        isPanelAdmin={nav?.isPanelAdmin ?? false}
       />
       <div className="mx-auto max-w-6xl px-4 pb-24 md:pb-10">{children}</div>
       {session && (

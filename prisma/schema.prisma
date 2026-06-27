@@ -1,4 +1,3 @@
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,54 +7,35 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum CommunityRole {
-  ADMIN
-  MODERATOR
-  MEMBER
-}
-
-enum FollowTargetType {
-  USER
-  COMMUNITY
-}
-
-enum BadgeType {
-  VERIFIED_COMMUNITY
-  VERIFIED_DEVELOPER
-  CORE_TEAM_ADMIN
-}
-
 model User {
-  id            String            @id @default(cuid())
-  email         String            @unique
-  username      String            @unique
-  passwordHash  String
-  bio           String?
-  avatarUrl     String?
-  bannerUrl     String?
-  chatPublicKey String?           @db.Text
-  isFounder     Boolean           @default(false)
-  lastSeenAt    DateTime?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-
-  communitiesOwned Community[]    @relation("CommunityOwner")
+  id               String               @id @default(cuid())
+  email            String               @unique
+  username         String               @unique
+  passwordHash     String
+  bio              String?
+  avatarUrl        String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  bannerUrl        String?
+  isFounder        Boolean              @default(false)
+  suspendedAt      DateTime?
+  chatPublicKey    String?
+  lastSeenAt       DateTime?
+  groupsCreated    ChatGroup[]          @relation("GroupCreator")
   groupMemberships ChatGroupMember[]
-  groupsCreated    ChatGroup[]     @relation("GroupCreator")
-  communityMembers CommunityMember[]
-  reposOwned       Repo[]         @relation("UserOwnedRepos")
-  forks            Fork[]
-  feeds            Feed[]
-  likes            Like[]
-
-  sentMessages     E2EEMessage[]      @relation("SentMessages")
-  receivedMessages E2EEMessage[]      @relation("ReceivedMessages")
   groupMessages    ChatGroupMessage[]
-
-  userBadges       UserBadge[]
-  followerEdges    Follow[]       @relation("FollowTargetUser")
-  followingEdges   Follow[]       @relation("FollowActor")
+  communitiesOwned Community[]          @relation("CommunityOwner")
+  communityMembers CommunityMember[]
+  receivedMessages E2EEMessage[]        @relation("ReceivedMessages")
+  sentMessages     E2EEMessage[]        @relation("SentMessages")
+  feeds            Feed[]
+  followingEdges   Follow[]             @relation("FollowActor")
+  followerEdges    Follow[]             @relation("FollowTargetUser")
+  forks            Fork[]
+  likes            Like[]
   passwordResets   PasswordResetToken[]
+  reposOwned       Repo[]               @relation("UserOwnedRepos")
+  userBadges       UserBadge[]
 
   @@index([createdAt])
 }
@@ -67,29 +47,27 @@ model PasswordResetToken {
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime  @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
 }
 
 model Community {
-  id           String            @id @default(cuid())
-  name         String            @unique
-  displayName  String            @map("display_name")
-  description  String?
-  ownerId      String
-  logoUrl      String?
-  bannerUrl    String?
-  createdAt    DateTime          @default(now())
-
-  owner        User              @relation("CommunityOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  members      CommunityMember[]
-  repos        Repo[]            @relation("CommunityOwnedRepos")
-  feeds        Feed[]
+  id              String            @id @default(cuid())
+  name            String            @unique
+  displayName     String            @map("display_name")
+  description     String?
+  ownerId         String
+  logoUrl         String?
+  bannerUrl       String?
+  createdAt       DateTime          @default(now())
+  owner           User              @relation("CommunityOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   communityBadges CommunityBadge[]
-  followers    Follow[]          @relation("FollowTargetCommunity")
+  members         CommunityMember[]
+  feeds           Feed[]
+  followers       Follow[]          @relation("FollowTargetCommunity")
+  repos           Repo[]            @relation("CommunityOwnedRepos")
 
   @@index([ownerId])
   @@index([createdAt])
@@ -101,9 +79,8 @@ model CommunityMember {
   communityId String
   role        CommunityRole @default(MEMBER)
   joinedAt    DateTime      @default(now())
-
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   community   Community     @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, communityId])
   @@index([communityId, role])
@@ -111,71 +88,67 @@ model CommunityMember {
 }
 
 model Repo {
-  id            String    @id @default(cuid())
-  name          String
-  description   String?
-  isPrivate     Boolean   @default(false)
-  encryptedKey  String?   // @deprecated → keyEnvelope
-  isEncrypted   Boolean   @default(false)
-  keyEnvelope   String?   @db.Text
-  keyVersion    Int       @default(1)
-  collabEnabled Boolean   @default(true)
-  showroomSlug      String?   @unique
-  showroomPublished Boolean   @default(false)
-  ownerId       String?
-  communityId   String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                String     @id @default(cuid())
+  name              String
+  description       String?
+  isPrivate         Boolean    @default(false)
+  encryptedKey      String?
+  ownerId           String?
+  communityId       String?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  showroomPublished Boolean    @default(false)
+  showroomSlug      String?    @unique
+  collabEnabled     Boolean    @default(true)
+  isEncrypted       Boolean    @default(false)
+  keyEnvelope       String?
+  keyVersion        Int        @default(1)
+  feeds             Feed[]
+  childForks        Fork?      @relation("ForkedRepoChildren")
+  sourceForks       Fork[]     @relation("SourceRepoForks")
+  likes             Like[]
+  community         Community? @relation("CommunityOwnedRepos", fields: [communityId], references: [id])
+  owner             User?      @relation("UserOwnedRepos", fields: [ownerId], references: [id])
+  files             RepoFile[]
 
-  owner         User?     @relation("UserOwnedRepos", fields: [ownerId], references: [id], onDelete: SetNull)
-  community     Community? @relation("CommunityOwnedRepos", fields: [communityId], references: [id], onDelete: SetNull)
-
-  sourceForks   Fork[]    @relation("SourceRepoForks")
-  childForks    Fork[]    @relation("ForkedRepoChildren")
-  feeds         Feed[]
-  likes         Like[]
-  files         RepoFile[]
-
+  @@unique([ownerId, name])
+  @@unique([communityId, name])
   @@index([ownerId])
   @@index([communityId])
   @@index([isPrivate])
-  @@unique([ownerId, name])
-  @@unique([communityId, name])
 }
 
 model Fork {
-  id            String   @id @default(cuid())
-  sourceRepoId  String
-  forkedRepoId  String   @unique
-  userId        String
-  createdAt     DateTime @default(now())
+  id           String   @id @default(cuid())
+  sourceRepoId String
+  forkedRepoId String   @unique
+  userId       String
+  createdAt    DateTime @default(now())
+  forkedRepo   Repo     @relation("ForkedRepoChildren", fields: [forkedRepoId], references: [id], onDelete: Cascade)
+  sourceRepo   Repo     @relation("SourceRepoForks", fields: [sourceRepoId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  sourceRepo    Repo     @relation("SourceRepoForks", fields: [sourceRepoId], references: [id], onDelete: Cascade)
-  forkedRepo    Repo     @relation("ForkedRepoChildren", fields: [forkedRepoId], references: [id], onDelete: Cascade)
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
+  @@unique([sourceRepoId, userId])
   @@index([sourceRepoId])
   @@index([userId])
-  @@unique([sourceRepoId, userId])
 }
 
 model Feed {
-  id           String    @id @default(cuid())
-  content      String    @db.Text
-  mediaUrl     String?
-  mediaType    String?
-  mediaNonce   String?
-  mediaKey     String?
+  id            String     @id @default(cuid())
+  content       String
+  userId        String
+  repoId        String?
+  communityId   String?
+  createdAt     DateTime   @default(now())
+  mediaType     String?
+  mediaUrl      String?
+  mediaNonce    String?
+  mediaKey      String?
   mediaMimeType String?
-  userId       String
-  repoId       String?
-  communityId  String?
-  createdAt    DateTime  @default(now())
-
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  repo         Repo?     @relation(fields: [repoId], references: [id], onDelete: SetNull)
-  community    Community? @relation(fields: [communityId], references: [id], onDelete: SetNull)
-  likes        Like[]
+  community     Community? @relation(fields: [communityId], references: [id])
+  repo          Repo?      @relation(fields: [repoId], references: [id])
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  likes         Like[]
 
   @@index([userId, createdAt])
   @@index([repoId])
@@ -183,15 +156,14 @@ model Feed {
 }
 
 model Like {
-  id         String   @id @default(cuid())
-  userId     String
-  feedId     String
-  repoId     String?
-  createdAt  DateTime @default(now())
-
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  feed       Feed     @relation(fields: [feedId], references: [id], onDelete: Cascade)
-  repo       Repo?    @relation(fields: [repoId], references: [id], onDelete: SetNull)
+  id        String   @id @default(cuid())
+  userId    String
+  feedId    String
+  repoId    String?
+  createdAt DateTime @default(now())
+  feed      Feed     @relation(fields: [feedId], references: [id], onDelete: Cascade)
+  repo      Repo?    @relation(fields: [repoId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, feedId])
   @@index([feedId])
@@ -205,29 +177,29 @@ model Follow {
   targetUserId      String?
   targetCommunityId String?
   createdAt         DateTime         @default(now())
-
   follower          User             @relation("FollowActor", fields: [followerId], references: [id], onDelete: Cascade)
-  targetUser        User?            @relation("FollowTargetUser", fields: [targetUserId], references: [id], onDelete: Cascade)
   targetCommunity   Community?       @relation("FollowTargetCommunity", fields: [targetCommunityId], references: [id], onDelete: Cascade)
+  targetUser        User?            @relation("FollowTargetUser", fields: [targetUserId], references: [id], onDelete: Cascade)
 
+  @@unique([followerId, targetUserId])
+  @@unique([followerId, targetCommunityId])
   @@index([followerId, createdAt])
   @@index([targetUserId])
   @@index([targetCommunityId])
-  @@unique([followerId, targetUserId])
-  @@unique([followerId, targetCommunityId])
 }
 
 model Badge {
-  id          String     @id @default(cuid())
-  name        String
-  type        BadgeType
-  svgIcon     String     // Inline SVG string veya bir path/URL
-  createdAt   DateTime   @default(now())
-
-  users       UserBadge[]
-  communities CommunityBadge[]
-
-  @@unique([type, name])
+  id            String           @id @default(cuid())
+  slug          String           @unique
+  nameEn        String           @map("name_en")
+  nameTr        String           @map("name_tr")
+  descriptionEn String           @map("description_en")
+  descriptionTr String           @map("description_tr")
+  icon          String
+  rarity        BadgeRarity      @default(COMMON)
+  createdAt     DateTime         @default(now())
+  communities   CommunityBadge[]
+  users         UserBadge[]
 }
 
 model UserBadge {
@@ -235,9 +207,8 @@ model UserBadge {
   userId    String
   badgeId   String
   createdAt DateTime @default(now())
-
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   badge     Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, badgeId])
   @@index([badgeId])
@@ -248,9 +219,8 @@ model CommunityBadge {
   communityId String
   badgeId     String
   createdAt   DateTime  @default(now())
-
-  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
   badge       Badge     @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
 
   @@unique([communityId, badgeId])
   @@index([badgeId])
@@ -260,16 +230,15 @@ model RepoFile {
   id               String   @id @default(cuid())
   repoId           String
   path             String
-  content          String?  @db.Text
-  encryptedContent String?  @db.Text
-  ciphertext       String?  @db.Text
-  nonce            String?
-  revision         Int      @default(0)
+  content          String?
+  encryptedContent String?
   mimeType         String?
   size             Int      @default(0)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
-
+  ciphertext       String?
+  nonce            String?
+  revision         Int      @default(0)
   repo             Repo     @relation(fields: [repoId], references: [id], onDelete: Cascade)
 
   @@unique([repoId, path])
@@ -280,64 +249,78 @@ model E2EEMessage {
   id               String   @id @default(cuid())
   senderId         String
   receiverId       String
-  encryptedContent String   @default("") @db.Text
+  encryptedContent String   @default("")
   nonce            String   @default("")
-  messageKind      String   @default("text")
-  mediaUrl         String?
-  mediaMimeType    String?
-  fileName         String?
   createdAt        DateTime @default(now())
-
-  sender           User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  fileName         String?
+  mediaMimeType    String?
+  mediaUrl         String?
+  messageKind      String   @default("text")
   receiver         User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  sender           User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([senderId, receiverId, createdAt])
   @@index([receiverId, createdAt])
 }
 
 model ChatGroup {
-  id          String   @id @default(cuid())
+  id          String             @id @default(cuid())
   name        String
   createdById String
   avatarUrl   String?
-  createdAt   DateTime @default(now())
-
-  creator  User              @relation("GroupCreator", fields: [createdById], references: [id], onDelete: Cascade)
-  members  ChatGroupMember[]
-  messages ChatGroupMessage[]
+  createdAt   DateTime           @default(now())
+  creator     User               @relation("GroupCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  members     ChatGroupMember[]
+  messages    ChatGroupMessage[]
 
   @@index([createdById])
 }
 
 model ChatGroupMember {
-  id       String   @id @default(cuid())
+  id       String    @id @default(cuid())
   groupId  String
   userId   String
-  role     String   @default("MEMBER")
-  joinedAt DateTime @default(now())
-
-  group ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     String    @default("MEMBER")
+  joinedAt DateTime  @default(now())
+  group    ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([groupId, userId])
   @@index([userId])
 }
 
 model ChatGroupMessage {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   groupId          String
   senderId         String
-  encryptedContent String   @default("") @db.Text
-  nonce            String   @default("")
-  messageKind      String   @default("text")
+  encryptedContent String    @default("")
+  nonce            String    @default("")
+  messageKind      String    @default("text")
   mediaUrl         String?
   mediaMimeType    String?
   fileName         String?
-  createdAt        DateTime @default(now())
-
-  group  ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  sender User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  createdAt        DateTime  @default(now())
+  group            ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sender           User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([groupId, createdAt])
   @@index([senderId])
+}
+
+enum CommunityRole {
+  ADMIN
+  MODERATOR
+  MEMBER
+}
+
+enum FollowTargetType {
+  USER
+  COMMUNITY
+}
+
+enum BadgeRarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
 }

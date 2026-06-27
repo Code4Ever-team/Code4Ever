@@ -3,10 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { savePublicUpload } from "@/lib/upload";
-import { saveMediaUpload } from "@/lib/media-upload";
 import { logger } from "@/lib/logger";
 import { msg } from "@/lib/messages";
+import { AuthorizationError, AuthRequiredError } from "@/lib/errors";
+import { savePublicUpload, saveProfileImageUpload } from "@/lib/upload";
+import { saveMediaUpload } from "@/lib/media-upload";
 
 export interface PlatformResult {
   success: boolean;
@@ -20,7 +21,7 @@ function localeOf(formData: FormData): string {
 async function requireSession() {
   const session = await getSession();
   if (!session) {
-    throw new Error("AUTH_REQUIRED");
+    throw new AuthRequiredError();
   }
   return session;
 }
@@ -108,7 +109,7 @@ export async function deleteFeedAction(
     }
 
     if (feed.userId !== session.id) {
-      return { success: false, message: msg(locale, "errors.forbidden") };
+      throw new AuthorizationError("FEED_DELETE_FORBIDDEN");
     }
 
     await prisma.feed.delete({ where: { id: feedId } });
@@ -119,8 +120,12 @@ export async function deleteFeedAction(
     revalidatePath(`/${locale}/${feed.user.username}`);
     return { success: true, message: msg(locale, "errors.feedDeleted") };
   } catch (error) {
-    if (error instanceof Error && error.message === "AUTH_REQUIRED") {
+    if (error instanceof AuthRequiredError) {
       return { success: false, message: msg(locale, "errors.authRequired") };
+    }
+    if (error instanceof AuthorizationError) {
+      logger.warn("deleteFeedAction forbidden", { feedId: String(formData.get("feedId") ?? "") });
+      return { success: false, message: msg(locale, "errors.forbidden") };
     }
     logger.error("deleteFeedAction failed", { error });
     return { success: false, message: msg(locale, "errors.feedDeleteFailed") };
@@ -245,33 +250,67 @@ export async function updateProfileAction(
     let bannerUrl: string | undefined;
 
     if (avatar instanceof File && avatar.size > 0) {
-      avatarUrl = await savePublicUpload(avatar, "avatars");
-    }
-    if (banner instanceof File && banner.size > 0) {
-      bannerUrl = await savePublicUpload(banner, "banners");
+      try {
+        avatarUrl = await saveProfileImageUpload(avatar, "avatars");
+        logger.info("updateProfileAction avatar uploaded", { userId: session.id, avatarUrl });
+      } catch (uploadErr) {
+        logger.error("updateProfileAction avatar upload failed", {
+          userId: session.id,
+          size: avatar.size,
+          type: avatar.type,
+          error: uploadErr,
+        });
+        if (uploadErr instanceof Error) {
+          if (uploadErr.message === "FILE_TOO_LARGE") {
+            return { success: false, message: msg(locale, "errors.fileTooLarge") };
+          }
+          if (uploadErr.message === "FILE_TYPE_BLOCKED") {
+            return { success: false, message: msg(locale, "errors.fileTypeBlocked") };
+          }
+          if (uploadErr.message === "STORAGE_UNAVAILABLE") {
+            return { success: false, message: msg(locale, "errors.storageUnavailable") };
+          }
+        }
+        return { success: false, message: msg(locale, "errors.profileUpdateFailed") };
+      }
     }
 
-    await prisma.user.update({
-      where: { id: session.id },
-      data: {
-        bio: bio || null,
-        ...(avatarUrl ? { avatarUrl } : {}),
-        ...(bannerUrl ? { bannerUrl } : {}),
-      },
-    });
+    if (banner instanceof File && banner.size > 0) {
+      try {
+        bannerUrl = await saveProfileImageUpload(banner, "banners");
+        logger.info("updateProfileAction banner uploaded", { userId: session.id, bannerUrl });
+      } catch (uploadErr) {
+        logger.error("updateProfileAction banner upload failed", {
+          userId: session.id,
+          error: uploadErr,
+        });
+        return { success: false, message: msg(locale, "errors.profileUpdateFailed") };
+      }
+    }
+
+    try {
+      await prisma.user.update({
+        where: { id: session.id },
+        data: {
+          bio: bio || null,
+          ...(avatarUrl ? { avatarUrl } : {}),
+          ...(bannerUrl ? { bannerUrl } : {}),
+        },
+      });
+    } catch (dbErr) {
+      logger.error("updateProfileAction database update failed", {
+        userId: session.id,
+        error: dbErr,
+      });
+      return { success: false, message: msg(locale, "errors.profileUpdateFailed") };
+    }
 
     revalidatePath(`/${locale}/${session.username}`);
     revalidatePath(`/${locale}/settings`);
     return { success: true, message: msg(locale, "errors.profileUpdated") };
   } catch (error) {
-    if (error instanceof Error && error.message === "AUTH_REQUIRED") {
+    if (error instanceof AuthRequiredError) {
       return { success: false, message: msg(locale, "errors.authRequired") };
-    }
-    if (error instanceof Error && error.message === "FILE_TOO_LARGE") {
-      return { success: false, message: msg(locale, "errors.fileTooLarge") };
-    }
-    if (error instanceof Error && error.message === "FILE_TYPE_BLOCKED") {
-      return { success: false, message: msg(locale, "errors.fileTypeBlocked") };
     }
     logger.error("updateProfileAction failed", { error });
     return { success: false, message: msg(locale, "errors.profileUpdateFailed") };

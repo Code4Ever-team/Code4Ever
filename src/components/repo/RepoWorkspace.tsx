@@ -357,7 +357,7 @@ export function RepoWorkspace({
         )}
       </div>
 
-      <div className="grid min-h-[28rem] grid-cols-1 md:grid-cols-[14rem_1fr]">
+      <div className="grid min-h-[calc(100vh-10rem)] grid-cols-1 md:grid-cols-[14rem_1fr]">
         <aside className="border-b border-border md:border-b-0 md:border-r">
           <ul className="max-h-80 overflow-y-auto p-2 md:max-h-none">
             {paths.map((path) => (
@@ -398,10 +398,10 @@ export function RepoWorkspace({
           )}
         </aside>
 
-        <div className="flex flex-col">
+        <div className="flex min-h-[min(70vh,42rem)] flex-col md:min-h-0">
           {selectedPath ? (
             <>
-              <div className="flex items-center justify-between border-b border-border px-3 py-2">
+              <div className="flex items-center justify-between border-b border-border px-3 py-2 md:hidden">
                 <span className="font-mono text-xs text-primary">{selectedPath}</span>
                 {canEdit && unlocked && (
                   <Button type="button" size="sm" variant="ghost" onClick={removeFile} disabled={pending}>

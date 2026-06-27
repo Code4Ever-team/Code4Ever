@@ -45,5 +45,27 @@ export async function sendMail(options: {
 }
 
 export function appBaseUrl(): string {
-  return (process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3000").replace(/\/$/, "");
+  const fromSite = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  const fromApp = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  const vercelPublic = process.env.NEXT_PUBLIC_VERCEL_URL?.trim();
+  const vercelHost = process.env.VERCEL_URL?.trim();
+
+  let base =
+    fromSite ||
+    fromApp ||
+    (vercelPublic ? normalizeHost(vercelPublic) : "") ||
+    (vercelHost ? normalizeHost(vercelHost) : "") ||
+    "http://127.0.0.1:3000";
+
+  if (!/^https?:\/\//i.test(base)) {
+    base = `https://${base}`;
+  }
+
+  return base.replace(/\/$/, "");
+}
+
+function normalizeHost(value: string): string {
+  const trimmed = value.trim().replace(/\/$/, "");
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
 }

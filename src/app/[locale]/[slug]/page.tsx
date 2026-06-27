@@ -24,6 +24,7 @@ const RESERVED_SLUGS = new Set([
   "dashboard",
   "settings",
   "admin",
+  "p4nel",
   "p",
 ]);
 
@@ -127,6 +128,22 @@ async function fetchUserProfile(
               forkedRepo: { select: { id: true, name: true } },
             },
           },
+          userBadges: {
+            select: {
+              badge: {
+                select: {
+                  id: true,
+                  slug: true,
+                  nameEn: true,
+                  nameTr: true,
+                  descriptionEn: true,
+                  descriptionTr: true,
+                  icon: true,
+                  rarity: true,
+                },
+              },
+            },
+          },
           _count: {
             select: {
               feeds: true,
@@ -150,6 +167,7 @@ async function fetchUserProfile(
 
       const profile = row as unknown as UserProfileType;
       profile._count = { ...profile._count, reposOwned: repoCount };
+      profile.badges = (row.userBadges ?? []).map((ub) => ub.badge);
       if (!isOwner) {
         profile.email = "";
       }

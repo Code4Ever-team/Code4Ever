@@ -1,20 +1,20 @@
 {
   "project_name": "Code4Ever (C4E)",
-  "arch_vision": "Decentralized, E2EE-First, Bilingual Social-Coding Network",
+  "arch_vision": "Centralized E2EE-First Bilingual Social-Coding Network (Zero-Trust Relay Architecture)",
   "rules": {
-    "security": "WebCrypto API only, No cleartext on server, Zero-Trust relay architecture.",
-    "frontend": "Next.js 14+, Tailwind, Framer Motion. Cyberpunk dark-mode is mandatory.",
-    "i18n": "All strings must be handled via i18n translation keys. Default locale: 'en', support: 'tr'.",
-    "auth": "Guest access: Read-Only. Interaction: Authenticated-Only.",
-    "routing": "c4e.com/[slug] resolution logic: User, Community, or Server entity types.",
-    "performance": "Server Actions for DB, WebSockets for Relay. Prisma for all DB interactions.",
-    "error_handling": "Try-Catch blocks mandatory. Custom error types for network failures."
+    "security": "WebCrypto API only. No cleartext storage or processing on server. Pure Zero-Trust relay architecture where the server acts strictly as an encrypted message/data router.",
+    "frontend": "Next.js 14+ (App Router), Tailwind CSS, Framer Motion. Cyberpunk dark-mode is mandatory (#000000 base).",
+    "i18n": "All strings must be handled via i18n translation keys. Default locale: 'en', fallback/support: 'tr'. Never hardcode text.",
+    "auth": "Guest access: Read-Only. Interaction & Mutation: Authenticated-Only via NextAuth/custom JWT.",
+    "routing": "c4e.com/[slug] resolution logic: Dynamically resolve entity types in the order of User, Community, or Server.",
+    "performance": "Server Actions for traditional DB operations, standard WebSockets for the Centralized Relay server. Prisma ORM for all PostgreSQL/DB interactions.",
+    "error_handling": "Try-Catch blocks mandatory on all Server Actions and API routes. Custom unified error types for network and cryptographic failures."
   },
   "visuals": {
     "background": "#000000",
     "accent": "#007acc",
     "text_primary": "#ffffff",
-    "border_style": "Sharp/Rigid edges (Shadcn minimal)",
+    "border_style": "Sharp/Rigid edges (Shadcn minimal style)",
     "font": "JetBrains Mono / Inter"
   }
 }

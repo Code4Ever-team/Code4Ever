@@ -1,6 +1,6 @@
 import { put } from "@vercel/blob";
 
-export type BlobMediaFolder = "chat-media" | "feed-media";
+export type BlobMediaFolder = "chat-media" | "feed-media" | "avatars" | "banners";
 
 export function isBlobConfigured(): boolean {
   return Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim());

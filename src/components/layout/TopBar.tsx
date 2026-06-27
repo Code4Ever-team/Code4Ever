@@ -13,7 +13,7 @@ interface TopBarProps {
   user: BottomNavUser | null;
   communities: BottomNavCommunity[];
   isLoggedIn: boolean;
-  isFounder?: boolean;
+  isPanelAdmin?: boolean;
 }
 
 function UserAvatar({ user }: { user: BottomNavUser }) {
@@ -35,7 +35,7 @@ function UserAvatar({ user }: { user: BottomNavUser }) {
   );
 }
 
-export function TopBar({ user, communities, isLoggedIn, isFounder = false }: TopBarProps) {
+export function TopBar({ user, communities, isLoggedIn, isPanelAdmin = false }: TopBarProps) {
   const locale = useLocale();
   const t = useTranslations();
   const base = `/${locale}`;
@@ -89,7 +89,7 @@ export function TopBar({ user, communities, isLoggedIn, isFounder = false }: Top
 
           {isLoggedIn && user ? (
             <>
-              {isFounder && (
+              {isPanelAdmin && (
                 <Button asChild variant="ghost" className="hidden h-9 px-2 text-xs sm:inline-flex">
                   <Link href={`${base}/admin`}>{t("nav.admin")}</Link>
                 </Button>

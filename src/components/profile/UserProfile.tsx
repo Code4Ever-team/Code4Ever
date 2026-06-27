@@ -9,6 +9,7 @@ import { FeedPostCard } from "@/components/feed/FeedPostCard";
 import { FollowButton } from "@/components/profile/FollowButton";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { UserBadgeList } from "@/components/badges/UserBadgeChip";
 import type { UserProfile as UserProfileType } from "@/types/profile";
 
 interface UserProfileProps {
@@ -41,6 +42,7 @@ function Avatar({
         height={size}
         className="rounded-full object-cover ring-2 ring-c4e-neon/40"
         priority
+        unoptimized={url.startsWith("http")}
       />
     );
   }
@@ -59,7 +61,7 @@ function Banner({ url }: { url: string | null }) {
   if (url) {
     return (
       <div className="relative h-40 w-full overflow-hidden">
-        <Image src={url} alt="" fill className="object-cover" priority />
+        <Image src={url} alt="" fill className="object-cover" priority unoptimized={url.startsWith("http")} />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/50" />
       </div>
     );
@@ -77,6 +79,7 @@ export function UserProfile({
   canMessage = false,
 }: UserProfileProps) {
   const t = useTranslations("profile");
+  const tb = useTranslations("badges");
   const tp = useTranslations("platform");
   const [activeTab, setActiveTab] = useState<TabKey>("feed");
   const [lockOpen, setLockOpen] = useState(false);
@@ -105,6 +108,16 @@ export function UserProfile({
               {user.bio && (
                 <p className="mt-1.5 text-sm text-c4e-muted leading-relaxed">{user.bio}</p>
               )}
+              <div className="mt-4">
+                <p className="mb-2 text-xs font-medium uppercase tracking-wider text-c4e-muted">
+                  {tb("profileTitle")}
+                </p>
+                <UserBadgeList
+                  badges={user.badges ?? []}
+                  locale={locale}
+                  emptyLabel={tb("empty")}
+                />
+              </div>
               <div className="mt-3 flex flex-wrap gap-5 text-sm text-c4e-muted">
                 <span>
                   <strong className="text-foreground">{user._count.followerEdges}</strong>{" "}

@@ -34,7 +34,7 @@ export function ProfileEditForm({ locale, bio }: ProfileEditFormProps) {
 
   return (
     <Card className="p-4">
-      <Form action={action} className="space-y-3">
+      <Form action={action} encType="multipart/form-data" className="space-y-3">
         <input type="hidden" name="locale" value={locale} />
         <div className="space-y-2">
           <Label htmlFor="bio">{t("bio")}</Label>
@@ -42,11 +42,21 @@ export function ProfileEditForm({ locale, bio }: ProfileEditFormProps) {
         </div>
         <div className="space-y-2">
           <Label htmlFor="avatar">{t("avatar")}</Label>
-          <Input id="avatar" name="avatar" type="file" accept="image/*" />
+          <Input
+            id="avatar"
+            name="avatar"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+          />
         </div>
         <div className="space-y-2">
           <Label htmlFor="banner">{t("banner")}</Label>
-          <Input id="banner" name="banner" type="file" accept="image/*" />
+          <Input
+            id="banner"
+            name="banner"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+          />
         </div>
         <SubmitBtn />
         {state.message && (

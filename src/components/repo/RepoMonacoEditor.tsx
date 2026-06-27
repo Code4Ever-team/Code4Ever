@@ -1,10 +1,13 @@
 "use client";
 
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Editor, { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { Maximize2, Minimize2 } from "lucide-react";
 import type { editor as MonacoEditor } from "monaco-editor";
 import type { RemotePresence } from "@/hooks/useCollabSession";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 loader.config({ monaco });
 
@@ -26,7 +29,10 @@ export function RepoMonacoEditor({
   remotePresence,
 }: RepoMonacoEditorProps) {
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const decorationsRef = useRef<string[]>([]);
+  const [editorHeight, setEditorHeight] = useState(480);
+  const [fullScreen, setFullScreen] = useState(false);
 
   const language = useMemo(() => {
     if (path.endsWith(".html")) return "html";
@@ -63,29 +69,81 @@ export function RepoMonacoEditor({
     applyDecorations();
   }, [applyDecorations]);
 
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const measure = () => {
+      const next = Math.max(320, el.clientHeight);
+      setEditorHeight(next);
+      editorRef.current?.layout();
+    };
+
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fullScreen, path]);
+
+  useEffect(() => {
+    if (!fullScreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFullScreen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullScreen]);
+
   return (
-    <Editor
-      height="24rem"
-      language={language}
-      theme="vs-dark"
-      value={value}
-      options={{
-        readOnly,
-        minimap: { enabled: false },
-        fontFamily: "JetBrains Mono, monospace",
-        fontSize: 13,
-        scrollBeyondLastLine: false,
-        glyphMargin: true,
-        lineNumbers: "on",
-      }}
-      onMount={(ed) => {
-        editorRef.current = ed;
-        ed.onDidChangeCursorPosition((e) => {
-          onCursorMove?.(e.position.lineNumber, e.position.column);
-        });
-        applyDecorations();
-      }}
-      onChange={(v) => onChange(v ?? "")}
-    />
+    <div
+      ref={containerRef}
+      className={cn(
+        "relative flex w-full flex-1 flex-col bg-black",
+        fullScreen
+          ? "fixed inset-0 z-[200] min-h-screen border border-primary/30"
+          : "min-h-[min(70vh,42rem)]"
+      )}
+    >
+      <div className="flex items-center justify-between border-b border-border bg-black/80 px-2 py-1">
+        <span className="truncate font-mono text-[10px] text-muted-foreground">{path}</span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0"
+          onClick={() => setFullScreen((v) => !v)}
+          aria-label={fullScreen ? "Exit full screen" : "Full screen"}
+        >
+          {fullScreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+        </Button>
+      </div>
+      <div className="min-h-0 flex-1">
+        <Editor
+          height={`${editorHeight}px`}
+          language={language}
+          theme="vs-dark"
+          value={value}
+          options={{
+            readOnly,
+            minimap: { enabled: false },
+            fontFamily: "JetBrains Mono, monospace",
+            fontSize: 13,
+            scrollBeyondLastLine: false,
+            glyphMargin: true,
+            lineNumbers: "on",
+            automaticLayout: true,
+          }}
+          onMount={(ed) => {
+            editorRef.current = ed;
+            ed.onDidChangeCursorPosition((e) => {
+              onCursorMove?.(e.position.lineNumber, e.position.column);
+            });
+            applyDecorations();
+            ed.layout();
+          }}
+          onChange={(v) => onChange(v ?? "")}
+        />
+      </div>
+    </div>
   );
 }

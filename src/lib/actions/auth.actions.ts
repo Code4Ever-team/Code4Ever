@@ -165,6 +165,7 @@ export async function loginUser(
         username: true,
         email: true,
         passwordHash: true,
+        suspendedAt: true,
       },
     });
 
@@ -178,6 +179,10 @@ export async function loginUser(
 
     if (!passwordMatch) {
       return { success: false, message: msg(locale, "errors.loginFailed") };
+    }
+
+    if (user.suspendedAt) {
+      return { success: false, message: msg(locale, "errors.accountSuspended") };
     }
 
     // JWT üret ve cookie'ye yaz

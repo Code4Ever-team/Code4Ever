@@ -2,11 +2,11 @@ import { redirect } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { isPlatformFounder } from "@/lib/platform-admin";
+import { isPlatformPanelAdmin } from "@/lib/platform-panel";
 import { isDatabaseAvailable } from "@/lib/db-safe";
 import { DbOffline } from "@/components/system/DbOffline";
 import { Card } from "@/components/ui/card";
-import { AdminFeedRow } from "@/components/admin/AdminFeedRow";
+import { AdminDashboard } from "@/components/admin/AdminDashboard";
 
 interface AdminPageProps {
   params: Promise<{ locale: string }>;
@@ -21,11 +21,11 @@ export default async function AdminPage({ params }: AdminPageProps) {
     redirect(`/${locale}/login?redirect=/${locale}/admin`);
   }
 
-  const founder = await isPlatformFounder(session.id);
-  if (!founder) {
+  const panelAdmin = await isPlatformPanelAdmin(session.id);
+  if (!panelAdmin) {
     return (
       <main className="mx-auto max-w-3xl py-10">
-        <Card className="p-6 text-center">
+        <Card className="border-border p-6 text-center">
           <p className="text-sm text-destructive">{t("forbidden")}</p>
         </Card>
       </main>
@@ -41,7 +41,7 @@ export default async function AdminPage({ params }: AdminPageProps) {
     );
   }
 
-  const [userCount, feedCount, repoCount, feeds, users] = await Promise.all([
+  const [userCount, feedCount, repoCount, feeds, users, badges] = await Promise.all([
     prisma.user.count(),
     prisma.feed.count(),
     prisma.repo.count(),
@@ -56,80 +56,37 @@ export default async function AdminPage({ params }: AdminPageProps) {
       },
     }),
     prisma.user.findMany({
-      take: 50,
-      orderBy: { createdAt: "asc" },
+      take: 200,
+      orderBy: { createdAt: "desc" },
       select: {
         id: true,
         username: true,
         email: true,
+        avatarUrl: true,
         isFounder: true,
+        suspendedAt: true,
         createdAt: true,
       },
     }),
+    prisma.badge.findMany({ orderBy: { createdAt: "desc" } }),
   ]);
 
   return (
-    <main className="mx-auto max-w-3xl py-6 md:py-10">
-      <header className="mb-6 border-b border-border pb-4">
-        <h1 className="text-xl font-semibold text-foreground">{t("title")}</h1>
-        <p className="mt-1 text-sm text-c4e-muted">{t("subtitle")}</p>
-      </header>
-
-      <div className="mb-8 grid grid-cols-3 gap-3">
-        <Card className="p-4 text-center">
-          <p className="text-2xl font-bold text-c4e-neon">{userCount}</p>
-          <p className="mt-1 text-xs text-c4e-muted">{t("statsUsers")}</p>
-        </Card>
-        <Card className="p-4 text-center">
-          <p className="text-2xl font-bold text-c4e-neon">{feedCount}</p>
-          <p className="mt-1 text-xs text-c4e-muted">{t("statsFeeds")}</p>
-        </Card>
-        <Card className="p-4 text-center">
-          <p className="text-2xl font-bold text-c4e-neon">{repoCount}</p>
-          <p className="mt-1 text-xs text-c4e-muted">{t("statsRepos")}</p>
-        </Card>
-      </div>
-
-      <section className="mb-8">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-c4e-muted">
-          {t("feedsSection")}
-        </h2>
-        {feeds.length === 0 ? (
-          <p className="text-sm text-c4e-muted">{t("noFeeds")}</p>
-        ) : (
-          <ul className="space-y-2">
-            {feeds.map((feed) => (
-              <AdminFeedRow
-                key={feed.id}
-                id={feed.id}
-                content={feed.content}
-                author={feed.user.username}
-                createdAt={feed.createdAt}
-                locale={locale}
-              />
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-c4e-muted">
-          {t("usersSection")}
-        </h2>
-        <ul className="space-y-2">
-          {users.map((u) => (
-            <li
-              key={u.id}
-              className="flex items-center justify-between rounded-lg border border-border bg-card/40 px-4 py-3 text-sm"
-            >
-              <span className="font-medium text-foreground">@{u.username}</span>
-              <span className="text-xs text-c4e-muted">
-                {u.isFounder ? "★" : ""} {new Date(u.createdAt).toLocaleDateString()}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
+    <main className="mx-auto max-w-5xl py-6 md:py-10">
+      <AdminDashboard
+        locale={locale}
+        userCount={userCount}
+        feedCount={feedCount}
+        repoCount={repoCount}
+        users={users}
+        feeds={feeds.map((f) => ({
+          id: f.id,
+          content: f.content,
+          createdAt: f.createdAt,
+          author: f.user.username,
+        }))}
+        badges={badges}
+      />
     </main>
   );
 }

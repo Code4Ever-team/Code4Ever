@@ -26,6 +26,17 @@ export interface UserForkItem {
   forkedRepo: { id: string; name: string };
 }
 
+export interface UserBadgeItem {
+  id: string;
+  slug: string;
+  nameEn: string;
+  nameTr: string;
+  descriptionEn: string;
+  descriptionTr: string;
+  icon: string;
+  rarity: "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
+}
+
 export interface UserProfile {
   id: string;
   username: string;
@@ -34,6 +45,7 @@ export interface UserProfile {
   avatarUrl: string | null;
   bannerUrl: string | null;
   createdAt: Date;
+  badges: UserBadgeItem[];
   feeds: UserFeedItem[];
   reposOwned: UserRepoItem[];
   forks: UserForkItem[];
