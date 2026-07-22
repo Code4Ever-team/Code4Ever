@@ -7,11 +7,11 @@ import { HomeHero } from "@/components/home/HomeHero";
 import { DbOffline } from "@/components/system/DbOffline";
 
 interface HomePageProps {
-  params: Promise<{ locale: string }>;
+  params: { locale: string };
 }
 
 export default async function HomePage({ params }: HomePageProps) {
-  const { locale } = await params;
+  const { locale } = params;
   const session = await getSession();
   const dbOk = await isDatabaseAvailable();
 

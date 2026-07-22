@@ -1,15 +1,17 @@
 import Link from "next/link";
+import { getJubbioAuthUrl } from "@/lib/jubbio";
 import { Suspense } from "react";
 import { getTranslations } from "next-intl/server";
 import { LoginForm } from "@/components/auth/LoginForm";
 
 interface LoginPageProps {
-  params: Promise<{ locale: string }>;
+  params: { locale: string };
 }
 
 export default async function LoginPage({ params }: LoginPageProps) {
-  const { locale } = await params;
+  const { locale } = params;
   const t = await getTranslations();
+  const authUrl = getJubbioAuthUrl();
 
   return (
     <main className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center py-10">
@@ -23,7 +25,7 @@ export default async function LoginPage({ params }: LoginPageProps) {
         </header>
 
         <Suspense fallback={<div className="h-64 animate-pulse rounded-lg bg-card/40" />}>
-          <LoginForm locale={locale} />
+          <LoginForm locale={locale} authUrl={authUrl} />
         </Suspense>
 
         <p className="mt-6 text-center text-sm text-c4e-muted">

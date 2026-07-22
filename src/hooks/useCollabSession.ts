@@ -88,7 +88,6 @@ export function useCollabSession({
           onRemotePresence?.(new Map(peersRef.current));
         }
       } catch {
-        /* ignore */
       }
     };
 

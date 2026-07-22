@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Form } from "@/components/ui/Form";
 import { Input } from "@/components/ui/input";
+import { JubbioLoginButton } from "@/components/auth/JubbioLoginButton";
 import { registerAction } from "@/lib/actions/auth.actions";
 import { initialAuthFormState, type AuthFormState } from "@/lib/actions/auth.form-state";
 
@@ -22,9 +23,10 @@ function SubmitButton() {
 
 interface RegisterFormProps {
   locale: string;
+  authUrl: string;
 }
 
-export function RegisterForm({ locale }: RegisterFormProps) {
+export function RegisterForm({ locale, authUrl }: RegisterFormProps) {
   const t = useTranslations();
   const [state, formAction] = useFormState<AuthFormState, FormData>(
     registerAction,
@@ -83,6 +85,15 @@ export function RegisterForm({ locale }: RegisterFormProps) {
 
         <div className="mt-5">
           <SubmitButton />
+        </div>
+
+        <div className="mt-5 flex flex-col items-center justify-center w-full">
+          <div className="relative w-full mb-4 text-center before:content-[''] before:absolute before:top-1/2 before:left-0 before:w-full before:h-[1px] before:bg-zinc-800">
+            <span className="relative bg-[#09090b] px-3 text-xs text-c4e-muted uppercase tracking-wider">
+              Veya
+            </span>
+          </div>
+          <JubbioLoginButton authUrl={authUrl} />
         </div>
 
         {state.message && !state.success && (

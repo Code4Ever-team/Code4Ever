@@ -7,7 +7,6 @@ import {
   getOrCreateChatKeyPair,
 } from "@/lib/crypto/e2ee-chat";
 
-/** İlk mesajlaşmada cihaz anahtarını üretir ve açık anahtarı sunucuya yazar. */
 export function ChatKeySetup() {
   useEffect(() => {
     let cancelled = false;
@@ -18,7 +17,6 @@ export function ChatKeySetup() {
         const jwk = await exportPublicKeyJwk(pair.publicKey);
         if (!cancelled) await saveChatPublicKeyAction(jwk);
       } catch {
-        // Tarayıcı Web Crypto desteklemiyorsa sessiz kal
       }
     }
 

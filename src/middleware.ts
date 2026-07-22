@@ -4,13 +4,6 @@ import createMiddleware from "next-intl/middleware";
 import { isLocale, locales, defaultLocale } from "@/i18n/routing";
 import { verifySession } from "@/lib/session";
 
-/**
- * Session Guard (Edge Middleware)
- *
- * Kurallar:
- * - `/dashboard` ve `/chat` (ve alt yolları) → sadece giriş yapmış kullanıcı.
- * - `/login` ve `/register` → giriş yapmış kullanıcıyı `/dashboard`'a yönlendir.
- */
 const handleI18n = createMiddleware({
   locales: [...locales],
   defaultLocale,
@@ -20,7 +13,6 @@ const handleI18n = createMiddleware({
 export default async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Eski istemci yolları: /tr/relay/... → /api/relay/...
   const localeRelay = pathname.match(/^\/(tr|en)\/relay(\/.*)?$/);
   if (localeRelay) {
     const suffix = localeRelay[2] ?? "";
@@ -29,14 +21,12 @@ export default async function middleware(req: NextRequest) {
     return NextResponse.rewrite(url);
   }
 
-  // 1) Locale routing / redirect handling (e.g. /login -> /en/login)
   const i18nResponse = handleI18n(req);
-  // next-intl bazen redirect döndürür; o durumda auth guard'ı çalıştırmadan dön.
+
   if (i18nResponse && i18nResponse.headers.get("location")) {
     return i18nResponse;
   }
 
-  // /{locale}/...
   const localeSegment = pathname.split("/")[1] ?? "";
   const locale = isLocale(localeSegment) ? localeSegment : defaultLocale;
   const basePath = pathname.replace(new RegExp(`^/(${locales.join("|")})(?=/|$)`), "") || "/";

@@ -10,7 +10,6 @@ function createPrismaClient(): PrismaClient {
   });
 }
 
-/** Serverless ortamlarda bağlantı sızıntısını önlemek için singleton. */
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
 if (!globalForPrisma.prisma) {

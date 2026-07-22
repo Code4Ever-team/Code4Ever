@@ -68,10 +68,8 @@ export function MessageNotificationProvider({
       }
       audioRef.current.currentTime = 0;
       void audioRef.current.play().catch(() => {
-        /* tarayıcı otomatik oynatmayı engelleyebilir */
       });
     } catch {
-      /* ses dosyası yoksa sessiz geç */
     }
   }, []);
 
@@ -93,7 +91,6 @@ export function MessageNotificationProvider({
           n.close();
         };
       } catch {
-        /* bazı ortamlarda Notification oluşturulamaz */
       }
     },
     [locale, t]
@@ -140,7 +137,6 @@ export function MessageNotificationProvider({
         handleIncoming(data.messages);
       }
     } catch {
-      /* ağ hatası */
     }
   }, [handleIncoming, onChatRoute]);
 

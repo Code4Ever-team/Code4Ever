@@ -5,7 +5,6 @@ interface ShowroomFrameProps {
   title: string;
 }
 
-/** Kullanıcının .pub/index.html — tam ekran sandbox iframe, navbar yok. */
 export function ShowroomFrame({ html, title }: ShowroomFrameProps) {
   return (
     <iframe

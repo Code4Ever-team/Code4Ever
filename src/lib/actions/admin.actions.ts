@@ -177,7 +177,7 @@ export async function adminDeleteUserAction(userId: string, locale: string): Pro
         admin.username
       );
     } catch {
-      /* continue */
+      
     }
 
     await prisma.user.delete({ where: { id: userId } });

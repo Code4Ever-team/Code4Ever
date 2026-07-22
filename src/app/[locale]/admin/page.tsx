@@ -9,11 +9,11 @@ import { Card } from "@/components/ui/card";
 import { AdminDashboard } from "@/components/admin/AdminDashboard";
 
 interface AdminPageProps {
-  params: Promise<{ locale: string }>;
+  params: { locale: string };
 }
 
 export default async function AdminPage({ params }: AdminPageProps) {
-  const { locale } = await params;
+  const { locale } = params;
   const t = await getTranslations("admin");
   const session = await getSession();
 

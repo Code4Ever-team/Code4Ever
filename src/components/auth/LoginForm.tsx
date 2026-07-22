@@ -4,10 +4,7 @@ import Link from "next/link";
 import { useFormState, useFormStatus } from "react-dom";
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Form } from "@/components/ui/Form";
-import { Input } from "@/components/ui/input";
+import { JubbioLoginButton } from "@/components/auth/JubbioLoginButton";
 import { loginAction } from "@/lib/actions/auth.actions";
 import { initialAuthFormState, type AuthFormState } from "@/lib/actions/auth.form-state";
 
@@ -24,9 +21,10 @@ function SubmitButton() {
 
 interface LoginFormProps {
   locale: string;
+  authUrl: string;
 }
 
-export function LoginForm({ locale }: LoginFormProps) {
+export function LoginForm({ locale, authUrl }: LoginFormProps) {
   const t = useTranslations();
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") ?? "";
@@ -85,8 +83,17 @@ export function LoginForm({ locale }: LoginFormProps) {
           <SubmitButton />
         </div>
 
+        <div className="mt-5 flex flex-col items-center justify-center w-full">
+          <div className="relative w-full mb-4 text-center before:content-[''] before:absolute before:top-1/2 before:left-0 before:w-full before:h-[1px] before:bg-zinc-800">
+            <span className="relative bg-[#09090b] px-3 text-xs text-c4e-muted uppercase tracking-wider">
+              Veya
+            </span>
+          </div>
+          <JubbioLoginButton authUrl={authUrl} />
+        </div>
+
         {state.message && !state.success && (
-          <p className="mt-3 text-sm text-destructive">{state.message}</p>
+          <p className="mt-3 text-sm text-destructive TYPE-writer text-center">{state.message}</p>
         )}
       </Form>
     </Card>

@@ -8,7 +8,6 @@ export interface RepoFileWire {
   revision: number;
 }
 
-/** Sunucu → istemci: E2EE repoda plaintext gönderilmez. */
 export function toWireFiles(
   files: Pick<
     RepoFile,

@@ -2,7 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* C4E theme tokens (VS Code dark inspired) */
 @layer base {
   :root {
     --background: 0 0% 0%; /* #000000 */
@@ -46,7 +45,6 @@
   }
 }
 
-/* Monaco collab presence */
 .collab-line-highlight {
   background: rgba(0, 122, 204, 0.12) !important;
 }

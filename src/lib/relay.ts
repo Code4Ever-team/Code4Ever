@@ -6,9 +6,6 @@ export interface RelayPushPayload {
   messageId: string;
 }
 
-/**
- * Yeni mesaj sonrası anlık bildirim kuyruğuna ekler (aynı süreç).
- */
 export async function pushMessageToRelay(payload: RelayPushPayload): Promise<void> {
   enqueueInstantPush(payload.receiverId, {
     messageId: payload.messageId,

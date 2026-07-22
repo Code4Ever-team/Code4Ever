@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { isBlobConfigured, saveMediaUpload } from "@/lib/media-upload";
+import logger from "@/lib/logger";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
     }
 
     if (!isBlobConfigured()) {
-      console.error("[UPLOAD_ERROR] BLOB_READ_WRITE_TOKEN missing");
+      logger.error("[UPLOAD_ERROR] BLOB_READ_WRITE_TOKEN missing");
       return NextResponse.json(
         {
           error: "storage",
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
 
     const saved = await saveMediaUpload(file, "chat-media");
 
-    console.info("[media-upload] blob ok", {
+    logger.info("[media-upload] blob ok", {
       userId: session.id,
       kind: saved.kind,
       ms: Date.now() - started,
@@ -45,8 +46,8 @@ export async function POST(request: Request) {
       fileName: saved.fileName,
     });
   } catch (error) {
+    logger.error("[UPLOAD_ERROR] route", { error, ms: Date.now() - started });
     const message = error instanceof Error ? error.message : String(error);
-    console.error("[UPLOAD_ERROR] route", { message, ms: Date.now() - started });
 
     if (message === "FILE_TOO_LARGE") {
       return NextResponse.json({ error: "too_large" }, { status: 413 });

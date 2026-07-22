@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
 
-/** Takip veya herhangi bir mesaj geçmişi varsa yazışılabilir. */
 export async function canSendDirectMessage(
   senderId: string,
   receiverId: string

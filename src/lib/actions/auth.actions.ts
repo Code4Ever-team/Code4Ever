@@ -20,15 +20,7 @@ import { generateResetToken, hashResetToken, resetExpiresAt } from "@/lib/passwo
 import { sendPasswordResetEmail, passwordResetUrl } from "@/lib/mail/password-reset-email";
 import { isSmtpConfigured } from "@/lib/mail/smtp";
 
-// ---------------------------------------------------------------------------
-// Sabitler
-// ---------------------------------------------------------------------------
-
 const BCRYPT_ROUNDS = 12;
-
-// ---------------------------------------------------------------------------
-// Paylaşılan tip tanımları
-// ---------------------------------------------------------------------------
 
 export interface ActionResult<T = undefined> {
   success: boolean;
@@ -42,24 +34,12 @@ export interface AuthUser {
   email: string;
 }
 
-// ---------------------------------------------------------------------------
-// Register
-// ---------------------------------------------------------------------------
-
 export interface RegisterInput {
   username: string;
   email: string;
   password: string;
 }
 
-/**
- * Yeni kullanıcı kaydı oluşturur.
- *
- * Kontroller:
- * - Şifre en az 6 karakter olmalı.
- * - Email ve username veritabanında benzersiz olmalı.
- * - Şifre bcrypt ile hashlenir; düz metin asla saklanmaz.
- */
 export async function registerUser(
   input: RegisterInput,
   locale = "tr"
@@ -121,22 +101,11 @@ export async function registerUser(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Login
-// ---------------------------------------------------------------------------
-
 export interface LoginInput {
   usernameOrEmail: string;
   password: string;
 }
 
-/**
- * Kullanıcı girişi yapar ve JWT cookie'sini tarayıcıya yazar.
- *
- * Güvenlik notu: Kullanıcı bulunamasa da "yanlış şifre" mesajı döner —
- * hangi alanın hatalı olduğunu açıklamamak için kasıtlı olarak belirsiz
- * bırakılmıştır (timing-safe değil ama UX açısından yeterli).
- */
 export async function loginUser(
   input: LoginInput,
   locale = "tr"
@@ -155,7 +124,6 @@ export async function loginUser(
       return { success: false, message: msg(locale, "errors.rateLimited") };
     }
 
-    // Email mi yoksa kullanıcı adı mı?
     const isEmail = trimmed.includes("@");
 
     const user = await prisma.user.findUnique({
@@ -170,7 +138,6 @@ export async function loginUser(
     });
 
     if (!user) {
-      // Kullanıcı bulunamadı — timing attack'ı zorlaştırmak için yine de bcrypt çalıştır
       await bcrypt.compare(password, "$2b$12$invalidhashpadding.invalidhashpadding.invalid");
       return { success: false, message: msg(locale, "errors.loginFailed") };
     }
@@ -185,7 +152,6 @@ export async function loginUser(
       return { success: false, message: msg(locale, "errors.accountSuspended") };
     }
 
-    // JWT üret ve cookie'ye yaz
     const token = await signToken({
       id: user.id,
       username: user.username,
@@ -205,9 +171,6 @@ export async function loginUser(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Next.js form state wrappers (useFormState/useActionState uyumlu)
-// ---------------------------------------------------------------------------
 import type { AuthFormState } from "@/lib/actions/auth.form-state";
 
 export async function registerAction(
@@ -269,10 +232,6 @@ export async function loginAction(
 
   redirect(redirectTo || `/${locale}`);
 }
-
-// ---------------------------------------------------------------------------
-// Password reset (SMTP)
-// ---------------------------------------------------------------------------
 
 const RESET_SENT_MSG = (locale: string) => msg(locale, "errors.resetEmailSent");
 
@@ -423,13 +382,6 @@ export async function resetPasswordAction(
   redirect(`/${locale}/login`);
 }
 
-// ---------------------------------------------------------------------------
-// Logout
-// ---------------------------------------------------------------------------
-
-/**
- * Aktif oturumu sonlandırır; cookie'yi temizler.
- */
 export async function logoutUser(): Promise<ActionResult> {
   try {
     await clearSessionCookie();
@@ -440,10 +392,6 @@ export async function logoutUser(): Promise<ActionResult> {
   }
 }
 
-/**
- * Server Action: Logout + /login'e redirect.
- * Form action'ı olarak kullanılabilir.
- */
 export async function logoutAction(formData: FormData): Promise<never> {
   const locale = String(formData.get("locale") ?? "tr");
   await logoutUser();

@@ -1,6 +1,3 @@
-/**
- * Repo E2EE — Web Crypto API only. Password/DEK sunucuya gitmez.
- */
 
 const PBKDF2_ITERATIONS = 310_000;
 const SALT_BYTES = 16;

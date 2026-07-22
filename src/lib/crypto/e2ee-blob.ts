@@ -1,6 +1,3 @@
-/**
- * İstemci tarafı dosya/medya şifreleme (Web Crypto API).
- */
 
 const IV_BYTES = 12;
 

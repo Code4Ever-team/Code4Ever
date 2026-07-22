@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-import { getTranslations } from "next-intl/server";
+import { getJubbioAuthUrl } from "@/lib/jubbio";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ProfileEditForm } from "@/components/platform/ProfileEditForm";
@@ -25,6 +24,8 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
     select: { bio: true },
   });
 
+  const authUrl = getJubbioAuthUrl();
+
   return (
     <main className="mx-auto max-w-lg py-6 md:py-10">
       <header className="mb-6 border-b border-border pb-4">
@@ -36,7 +37,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
         <div>
           <h2 className="text-sm font-semibold text-foreground">{t("profileSection")}</h2>
           <p className="mt-1 text-xs text-c4e-muted">{t("profileHint")}</p>
-          <ProfileEditForm locale={locale} bio={user?.bio ?? null} />
+          <ProfileEditForm locale={locale} bio={user?.bio ?? null} authUrl={authUrl} />
         </div>
 
         <Card className="p-4">

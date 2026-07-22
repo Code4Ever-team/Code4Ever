@@ -6,7 +6,6 @@ export function isBlobConfigured(): boolean {
   return Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim());
 }
 
-/** file.stream() ile belleğe tamponlamadan Vercel Blob'a yükle. */
 export async function uploadToBlob(
   file: File,
   pathname: string,

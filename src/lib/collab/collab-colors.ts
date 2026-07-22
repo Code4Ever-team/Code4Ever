@@ -1,4 +1,3 @@
-/** Collab kullanıcı renkleri — cyberpunk palet */
 export const COLLAB_COLORS = [
   "#007acc",
   "#51cf66",

@@ -15,7 +15,6 @@ function resolve(dict: Dict, key: string): string | undefined {
   return typeof cur === "string" ? cur : undefined;
 }
 
-/** Sunucu action'ları ve edge dışı kod için locale bazlı metin. */
 export function msg(locale: string, key: string, vars?: Record<string, string>): string {
   const loc = locale === "en" ? "en" : "tr";
   const text = resolve(catalogs[loc], key) ?? resolve(catalogs.en, key) ?? key;

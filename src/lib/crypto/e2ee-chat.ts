@@ -1,7 +1,3 @@
-/**
- * İstemci tarafı E2EE mesajlaşma (Web Crypto API).
- * Özel anahtar yalnızca localStorage'da; sunucuya düz metin gitmez.
- */
 
 const PRIVATE_KEY_STORAGE = "c4e_chat_private_jwk";
 

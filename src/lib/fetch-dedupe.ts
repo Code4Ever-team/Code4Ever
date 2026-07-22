@@ -1,4 +1,3 @@
-/** Aynı URL için eşzamanlı tekrarlayan fetch isteklerini birleştirir. */
 const inflight = new Map<string, Promise<Response>>();
 
 export function fetchDeduped(

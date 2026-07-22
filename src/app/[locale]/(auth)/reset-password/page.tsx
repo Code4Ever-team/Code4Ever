@@ -4,8 +4,8 @@ import { getTranslations } from "next-intl/server";
 import { ResetPasswordForm } from "@/components/auth/ResetPasswordForm";
 
 interface ResetPasswordPageProps {
-  params: Promise<{ locale: string }>;
-  searchParams: Promise<{ token?: string }>;
+  params: { locale: string };
+  searchParams: { token?: string };
 }
 
 function ResetFormWithToken({ locale, token }: { locale: string; token: string }) {
@@ -13,8 +13,8 @@ function ResetFormWithToken({ locale, token }: { locale: string; token: string }
 }
 
 export default async function ResetPasswordPage({ params, searchParams }: ResetPasswordPageProps) {
-  const { locale } = await params;
-  const { token = "" } = await searchParams;
+  const { locale } = params;
+  const { token = "" } = searchParams;
   const t = await getTranslations("auth.reset");
 
   return (

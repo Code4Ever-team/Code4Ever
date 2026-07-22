@@ -1,8 +1,5 @@
 const buckets = new Map<string, { count: number; resetAt: number }>();
 
-/**
- * Basit bellek içi hız sınırı. true = izin verildi, false = limit aşıldı.
- */
 export function rateLimit(key: string, limit: number, windowMs: number): boolean {
   const now = Date.now();
   const entry = buckets.get(key);

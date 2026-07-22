@@ -53,7 +53,6 @@ export function usePresenceHeartbeat(enabled: boolean) {
       if (document.visibilityState === "hidden") return;
       if (!shouldSendHeartbeat(idRef.current)) return;
       void fetch("/api/presence", { method: "POST", credentials: "include" }).catch(() => {
-        /* ignore */
       });
     };
 

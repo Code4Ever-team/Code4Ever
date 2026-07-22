@@ -323,7 +323,6 @@ export function GroupChatThread({
         {pending && (
           <div className="flex w-full items-center gap-2 rounded-md border border-border bg-muted/20 p-2">
             {pending.previewUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
               <img src={pending.previewUrl} alt="" className="h-14 w-14 rounded object-cover" />
             ) : (
               <span className="truncate text-xs text-muted-foreground">{pending.file.name}</span>

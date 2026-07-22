@@ -12,9 +12,6 @@ export function isDbConnectionError(error: unknown): boolean {
   );
 }
 
-/**
- * Veritabanı sorgusunu güvenli çalıştırır; hata durumunda fallback döner.
- */
 export async function safeDbQuery<T>(
   label: string,
   query: () => Promise<T>,
@@ -30,9 +27,6 @@ export async function safeDbQuery<T>(
   }
 }
 
-/**
- * DB erişilebilir mi? (tek satır ping)
- */
 export async function isDatabaseAvailable(): Promise<boolean> {
   try {
     await prisma.$queryRaw`SELECT 1`;

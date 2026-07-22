@@ -1,14 +1,16 @@
 import Link from "next/link";
+import { getJubbioAuthUrl } from "@/lib/jubbio";
 import { getTranslations } from "next-intl/server";
 import { RegisterForm } from "@/components/auth/RegisterForm";
 
 interface RegisterPageProps {
-  params: Promise<{ locale: string }>;
+  params: { locale: string };
 }
 
 export default async function RegisterPage({ params }: RegisterPageProps) {
-  const { locale } = await params;
+  const { locale } = params;
   const t = await getTranslations();
+  const authUrl = getJubbioAuthUrl();
 
   return (
     <main className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center py-10">
@@ -21,7 +23,7 @@ export default async function RegisterPage({ params }: RegisterPageProps) {
           <p className="mt-2 text-sm text-c4e-muted">{t("auth.register.subtitle")}</p>
         </header>
 
-        <RegisterForm locale={locale} />
+        <RegisterForm locale={locale} authUrl={authUrl} />
 
         <p className="mt-6 text-center text-sm text-c4e-muted">
           {t("common.hasAccount")}{" "}

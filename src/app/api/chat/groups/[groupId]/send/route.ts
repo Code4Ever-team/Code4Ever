@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { isGroupMember } from "@/lib/chat-groups";
 
 interface RouteParams {
-  params: Promise<{ groupId: string }>;
+  params: { groupId: string };
 }
 
 export async function POST(request: Request, { params }: RouteParams) {
@@ -12,7 +12,7 @@ export async function POST(request: Request, { params }: RouteParams) {
     const session = await getSession();
     if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-    const { groupId } = await params;
+    const { groupId } = params;
     if (!(await isGroupMember(session.id, groupId))) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
@@ -60,3 +60,4 @@ export async function POST(request: Request, { params }: RouteParams) {
     return NextResponse.json({ error: "server" }, { status: 500 });
   }
 }
+

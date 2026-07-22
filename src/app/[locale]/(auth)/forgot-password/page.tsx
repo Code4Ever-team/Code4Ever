@@ -3,11 +3,11 @@ import { getTranslations } from "next-intl/server";
 import { ForgotPasswordForm } from "@/components/auth/ForgotPasswordForm";
 
 interface ForgotPasswordPageProps {
-  params: Promise<{ locale: string }>;
+  params: { locale: string };
 }
 
 export default async function ForgotPasswordPage({ params }: ForgotPasswordPageProps) {
-  const { locale } = await params;
+  const { locale } = params;
   const t = await getTranslations("auth.forgot");
 
   return (

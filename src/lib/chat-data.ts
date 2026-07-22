@@ -39,14 +39,10 @@ export interface IncomingMessageNotice {
   createdAt: string;
 }
 
-/** @deprecated Use loadChatContacts */
 export async function loadFollowingContacts(userId: string): Promise<ChatContact[]> {
   return loadChatContacts(userId);
 }
 
-/**
- * Takip edilenler + mesaj geçmişi olan tüm kullanıcılar (takip etmesen de gelen mesajlar görünür).
- */
 export async function loadChatContacts(userId: string): Promise<ChatContact[]> {
   return safeDbQuery(
     "loadChatContacts",

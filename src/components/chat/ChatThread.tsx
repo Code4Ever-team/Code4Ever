@@ -181,7 +181,6 @@ export function ChatThread({
         setRows((prev) => mergeRows(prev, data.messages!));
       }
     } catch {
-      /* retry later */
     }
   }, []);
 

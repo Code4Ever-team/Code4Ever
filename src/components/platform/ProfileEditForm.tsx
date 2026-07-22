@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Form } from "@/components/ui/Form";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { JubbioLoginButton } from "@/components/auth/JubbioLoginButton";
 import { Textarea } from "@/components/ui/textarea";
 
 const initial: PlatformResult = { success: false, message: "" };
@@ -26,45 +27,54 @@ function SubmitBtn() {
 interface ProfileEditFormProps {
   locale: string;
   bio: string | null;
+  authUrl: string;
 }
 
-export function ProfileEditForm({ locale, bio }: ProfileEditFormProps) {
+export function ProfileEditForm({ locale, bio, authUrl }: ProfileEditFormProps) {
   const t = useTranslations("platform");
   const [state, action] = useFormState(updateProfileAction, initial);
 
   return (
-    <Card className="p-4">
-      <Form action={action} encType="multipart/form-data" className="space-y-3">
-        <input type="hidden" name="locale" value={locale} />
+    <>
+      <Card className="p-4">
+        <Form action={action} encType="multipart/form-data" className="space-y-3">
+          <input type="hidden" name="locale" value={locale} />
+          <div className="space-y-2">
+            <Label htmlFor="bio">{t("bio")}</Label>
+            <Textarea id="bio" name="bio" defaultValue={bio ?? ""} maxLength={500} rows={3} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="avatar">{t("avatar")}</Label>
+            <Input
+              id="avatar"
+              name="avatar"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="banner">{t("banner")}</Label>
+            <Input
+              id="banner"
+              name="banner"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+            />
+          </div>
+          <SubmitBtn />
+          {state.message && (
+            <p className={`text-sm ${state.success ? "text-c4e-neon" : "text-destructive"}`}>
+              {state.message}
+            </p>
+          )}
+        </Form>
+      </Card>
+      <Card className="p-4">
         <div className="space-y-2">
-          <Label htmlFor="bio">{t("bio")}</Label>
-          <Textarea id="bio" name="bio" defaultValue={bio ?? ""} maxLength={500} rows={3} />
+          <h3 className="text-lg font-semibold text-foreground">Account Linking</h3>
+          <JubbioLoginButton authUrl={authUrl} />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="avatar">{t("avatar")}</Label>
-          <Input
-            id="avatar"
-            name="avatar"
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="banner">{t("banner")}</Label>
-          <Input
-            id="banner"
-            name="banner"
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-          />
-        </div>
-        <SubmitBtn />
-        {state.message && (
-          <p className={`text-sm ${state.success ? "text-c4e-neon" : "text-destructive"}`}>
-            {state.message}
-          </p>
-        )}
-      </Form>
-    </Card>
+      </Card>
+    </>
   );
 }

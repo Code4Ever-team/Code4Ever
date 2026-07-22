@@ -69,7 +69,6 @@ async function saveProfileToLocalDisk(
   return `/uploads/${folder}/${filename}`;
 }
 
-/** Profile avatar/banner — jpeg/png/webp; Vercel Blob when configured. */
 export async function saveProfileImageUpload(
   file: File,
   folder: "avatars" | "banners"
