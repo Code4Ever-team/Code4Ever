@@ -43,6 +43,7 @@ export default async function GroupChatPage({ params }: GroupPageProps) {
     take: 200,
     select: {
       id: true,
+      nonce: true,
       senderId: true,
       encryptedContent: true,
       messageKind: true,
@@ -64,6 +65,7 @@ export default async function GroupChatPage({ params }: GroupPageProps) {
         groupName={group.name}
         initialMessages={messages.map((m) => ({
           ...m,
+          nonce: m.nonce.toString(),
           createdAt: m.createdAt.toISOString(),
         }))}
       />
