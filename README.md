@@ -28,7 +28,7 @@
 ![GitHub Stars](https://img.shields.io/github/stars/Code4ever-team/Code4Ever?style=flat-square)
 ![GitHub Forks](https://img.shields.io/github/forks/Code4ever-team/Code4Ever?style=flat-square)
 ![GitHub Issues](https://img.shields.io/github/issues/Code4ever-team/Code4Ever?style=flat-square)
-![License](https://img.shields.io/github/license/Code4ever-team/Code4Ever?style=flat-square)
+![License](https://img.shields.io/badge/License-MIT-0066FF?style=flat-square)
 
 </div>
 
