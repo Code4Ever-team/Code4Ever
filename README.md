@@ -1,7 +1,7 @@
 <div align="center">
 
 <picture>
-  <img src="./assets/c4ebanner.png" alt="Code4Ever Banner" width="100%">
+  <img src="https://github.com/Nylithra/Lanux-Auth/blob/main/c4ebanner.png" alt="Code4Ever Banner" width="100%">
 </picture>
 
 <br>
