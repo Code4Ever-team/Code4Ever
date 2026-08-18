@@ -216,7 +216,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   };
 
   const handleShare = (post: Post) => {
-    const url = `https://code4ever.ai.studio/@${post.author.username}#post-${post.id}`;
+    const url = `https://app.lanux.online/@${post.author.username}#post-${post.id}`;
     navigator.clipboard.writeText(url);
     setCopiedPostId(post.id);
     setTimeout(() => {
@@ -224,7 +224,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }, 2500);
   };
 
-  const profileUrl = `code4ever.ai.studio/@${formData.username || 'user'}`;
+  const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
 
   const displayedList =
     profileTab === 'posts'
