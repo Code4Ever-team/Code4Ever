@@ -22,7 +22,7 @@
 
   /* Efektler / Aksanlar */
   --grid-line: oklch(1 0 0 / 5%);
-  --glow: radial-gradient(60% 60% at 50% 0%, oklch(0.6 0.12 250 / 18%), transparent 70%);
+  --glow: radial-gradient(60% 60% at 50% 0%, oklch(0.6 0.01 260 / 12%), transparent 70%);
   --radius: 0.875rem;
 
   /* Tipografi */

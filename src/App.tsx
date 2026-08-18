@@ -33,6 +33,7 @@ import {
   subscribeToCommunities,
   createCommunityInFirestore,
   updateCommunityInFirestore,
+  deleteCommunityFromFirestore,
   loadLanguage,
   saveLanguage,
   saveGitHubToken,
@@ -55,6 +56,12 @@ import {
   DEFAULT_PLATFORM_SETTINGS,
   DEFAULT_USER
 } from './services/firebaseClient';
+import {
+  checkPersistentRateLimit,
+  checkDuplicatePost,
+  sanitizeText,
+  sanitizeUrl
+} from './utils/securityHelper';
 import { Sidebar } from './components/Sidebar';
 import { RightPanel } from './components/RightPanel';
 import { FeedView } from './components/FeedView';
@@ -104,8 +111,8 @@ export default function App() {
   const theme: DynamicTheme = {
     primaryHue: 260,
     dominantColor: 'oklch(0.13 0.005 260)',
-    accentColor: '#3b82f6',
-    glowColor: 'oklch(0.6 0.12 250 / 18%)',
+    accentColor: '#e4e4e7',
+    glowColor: 'oklch(0.6 0.01 260 / 12%)',
     glassBorder: 'oklch(0.28 0.007 260)',
     cardBg: 'oklch(0.17 0.006 260)',
     textShade: 'oklch(0.97 0.002 260)'
@@ -412,36 +419,30 @@ export default function App() {
   };
 
   const checkRateLimit = (): boolean => {
-    const now = Date.now();
-    const cooldownMs = 3000;
-    if (now - lastActionTimestamp < cooldownMs) {
-      const waitSec = Math.ceil((cooldownMs - (now - lastActionTimestamp)) / 1000);
+    const rateCheck = checkPersistentRateLimit('general_action', 3);
+    if (!rateCheck.allowed) {
       const msg =
         language === 'tr'
-          ? `Rate Limit: Lütfen biraz yavaşlayın! ${waitSec} saniye bekleyin.`
-          : `Rate Limit: Please slow down! Wait ${waitSec} second(s).`;
+          ? `Rate Limit: Lütfen biraz yavaşlayın! ${rateCheck.waitRemainingSeconds} saniye bekleyin.`
+          : `Rate Limit: Please slow down! Wait ${rateCheck.waitRemainingSeconds} second(s).`;
       setRateLimitToast(msg);
       setTimeout(() => setRateLimitToast(null), 2500);
       return false;
     }
-    setLastActionTimestamp(now);
     return true;
   };
 
   const checkPostRateLimit = (): boolean => {
-    const now = Date.now();
-    const cooldownMs = 12000; // 12 seconds post cooldown
-    if (now - lastPostTimestamp < cooldownMs) {
-      const waitSec = Math.ceil((cooldownMs - (now - lastPostTimestamp)) / 1000);
+    const rateCheck = checkPersistentRateLimit('post_create', 10);
+    if (!rateCheck.allowed) {
       const msg =
         language === 'tr'
-          ? `⚠️ Rate Limit: Lütfen ${waitSec} saniye bekleyin! Çok hızlı gönderi paylaşıyorsunuz.`
-          : `⚠️ Rate Limit: Please wait ${waitSec}s! You are posting too fast.`;
+          ? `⚠️ Rate Limit: Lütfen ${rateCheck.waitRemainingSeconds} saniye bekleyin! Çok hızlı gönderi paylaşıyorsunuz.`
+          : `⚠️ Rate Limit: Please wait ${rateCheck.waitRemainingSeconds}s! You are posting too fast.`;
       setRateLimitToast(msg);
       setTimeout(() => setRateLimitToast(null), 3000);
       return false;
     }
-    setLastPostTimestamp(now);
     return true;
   };
 
@@ -457,29 +458,51 @@ export default function App() {
   ): Promise<boolean> => {
     if (!checkPostRateLimit()) return false;
 
+    // Check anti-spam duplicate post
+    if (checkDuplicatePost(content)) {
+      const msg =
+        language === 'tr'
+          ? '⚠️ Spam Koruması: Aynı gönderiyi tekrar paylaştınız! Lütfen farklı bir içerik girin.'
+          : '⚠️ Anti-Spam: Duplicate post detected! Please share unique content.';
+      setRateLimitToast(msg);
+      setTimeout(() => setRateLimitToast(null), 3500);
+      return false;
+    }
+
+    const sanitizedContent = sanitizeText(content, 4000);
+    const sanitizedMediaUrl = mediaUrl ? (mediaUrl.startsWith('data:') ? mediaUrl : sanitizeUrl(mediaUrl)) : undefined;
+
+    const sanitizedSnippet = codeSnippet
+      ? {
+          title: sanitizeText(codeSnippet.title, 80) || 'Snippet',
+          language: sanitizeText(codeSnippet.language, 40) || 'Code',
+          code: sanitizeText(codeSnippet.code, 15000)
+        }
+      : undefined;
+
     const newPost: Post = {
-      id: `post_${Date.now()}`,
+      id: `post_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       author: {
         username: user.username,
         display_name: user.display_name,
-        avatar_url: user.avatar_url
+        avatar_url: sanitizeUrl(user.avatar_url) || user.avatar_url
       },
       time_ago: 'Az önce',
-      content,
-      media_url: mediaUrl,
+      content: sanitizedContent,
+      media_url: sanitizedMediaUrl,
       media_type: mediaType,
-      code_snippet: codeSnippet,
+      code_snippet: sanitizedSnippet,
       community_id: communityId,
-      community_name: communityName,
-      community_handle: communityHandle,
+      community_name: communityName ? sanitizeText(communityName, 50) : undefined,
+      community_handle: communityHandle ? sanitizeText(communityHandle, 50) : undefined,
       project_card: selectedRepo
         ? {
             id: String(selectedRepo.id),
-            title: selectedRepo.name,
-            description: selectedRepo.description || '',
-            language: selectedRepo.language || 'Code',
-            stars: selectedRepo.stargazers_count,
-            forks: selectedRepo.forks_count
+            title: sanitizeText(selectedRepo.name, 60),
+            description: sanitizeText(selectedRepo.description, 200) || '',
+            language: sanitizeText(selectedRepo.language, 30) || 'Code',
+            stars: Number(selectedRepo.stargazers_count) || 0,
+            forks: Number(selectedRepo.forks_count) || 0
           }
         : undefined,
       comments: [],
@@ -508,14 +531,17 @@ export default function App() {
     const target = posts.find((p) => p.id === postId);
     if (!target) return;
 
+    const sanitizedComment = sanitizeText(commentText, 1000);
+    if (!sanitizedComment) return;
+
     const newComment: PostComment = {
       id: `cmt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       author: {
         username: user.username,
         display_name: user.display_name,
-        avatar_url: user.avatar_url
+        avatar_url: sanitizeUrl(user.avatar_url) || user.avatar_url
       },
-      content: commentText.trim(),
+      content: sanitizedComment,
       created_at: new Date().toISOString()
     };
 
@@ -576,19 +602,39 @@ export default function App() {
     updateCommunityInFirestore(id, { is_joined: joined, members_count: newMembersCount });
   };
 
-  const handleCreateCommunity = (newComm: { name: string; handle: string; description?: string; avatar_url: string }) => {
+  const handleCreateCommunity = (newComm: { name: string; handle: string; description?: string; avatar_url: string; banner_url?: string }) => {
+    const cleanHandle = newComm.handle.replace(/^@/, '').toLowerCase().trim().replace(/[^a-z0-9_]/g, '');
     const created: Community = {
-      id: `comm_${Date.now()}`,
-      name: newComm.name,
-      handle: newComm.handle,
-      avatar_url: newComm.avatar_url,
+      id: `comm_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      name: sanitizeText(newComm.name, 60),
+      handle: cleanHandle,
+      description: newComm.description ? sanitizeText(newComm.description, 250) : undefined,
+      avatar_url: sanitizeUrl(newComm.avatar_url) || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80',
+      banner_url: sanitizeUrl(newComm.banner_url) || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&auto=format&fit=crop&q=80',
       members_count: 1,
-      is_joined: true
+      is_joined: true,
+      created_by: user.id,
+      creator_username: user.username,
+      created_at: new Date().toISOString()
     };
     const updated = [created, ...communities];
     setCommunities(updated);
     saveStoredCommunities(updated);
     createCommunityInFirestore(created);
+  };
+
+  const handleUpdateCommunity = (updatedComm: Community) => {
+    const updated = communities.map((c) => (c.id === updatedComm.id ? updatedComm : c));
+    setCommunities(updated);
+    saveStoredCommunities(updated);
+    updateCommunityInFirestore(updatedComm.id, updatedComm);
+  };
+
+  const handleDeleteCommunity = async (commId: string) => {
+    const updated = communities.filter((c) => c.id !== commId);
+    setCommunities(updated);
+    saveStoredCommunities(updated);
+    await deleteCommunityFromFirestore(commId);
   };
 
   const unreadNotificationsCount = notifications.filter((n) => !n.is_read).length;
@@ -800,9 +846,12 @@ export default function App() {
             <CommunitiesView
               communities={communities}
               user={user}
+              allUsers={allUsers}
               language={language}
               onToggleJoin={handleToggleJoinCommunity}
               onCreateCommunity={handleCreateCommunity}
+              onUpdateCommunity={handleUpdateCommunity}
+              onDeleteCommunity={handleDeleteCommunity}
             />
           )}
 

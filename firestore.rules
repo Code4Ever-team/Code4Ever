@@ -1,19 +1,44 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // Helper functions for security validation
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // User Profile Documents
     match /users/{userId} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated() && (request.auth.uid == userId);
     }
+
+    // Feed Posts
     match /posts/{postId} {
       allow read: if true;
-      allow create, update: if request.auth != null;
-      allow delete: if request.auth != null;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated();
     }
+
+    // Communities
     match /communities/{communityId} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
+
+    // Platform Settings & Admin Configs
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
     }
   }
 }
-

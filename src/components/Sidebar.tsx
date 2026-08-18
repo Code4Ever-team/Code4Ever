@@ -18,6 +18,7 @@ import {
   Heart
 } from 'lucide-react';
 import { UserProfile, DynamicTheme } from '../types';
+import { verifyAdminAccess } from '../utils/securityHelper';
 
 interface SidebarProps {
   activeTab: string;
@@ -42,9 +43,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   onOpenBetaModal
 }) => {
-  const isNylithra =
-    user?.username?.toLowerCase() === 'nylithra' ||
-    user?.display_name?.toLowerCase() === 'nylithra';
+  const hasAdminAccess = verifyAdminAccess(user);
 
   const navItems = [
     { id: 'feed', label: language === 'tr' ? 'Ana Sayfa' : 'Home', icon: Home },
@@ -65,7 +64,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'everychat',
       label: 'EveryChat',
       icon: Bot,
-      isBetaModal: !isNylithra,
+      isBetaModal: !hasAdminAccess,
       isBetaBadge: true
     },
     { id: 'projects', label: language === 'tr' ? 'Projeler' : 'Projects', icon: Code2 },
@@ -73,7 +72,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'bookmarks', label: language === 'tr' ? 'Yer İşaretleri' : 'Bookmarks', icon: Bookmark },
     { id: 'support', label: language === 'tr' ? 'Destek Ol' : 'Support Us', icon: Sparkles },
     { id: 'settings', label: language === 'tr' ? 'Ayarlar' : 'Settings', icon: Settings },
-    ...(isNylithra
+    ...(hasAdminAccess
       ? [
           {
             id: 'admin',
@@ -108,7 +107,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     setActiveTab(item.id);
                   }
                 }}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   isActive
                     ? 'text-white bg-zinc-800/90 shadow-sm border border-zinc-700/50'
                     : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/60'
@@ -125,22 +124,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="flex items-center gap-3">
                   <Icon
                     className={`w-4 h-4 transition-colors ${
-                      isActive ? 'text-blue-400' : 'text-zinc-400'
+                      isActive ? 'text-zinc-200' : 'text-zinc-400'
                     }`}
-                    style={isActive ? { color: theme.accentColor } : {}}
                   />
                   <span>{item.label}</span>
                 </div>
 
                 <div className="flex items-center gap-1.5">
                   {(item.isBetaModal || item.isBetaBadge) && (
-                    <span className="px-1.5 py-0.5 text-[9px] font-bold font-mono bg-blue-600/90 text-white rounded shadow-sm">
+                    <span className="px-1.5 py-0.5 text-[9px] font-bold font-mono bg-zinc-800 text-zinc-300 border border-zinc-700 rounded shadow-sm">
                       BETA
                     </span>
                   )}
                   {item.badge !== undefined && (
-                    <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-blue-600 text-white rounded-full">
+                    <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-zinc-100 text-zinc-950 rounded-full">
                       {item.badge}
+                    </span>
+                  )}
+                  {item.isAdminBadge && (
+                    <span className="px-1.5 py-0.5 text-[9px] font-bold font-mono bg-zinc-800 text-zinc-300 border border-zinc-700 rounded shadow-sm">
+                      ADMIN
                     </span>
                   )}
                 </div>
@@ -152,9 +155,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="pt-2">
           <button
             onClick={onOpenNewPost}
-            className="w-full py-3 px-4 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-500 text-xs flex items-center justify-center gap-2 transition-all hover:opacity-95 active:scale-[0.98] shadow-lg shadow-blue-600/25 cursor-pointer"
+            className="w-full py-3 px-4 rounded-xl font-bold text-zinc-950 bg-zinc-100 hover:bg-white text-xs flex items-center justify-center gap-2 transition-all hover:opacity-95 active:scale-[0.98] shadow-lg cursor-pointer"
           >
-            <PlusCircle className="w-4 h-4 text-white" />
+            <PlusCircle className="w-4 h-4 text-zinc-950" />
             <span>{language === 'tr' ? 'Yeni Gönderi' : 'New Post'}</span>
           </button>
         </div>
@@ -174,6 +177,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="truncate">
               <div className="flex items-center gap-1 truncate">
                 <span className="text-xs font-bold text-white truncate">{user.display_name}</span>
+                {hasAdminAccess && (
+                  <span className="px-1 py-0.2 rounded bg-zinc-800 text-[9px] text-zinc-400 font-mono">
+                    ADMIN
+                  </span>
+                )}
               </div>
               <span className="text-[11px] text-zinc-400 font-mono truncate block">@{user.username}</span>
             </div>
@@ -185,7 +193,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 onLogout();
               }}
               title={language === 'tr' ? 'Çıkış Yap' : 'Sign Out'}
-              className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors"
+              className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
             </button>

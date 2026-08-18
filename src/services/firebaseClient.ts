@@ -256,6 +256,14 @@ export async function updateCommunityInFirestore(communityId: string, updateData
   }
 }
 
+export async function deleteCommunityFromFirestore(communityId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'communities', communityId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `communities/${communityId}`);
+  }
+}
+
 export function loadLanguage(): 'tr' | 'en' {
   return (localStorage.getItem(STORAGE_KEYS.LANG) as 'tr' | 'en') || 'tr';
 }

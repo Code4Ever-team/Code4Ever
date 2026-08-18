@@ -3,13 +3,28 @@ import { UserProfile } from '../types';
 export const MAX_NORMAL_FILE_SIZE_BYTES = 15 * 1024 * 1024; // 15 MB
 export const MAX_SPARK_FILE_SIZE_BYTES = 250 * 1024 * 1024; // 250 MB
 
+// Allowed Safe MIME types
+export const ALLOWED_IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif'
+]);
+
+export const ALLOWED_VIDEO_TYPES = new Set([
+  'video/mp4',
+  'video/webm',
+  'video/quicktime'
+]);
+
 export interface FileSizeValidationResult {
   isValid: boolean;
-  errorType?: 'exceeds_normal_15mb' | 'exceeds_spark_250mb';
+  errorType?: 'exceeds_normal_15mb' | 'exceeds_spark_250mb' | 'unsupported_file_type';
   fileSizeMB: number;
   maxAllowedMB: number;
   isSpark: boolean;
   fileName: string;
+  mimeType?: string;
 }
 
 /**
@@ -17,11 +32,11 @@ export interface FileSizeValidationResult {
  */
 export function isUserSpark(user?: Partial<UserProfile> | null): boolean {
   if (!user) return false;
-  const username = (user.username || '').toLowerCase();
+  const username = (user.username || '').toLowerCase().trim().replace(/^@/, '');
   if (username === 'nylithra') return true; // Platform founder/admin has full limits
 
   const role = (user.role || '').toLowerCase();
-  if (role.includes('spark') || role.includes('destek') || role.includes('admin') || role.includes('yetkili')) {
+  if (role.includes('spark') || role.includes('destek') || role === 'admin' || role === 'founder' || role.includes('yetkili')) {
     return true;
   }
 
@@ -46,14 +61,32 @@ export function isUserSpark(user?: Partial<UserProfile> | null): boolean {
 }
 
 /**
- * Validates a file against user limits (15MB for normal, 250MB for Spark supporters).
+ * Validates a file against safe MIME types and user limits (15MB for normal, 250MB for Spark supporters).
  */
 export function validateFileSize(file: File, user?: Partial<UserProfile> | null): FileSizeValidationResult {
   const isSparkUser = isUserSpark(user);
   const maxBytes = isSparkUser ? MAX_SPARK_FILE_SIZE_BYTES : MAX_NORMAL_FILE_SIZE_BYTES;
   const maxAllowedMB = isSparkUser ? 250 : 15;
   const fileSizeMB = Math.round((file.size / (1024 * 1024)) * 10) / 10;
+  const mime = file.type?.toLowerCase() || '';
 
+  // Validate allowed file types
+  const isAllowedImage = ALLOWED_IMAGE_TYPES.has(mime) || file.type.startsWith('image/');
+  const isAllowedVideo = ALLOWED_VIDEO_TYPES.has(mime) || file.type.startsWith('video/');
+
+  if (!isAllowedImage && !isAllowedVideo) {
+    return {
+      isValid: false,
+      errorType: 'unsupported_file_type',
+      fileSizeMB,
+      maxAllowedMB,
+      isSpark: isSparkUser,
+      fileName: file.name,
+      mimeType: mime
+    };
+  }
+
+  // Enforce size limits
   if (file.size > maxBytes) {
     const errorType = isSparkUser ? 'exceeds_spark_250mb' : 'exceeds_normal_15mb';
     return {
@@ -62,7 +95,8 @@ export function validateFileSize(file: File, user?: Partial<UserProfile> | null)
       fileSizeMB,
       maxAllowedMB,
       isSpark: isSparkUser,
-      fileName: file.name
+      fileName: file.name,
+      mimeType: mime
     };
   }
 
@@ -71,7 +105,8 @@ export function validateFileSize(file: File, user?: Partial<UserProfile> | null)
     fileSizeMB,
     maxAllowedMB,
     isSpark: isSparkUser,
-    fileName: file.name
+    fileName: file.name,
+    mimeType: mime
   };
 }
 

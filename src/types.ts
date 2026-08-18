@@ -41,6 +41,9 @@ export interface UserProfile {
   banner_url: string;
   bio: string;
   role: string;
+  isAdmin?: boolean;
+  website?: string;
+  pinned_repos?: GitHubRepo[];
   verified?: boolean;
   theme_color?: string;
   accent_color?: string;
@@ -249,9 +252,14 @@ export interface Community {
   name: string;
   handle: string;
   avatar_url: string;
+  banner_url?: string;
   description?: string;
   members_count: number;
   is_joined: boolean;
+  created_by?: string;
+  creator_username?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface LicenseValidationResult {

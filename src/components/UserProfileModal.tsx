@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, Community } from '../types';
 import { UserBadges } from './UserBadges';
+import { sanitizeUrl } from '../utils/securityHelper';
 import { db } from '../services/firebaseClient';
 import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 
@@ -349,9 +350,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   )}
                   {profileData.custom_fields?.github && (
                     <a
-                      href={`https://${profileData.custom_fields.github}`}
+                      href={sanitizeUrl(profileData.custom_fields.github)}
                       target="_blank"
-                      rel="noreferrer"
+                      rel="noreferrer noopener"
                       className="flex items-center gap-1 hover:text-blue-400 transition-colors"
                     >
                       <Github className="w-3.5 h-3.5 text-zinc-500" />

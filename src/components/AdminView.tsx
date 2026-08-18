@@ -33,6 +33,7 @@ import {
   Info
 } from 'lucide-react';
 import { DEFAULT_BADGE_DEFINITIONS, DEFAULT_PLATFORM_SETTINGS } from '../services/firebaseClient';
+import { verifyAdminAccess, sanitizeText } from '../utils/securityHelper';
 
 interface AdminViewProps {
   currentUser: UserProfile;
@@ -76,10 +77,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
 }) => {
   // Strict admin authorization check
   const isAdminAuthorized = useMemo(() => {
-    if (!currentUser) return false;
-    const isNameMatch = currentUser.username?.toLowerCase() === 'nylithra';
-    const hasAdminRole = currentUser.role === 'admin' || currentUser.role === 'Founder';
-    return isNameMatch || hasAdminRole;
+    return verifyAdminAccess(currentUser);
   }, [currentUser]);
 
   const [activeTab, setActiveTab] = useState<'beta' | 'badges' | 'definitions' | 'platform' | 'subscriptions'>('beta');
