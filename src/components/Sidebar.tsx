@@ -152,12 +152,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="pt-2">
           <button
             onClick={onOpenNewPost}
-            className="w-full py-3 px-4 rounded-xl font-bold text-white text-xs flex items-center justify-center gap-2 transition-all hover:opacity-95 active:scale-[0.98] shadow-lg shadow-blue-600/20"
-            style={{
-              backgroundColor: theme.accentColor
-            }}
+            className="w-full py-3 px-4 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-500 text-xs flex items-center justify-center gap-2 transition-all hover:opacity-95 active:scale-[0.98] shadow-lg shadow-blue-600/25 cursor-pointer"
           >
-            <PlusCircle className="w-4 h-4" />
+            <PlusCircle className="w-4 h-4 text-white" />
             <span>{language === 'tr' ? 'Yeni Gönderi' : 'New Post'}</span>
           </button>
         </div>

@@ -1,1 +1,200 @@
 @import "tailwindcss";
+
+:root {
+  /* Renkler (oklch) */
+  --background: oklch(0.13 0.005 260);
+  --foreground: oklch(0.97 0.002 260);
+  --card: oklch(0.17 0.006 260);
+  --card-foreground: oklch(0.97 0.002 260);
+  --popover: oklch(0.17 0.006 260);
+  --primary: oklch(0.97 0.002 260);
+  --primary-foreground: oklch(0.14 0.005 260);
+  --secondary: oklch(0.22 0.006 260);
+  --secondary-foreground: oklch(0.97 0.002 260);
+  --muted: oklch(0.22 0.006 260);
+  --muted-foreground: oklch(0.62 0.008 260);
+  --accent: oklch(0.24 0.008 260);
+  --border: oklch(0.28 0.007 260);
+  --input: oklch(0.28 0.007 260);
+  --ring: oklch(0.55 0.01 260);
+  --destructive: oklch(0.6 0.21 25);
+  --code: oklch(0.72 0.16 150);
+
+  /* Efektler / Aksanlar */
+  --grid-line: oklch(1 0 0 / 5%);
+  --glow: radial-gradient(60% 60% at 50% 0%, oklch(0.6 0.12 250 / 18%), transparent 70%);
+  --radius: 0.875rem;
+
+  /* Tipografi */
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-display);
+    background-image: 
+      var(--glow),
+      linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+    background-size: 100% 100%, 56px 56px, 56px 56px;
+    background-repeat: no-repeat, repeat, repeat;
+    background-attachment: fixed;
+    min-height: 100vh;
+    letter-spacing: -0.01em;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    color: var(--foreground);
+    font-feature-settings: "ss01", "ss02", "cv01";
+  }
+
+  p, span, label, div {
+    font-family: var(--font-display);
+  }
+
+  code, kbd, samp, pre {
+    font-family: var(--font-mono);
+    color: var(--code);
+  }
+
+  input, textarea, select {
+    color: var(--foreground);
+    font-family: var(--font-display);
+  }
+
+  input::placeholder, textarea::placeholder {
+    color: var(--muted-foreground) !important;
+    opacity: 1;
+  }
+}
+
+/* Özel yardımcı sınıflar (Special Utility Classes) */
+.grid-bg {
+  background-image: 
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 56px 56px, 56px 56px;
+}
+
+.mono-label {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+/* Primary Button Text Contrast Guarantees */
+.bg-white, .bg-primary, [style*="backgroundColor: var(--primary)"], [style*="background-color: var(--primary)"] {
+  color: var(--primary-foreground);
+}
+
+.bg-white *, .bg-primary * {
+  color: var(--primary-foreground);
+}
+
+/* High-Contrast Readability Enhancements */
+.text-zinc-600 {
+  color: oklch(0.66 0.008 260) !important;
+}
+
+.text-zinc-500 {
+  color: oklch(0.72 0.008 260) !important;
+}
+
+.text-zinc-400 {
+  color: oklch(0.82 0.006 260) !important;
+}
+
+.text-zinc-300 {
+  color: oklch(0.90 0.004 260) !important;
+}
+
+.text-zinc-200, .text-zinc-100 {
+  color: oklch(0.97 0.002 260) !important;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* Custom Theme Utilities */
+.bg-app-background {
+  background-color: var(--background);
+}
+
+.bg-app-card {
+  background-color: var(--card);
+}
+
+.bg-app-secondary {
+  background-color: var(--secondary);
+}
+
+.bg-app-muted {
+  background-color: var(--muted);
+}
+
+.bg-app-accent {
+  background-color: var(--accent);
+}
+
+.text-app-foreground {
+  color: var(--foreground);
+}
+
+.text-app-muted {
+  color: var(--muted-foreground);
+}
+
+.text-app-code {
+  color: var(--code);
+}
+
+.border-app-border {
+  border-color: var(--border);
+}
+
+.border-app-input {
+  border-color: var(--input);
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono-custom {
+  font-family: var(--font-mono);
+}
+
+.theme-radius {
+  border-radius: var(--radius);
+}
+
+.theme-glow-bg {
+  background-image: var(--glow);
+}

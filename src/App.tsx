@@ -102,13 +102,13 @@ export default function App() {
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings>(loadStoredPlatformSettings());
 
   const theme: DynamicTheme = {
-    primaryHue: 217,
-    dominantColor: '#09090b',
+    primaryHue: 260,
+    dominantColor: 'oklch(0.13 0.005 260)',
     accentColor: '#3b82f6',
-    glowColor: 'rgba(59, 130, 246, 0.2)',
-    glassBorder: 'rgba(255, 255, 255, 0.08)',
-    cardBg: '#0c0c0e',
-    textShade: '#f4f4f5'
+    glowColor: 'oklch(0.6 0.12 250 / 18%)',
+    glassBorder: 'oklch(0.28 0.007 260)',
+    cardBg: 'oklch(0.17 0.006 260)',
+    textShade: 'oklch(0.97 0.002 260)'
   };
 
   const dynamicTrends: Trend[] = useMemo(() => {
@@ -692,7 +692,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen w-full bg-[#09090b] text-white flex justify-center font-sans selection:bg-blue-500 selection:text-white relative">
+    <div className="min-h-screen w-full bg-app-background text-app-foreground flex justify-center font-display selection:bg-blue-500 selection:text-white relative">
       {rateLimitToast && (
         <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-amber-500 text-black font-bold text-xs px-5 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 border border-amber-300 animate-pulse">
           <AlertTriangle className="w-4 h-4 text-black flex-shrink-0" />
