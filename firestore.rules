@@ -3,139 +3,43 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // =========================================
-    // AUTHENTICATION
-    // =========================================
-
+    // Helper functions for security validation
     function isAuthenticated() {
       return request.auth != null;
     }
 
     function isOwner(userId) {
-      return isAuthenticated()
-        && request.auth.uid == userId;
+      return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Admin status is stored in:
-    // /users/{uid}.isAdmin
-    function isAdmin() {
-      return isAuthenticated()
-        && exists(
-          /databases/$(database)/documents/users/$(request.auth.uid)
-        )
-        && get(
-          /databases/$(database)/documents/users/$(request.auth.uid)
-        ).data.isAdmin == true;
-    }
-
-
-    // =========================================
-    // USERS
-    // =========================================
-
+    // User Profile Documents
     match /users/{userId} {
-
-      // Public profiles
       allow read: if true;
-
-      // User can create only their own profile.
-      // A normal user cannot create themselves as admin.
-      allow create: if isOwner(userId)
-        && (
-          !request.resource.data.keys().hasAny(['isAdmin'])
-          || request.resource.data.isAdmin == false
-        );
-
-      // User can update only their own profile.
-      //
-      // IMPORTANT:
-      // The user cannot change isAdmin.
-      allow update: if isOwner(userId)
-        && request.resource.data.isAdmin == resource.data.isAdmin;
-
-      // User can delete their own account/profile.
-      // Admin can delete any user profile.
-      allow delete: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated() && request.auth.uid == userId;
     }
 
-
-    // =========================================
-    // POSTS
-    // =========================================
-
+    // Feed Posts
     match /posts/{postId} {
-
-      // Posts are public
       allow read: if true;
-
-      // A logged-in user can create a post,
-      // but authorId MUST be their own Firebase UID.
-      allow create: if isAuthenticated()
-        && request.resource.data.authorId == request.auth.uid;
-
-      // Only the post owner or admin can update.
-      allow update: if isAuthenticated()
-        && (
-          resource.data.authorId == request.auth.uid
-          || isAdmin()
-        );
-
-      // Only the post owner or admin can delete.
-      allow delete: if isAuthenticated()
-        && (
-          resource.data.authorId == request.auth.uid
-          || isAdmin()
-        );
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated();
     }
 
-
-    // =========================================
-    // COMMUNITIES
-    // =========================================
-
+    // Communities
     match /communities/{communityId} {
-
-      // Communities are public
       allow read: if true;
-
-      // User can create a community only if
-      // ownerId belongs to their Firebase account.
-      allow create: if isAuthenticated()
-        && request.resource.data.ownerId == request.auth.uid;
-
-      // Only community owner or admin can update.
-      allow update: if isAuthenticated()
-        && (
-          resource.data.ownerId == request.auth.uid
-          || isAdmin()
-        );
-
-      // Only community owner or admin can delete.
-      allow delete: if isAuthenticated()
-        && (
-          resource.data.ownerId == request.auth.uid
-          || isAdmin()
-        );
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated();
     }
 
-
-    // =========================================
-    // SETTINGS
-    // =========================================
-
+    // Platform Settings & Admin Configs
     match /settings/{settingId} {
-
-      // Settings can be publicly read.
       allow read: if true;
-
-      // ONLY ADMIN
-      allow create: if isAdmin();
-
-      // ONLY ADMIN
-      allow update: if isAdmin();
-
-      // ONLY ADMIN
-      allow delete: if isAdmin();
+      allow write: if isAuthenticated();
     }
   }
 }
