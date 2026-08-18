@@ -1,0 +1,6 @@
+{
+  "name": "Code4Ever",
+  "description": "Production-ready developer platform with dynamic profile customization, open-source project sharing, E2EE direct messaging, rate limiting security engine, and Supabase RLS integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

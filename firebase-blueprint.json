@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "collections": {
+    "users": {
+      "allowRead": "true",
+      "allowWrite": "request.auth != null && (request.auth.uid == resource.data.id || resource == null)"
+    },
+    "posts": {
+      "allowRead": "true",
+      "allowWrite": "request.auth != null"
+    },
+    "communities": {
+      "allowRead": "true",
+      "allowWrite": "request.auth != null"
+    }
+  }
+}
