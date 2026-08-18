@@ -2,7 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions for security validation
+    // Helper Fonksiyonlar
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -11,34 +11,36 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // User Profile Documents
+    // Kullanıcı Profilleri
     match /users/{userId} {
       allow read: if true;
-      allow create: if isAuthenticated() && request.auth.uid == userId;
-      allow update: if isAuthenticated();
-      allow delete: if isAuthenticated() && (request.auth.uid == userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId); // Sadece kendi profilini güncelleyebilsin
+      allow delete: if isOwner(userId);
     }
 
-    // Feed Posts
+    // Gönderiler (Posts)
     match /posts/{postId} {
       allow read: if true;
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow delete: if isAuthenticated();
+      // Güncelleme ve Silme sadece postu oluşturan kişiye ait olmalı
+      // (Not: Post dokümanında 'authorId' veya 'userId' alanının tutulduğu varsayılmıştır)
+      allow update: if isAuthenticated() && (resource.data.authorId == request.auth.uid || resource.data.userId == request.auth.uid);
+      allow delete: if isAuthenticated() && (resource.data.authorId == request.auth.uid || resource.data.userId == request.auth.uid);
     }
 
-    // Communities
+    // Topluluklar (Communities)
     match /communities/{communityId} {
       allow read: if true;
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow delete: if isAuthenticated();
+      // Sadece topluluğu kuran kişi güncelleyebilsin/silebilsin
+      allow update, delete: if isAuthenticated() && resource.data.createdBy == request.auth.uid;
     }
 
-    // Platform Settings & Admin Configs
+    // Platform Ayarları
     match /settings/{settingId} {
-      allow read: if true;
-      allow write: if isAuthenticated();
+      allow read: if true; // Herkes veya giriş yapmış kullanıcılar okusun
+      allow write: if false; // İstemci (client) tarafından değiştirilemesin, sadece Admin SDK / Console yazabilsin
     }
   }
 }
