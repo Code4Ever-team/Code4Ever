@@ -11,36 +11,42 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Kullanıcı Profilleri
+    // Dokümanı oluşturan kişi mi kontrolü (Farklı veri yapılarını destekler)
+    function isContentOwner() {
+      return isAuthenticated() && (
+        (resource.data.keys().contains('authorId') && resource.data.authorId == request.auth.uid) ||
+        (resource.data.keys().contains('userId') && resource.data.userId == request.auth.uid) ||
+        (resource.data.keys().contains('createdBy') && resource.data.createdBy == request.auth.uid) ||
+        (resource.data.keys().contains('author') && resource.data.author.id == request.auth.uid)
+      );
+    }
+
+    // User Profile Documents
     match /users/{userId} {
       allow read: if true;
       allow create: if isOwner(userId);
-      allow update: if isOwner(userId); // Sadece kendi profilini güncelleyebilsin
+      allow update: if isOwner(userId); // Başkası senin profilini değiştiremez
       allow delete: if isOwner(userId);
     }
 
-    // Gönderiler (Posts)
+    // Feed Posts
     match /posts/{postId} {
       allow read: if true;
       allow create: if isAuthenticated();
-      // Güncelleme ve Silme sadece postu oluşturan kişiye ait olmalı
-      // (Not: Post dokümanında 'authorId' veya 'userId' alanının tutulduğu varsayılmıştır)
-      allow update: if isAuthenticated() && (resource.data.authorId == request.auth.uid || resource.data.userId == request.auth.uid);
-      allow delete: if isAuthenticated() && (resource.data.authorId == request.auth.uid || resource.data.userId == request.auth.uid);
+      allow update, delete: if isContentOwner(); // Sadece postun sahibi düzenleyebilir/silebilir
     }
 
-    // Topluluklar (Communities)
+    // Communities
     match /communities/{communityId} {
       allow read: if true;
       allow create: if isAuthenticated();
-      // Sadece topluluğu kuran kişi güncelleyebilsin/silebilsin
-      allow update, delete: if isAuthenticated() && resource.data.createdBy == request.auth.uid;
+      allow update, delete: if isContentOwner(); // Sadece topluluğu kuran kişi düzenleyebilir/silebilir
     }
 
-    // Platform Ayarları
+    // Platform Settings & Admin Configs
     match /settings/{settingId} {
-      allow read: if true; // Herkes veya giriş yapmış kullanıcılar okusun
-      allow write: if false; // İstemci (client) tarafından değiştirilemesin, sadece Admin SDK / Console yazabilsin
+      allow read: if true;
+      allow write: if false; // İstemciden değiştirilemez, sadece Console/Admin SDK yazar
     }
   }
 }
