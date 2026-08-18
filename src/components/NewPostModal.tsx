@@ -41,6 +41,17 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const MAX_CONTENT_LENGTH = 200;
+  const MAX_CODE_LENGTH = 2000;
+
+  const isContentOver = content.length > MAX_CONTENT_LENGTH;
+  const isCodeOver = showCode && codeSnippet.length > MAX_CODE_LENGTH;
+  const isSubmitDisabled =
+    isSubmitting ||
+    isContentOver ||
+    isCodeOver ||
+    (!content.trim() && !codeSnippet.trim() && !mediaUrl);
+
   if (!isOpen) return null;
 
   const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -72,7 +83,7 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting) return;
+    if (isSubmitting || isContentOver || isCodeOver) return;
     if (!content.trim() && !codeSnippet.trim() && !mediaUrl) return;
 
     setIsSubmitting(true);
@@ -130,7 +141,7 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors"
+            className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -140,7 +151,7 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
           {/* Target Community Selection */}
           <div className="flex items-center justify-between bg-zinc-950/80 border border-zinc-800 rounded-xl px-3 py-2 text-xs">
             <span className="text-zinc-400 font-mono text-[11px] flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5 text-purple-400" />
+              <Users className="w-3.5 h-3.5 text-zinc-300" />
               <span>{language === 'tr' ? 'Paylaşım Alanı:' : 'Posting Scope:'}</span>
             </span>
             <select
@@ -159,17 +170,38 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
             </select>
           </div>
 
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder={
-              language === 'tr'
-                ? 'Neler yapıyorsun? #hashtag veya @kullanıcı etiketle...'
-                : 'What are you working on? Add #hashtag or @mention...'
-            }
-            rows={4}
-            className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-3.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 resize-none"
-          />
+          <div className="relative">
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder={
+                language === 'tr'
+                  ? 'Neler yapıyorsun? #hashtag veya @kullanıcı etiketle...'
+                  : 'What are you working on? Add #hashtag or @mention...'
+              }
+              rows={4}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-3.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-600 resize-none pb-7"
+            />
+            {/* Character counter */}
+            <div className="absolute right-3 bottom-3">
+              <span
+                className={`text-[10px] font-mono px-2 py-0.5 rounded-md transition-all shadow-sm ${
+                  content.length > MAX_CONTENT_LENGTH
+                    ? 'bg-red-500/20 text-red-400 border border-red-500/50 font-bold animate-pulse'
+                    : content.length >= 150
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 font-semibold'
+                    : 'bg-zinc-900/80 text-zinc-400 border border-zinc-800'
+                }`}
+                title={
+                  content.length > MAX_CONTENT_LENGTH
+                    ? (language === 'tr' ? 'Karakter sınırı aşıldı! Maksimum 200 karakter.' : 'Character limit exceeded! Max 200 chars.')
+                    : undefined
+                }
+              >
+                {content.length}/{MAX_CONTENT_LENGTH}
+              </span>
+            </div>
+          </div>
 
           {mediaUrl && (
             <div className="relative rounded-2xl overflow-hidden border border-zinc-800 bg-black max-h-56">
@@ -184,7 +216,7 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
                   setMediaUrl(null);
                   setMediaType(null);
                 }}
-                className="absolute top-2 right-2 p-1.5 rounded-full bg-black/80 text-white hover:bg-red-600 transition-colors"
+                className="absolute top-2 right-2 p-1.5 rounded-full bg-black/80 text-white hover:bg-red-600 transition-colors cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
@@ -204,22 +236,47 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
                 <select
                   value={codeLang}
                   onChange={(e) => setCodeLang(e.target.value)}
-                  className="bg-zinc-900 border border-zinc-800 text-zinc-300 rounded-xl px-3 py-1.5 text-xs focus:outline-none font-mono"
+                  className="bg-zinc-900 border border-zinc-800 text-zinc-300 rounded-xl px-3 py-1.5 text-xs focus:outline-none font-mono cursor-pointer"
                 >
                   <option value="TypeScript">TypeScript</option>
                   <option value="React">React</option>
                   <option value="Python">Python</option>
                   <option value="Rust">Rust</option>
                   <option value="Go">Go</option>
+                  <option value="SQL">SQL</option>
+                  <option value="HTML/CSS">HTML/CSS</option>
+                  <option value="C++">C++</option>
+                  <option value="Java">Java</option>
                 </select>
               </div>
-              <textarea
-                value={codeSnippet}
-                onChange={(e) => setCodeSnippet(e.target.value)}
-                placeholder="code snippet goes here..."
-                rows={4}
-                className="w-full bg-zinc-900/90 border border-zinc-800 rounded-xl p-3 text-xs text-emerald-400 font-mono focus:outline-none resize-none"
-              />
+              <div className="relative">
+                <textarea
+                  value={codeSnippet}
+                  onChange={(e) => setCodeSnippet(e.target.value)}
+                  placeholder="code snippet goes here..."
+                  rows={4}
+                  className="w-full bg-zinc-900/90 border border-zinc-800 rounded-xl p-3 text-xs text-emerald-400 font-mono focus:outline-none resize-none pb-7"
+                />
+                {/* Code Snippet Counter */}
+                <div className="absolute right-2.5 bottom-2.5">
+                  <span
+                    className={`text-[10px] font-mono px-2 py-0.5 rounded-md transition-all shadow-sm ${
+                      codeSnippet.length > MAX_CODE_LENGTH
+                        ? 'bg-red-500/20 text-red-400 border border-red-500/50 font-bold animate-pulse'
+                        : codeSnippet.length >= 1500
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 font-semibold'
+                        : 'bg-zinc-900/80 text-zinc-400 border border-zinc-800'
+                    }`}
+                    title={
+                      codeSnippet.length > MAX_CODE_LENGTH
+                        ? (language === 'tr' ? 'Kod sınırı aşıldı! Maksimum 2000 karakter.' : 'Code limit exceeded! Max 2000 chars.')
+                        : undefined
+                    }
+                  >
+                    {codeSnippet.length}/{MAX_CODE_LENGTH}
+                  </span>
+                </div>
+              </div>
             </div>
           )}
 
@@ -235,19 +292,19 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="text-xs font-mono flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-800"
+                className="text-xs font-mono flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-800 cursor-pointer"
               >
-                <ImageIcon className="w-4 h-4 text-blue-400" />
-                <Video className="w-4 h-4 text-purple-400" />
+                <ImageIcon className="w-4 h-4 text-zinc-300" />
+                <Video className="w-4 h-4 text-zinc-300" />
                 <span>{language === 'tr' ? 'Medya Ekle' : 'Add Media'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setShowCode(!showCode)}
-                className={`text-xs font-mono flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-colors ${
+                className={`text-xs font-mono flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-colors cursor-pointer ${
                   showCode
-                    ? 'bg-blue-950/80 text-blue-400 border border-blue-800/60'
+                    ? 'bg-zinc-800 text-white border border-zinc-700'
                     : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
                 }`}
               >
@@ -258,17 +315,17 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
 
             <button
               type="submit"
-              disabled={isSubmitting || (!content.trim() && !codeSnippet.trim() && !mediaUrl)}
-              className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-all flex items-center gap-2 shadow-md disabled:opacity-40"
+              disabled={isSubmitDisabled}
+              className="px-5 py-2 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-bold text-xs transition-all flex items-center gap-2 shadow-md active:scale-95 cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-950" />
                   <span>{language === 'tr' ? 'Paylaşılıyor...' : 'Posting...'}</span>
                 </>
               ) : (
                 <>
-                  <Send className="w-3.5 h-3.5" />
+                  <Send className="w-3.5 h-3.5 text-zinc-950" />
                   <span>{language === 'tr' ? 'Paylaş' : 'Publish'}</span>
                 </>
               )}

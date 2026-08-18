@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Post, UserProfile, GitHubRepo, Community } from '../types';
 import { UserBadges } from './UserBadges';
-import { MessageSquare, Heart, Repeat, Send, Code, Sparkles, Trash2, Bookmark, Share2, Check, GitBranch, ExternalLink, Star, GitFork, Image as ImageIcon, Video, Loader2, Users, Shield, Copy, User } from 'lucide-react';
+import { CodeSnippetBlock } from './CodeSnippetBlock';
+import { MessageSquare, Heart, Repeat, Send, Code, Sparkles, Trash2, Bookmark, Share2, Check, GitBranch, ExternalLink, Star, GitFork, Image as ImageIcon, Video, Loader2, Users, Shield, Copy, User, AlertCircle } from 'lucide-react';
 import { getGitHubToken } from '../services/firebaseClient';
 import { validateFileSize, notifyFileSizeExceeded } from '../utils/fileUploadHelper';
 
@@ -172,9 +173,20 @@ export const FeedView: React.FC<FeedViewProps> = ({
     }
   }, [showRepoAttach]);
 
+  const MAX_CONTENT_LENGTH = 200;
+  const MAX_CODE_LENGTH = 2000;
+
+  const isContentOver = content.length > MAX_CONTENT_LENGTH;
+  const isCodeOver = showCodeAttach && codeSnippet.length > MAX_CODE_LENGTH;
+  const isSubmitDisabled =
+    isSubmitting ||
+    isContentOver ||
+    isCodeOver ||
+    (!content.trim() && !codeSnippet.trim() && !selectedRepo && !mediaUrl);
+
   const handlePostSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting) return;
+    if (isSubmitting || isContentOver || isCodeOver) return;
     if (!content.trim() && !codeSnippet.trim() && !selectedRepo && !mediaUrl) return;
 
     setIsSubmitting(true);
@@ -238,8 +250,8 @@ export const FeedView: React.FC<FeedViewProps> = ({
   return (
     <div className="flex-1 min-w-0 w-full border-r border-zinc-800/60 min-h-screen pb-16 bg-[#09090b] relative">
       {toastMessage && (
-        <div className="fixed top-4 right-4 z-50 bg-blue-600 text-white text-xs font-bold px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2 animate-bounce">
-          <Check className="w-4 h-4" />
+        <div className="fixed top-4 right-4 z-50 bg-zinc-900 border border-zinc-700 text-white text-xs font-bold px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2 animate-bounce">
+          <Check className="w-4 h-4 text-emerald-400" />
           <span>{toastMessage}</span>
         </div>
       )}
@@ -247,7 +259,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
       <div className="sticky top-0 z-20 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800/40 px-5 py-3.5 flex items-center justify-between">
         <h2 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
           <span>{language === 'tr' ? 'Ana Sayfa' : 'Home'}</span>
-          <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+          <span className="w-2 h-2 rounded-full bg-zinc-400" />
         </h2>
       </div>
 
@@ -281,17 +293,39 @@ export const FeedView: React.FC<FeedViewProps> = ({
                 </div>
               )}
 
-              <textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                placeholder={
-                  language === 'tr'
-                    ? 'Ne düşünüyorsun? Proje veya kod parçacığı paylaş...'
-                    : 'What are you working on? Share a project or snippet...'
-                }
-                rows={3}
-                className="w-full bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none resize-none"
-              />
+              <div className="relative">
+                <textarea
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  placeholder={
+                    language === 'tr'
+                      ? 'Ne düşünüyorsun? Proje veya kod parçacığı paylaş...'
+                      : 'What are you working on? Share a project or snippet...'
+                  }
+                  rows={3}
+                  className="w-full bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none resize-none pb-7"
+                />
+
+                {/* Right bottom character counter for Feed Text Box */}
+                <div className="absolute right-1 bottom-1">
+                  <span
+                    className={`text-[10px] font-mono px-2 py-0.5 rounded-md transition-all shadow-sm ${
+                      content.length > MAX_CONTENT_LENGTH
+                        ? 'bg-red-500/20 text-red-400 border border-red-500/50 font-bold animate-pulse'
+                        : content.length >= 150
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 font-semibold'
+                        : 'bg-zinc-900/80 text-zinc-400 border border-zinc-800'
+                    }`}
+                    title={
+                      content.length > MAX_CONTENT_LENGTH
+                        ? (language === 'tr' ? 'Karakter sınırı aşıldı! Maksimum 200 karakter.' : 'Character limit exceeded! Max 200 chars.')
+                        : undefined
+                    }
+                  >
+                    {content.length}/{MAX_CONTENT_LENGTH}
+                  </span>
+                </div>
+              </div>
 
               {mediaUrl && (
                 <div className="relative rounded-2xl overflow-hidden border border-zinc-800 bg-black max-h-56">
@@ -314,7 +348,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
               )}
 
               {showCodeAttach && (
-                <div className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl space-y-2">
+                <div className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl space-y-2 relative">
                   <div className="flex gap-2">
                     <input
                       type="text"
@@ -334,15 +368,39 @@ export const FeedView: React.FC<FeedViewProps> = ({
                       <option value="Rust">Rust</option>
                       <option value="Go">Go</option>
                       <option value="SQL">SQL</option>
+                      <option value="HTML/CSS">HTML/CSS</option>
+                      <option value="C++">C++</option>
+                      <option value="Java">Java</option>
                     </select>
                   </div>
-                  <textarea
-                    value={codeSnippet}
-                    onChange={(e) => setCodeSnippet(e.target.value)}
-                    placeholder="code snippet goes here..."
-                    rows={4}
-                    className="w-full bg-zinc-900/90 border border-zinc-800 rounded-lg p-2.5 text-xs text-emerald-400 font-mono focus:outline-none resize-none"
-                  />
+                  <div className="relative">
+                    <textarea
+                      value={codeSnippet}
+                      onChange={(e) => setCodeSnippet(e.target.value)}
+                      placeholder="code snippet goes here..."
+                      rows={4}
+                      className="w-full bg-zinc-900/90 border border-zinc-800 rounded-lg p-2.5 text-xs text-emerald-400 font-mono focus:outline-none resize-none pb-7"
+                    />
+                    {/* Code snippet counter on right bottom */}
+                    <div className="absolute right-2 bottom-2">
+                      <span
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded-md transition-all shadow-sm ${
+                          codeSnippet.length > MAX_CODE_LENGTH
+                            ? 'bg-red-500/20 text-red-400 border border-red-500/50 font-bold animate-pulse'
+                            : codeSnippet.length >= 1500
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 font-semibold'
+                            : 'bg-zinc-900/80 text-zinc-400 border border-zinc-800'
+                        }`}
+                        title={
+                          codeSnippet.length > MAX_CODE_LENGTH
+                            ? (language === 'tr' ? 'Kod sınırı aşıldı! Maksimum 2000 karakter.' : 'Code limit exceeded! Max 2000 chars.')
+                            : undefined
+                        }
+                      >
+                        {codeSnippet.length}/{MAX_CODE_LENGTH}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -377,10 +435,10 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   )}
 
                   {selectedRepo && (
-                    <div className="p-2.5 bg-zinc-900/80 border border-blue-900/50 rounded-lg space-y-1 text-xs">
+                    <div className="p-2.5 bg-zinc-900/80 border border-zinc-700/50 rounded-lg space-y-1 text-xs">
                       <span className="font-bold text-white block">{selectedRepo.name}</span>
                       <p className="text-[11px] text-zinc-400">{selectedRepo.description}</p>
-                      <span className="text-[10px] font-mono text-blue-400 block">{selectedRepo.html_url}</span>
+                      <span className="text-[10px] font-mono text-zinc-300 block">{selectedRepo.html_url}</span>
                     </div>
                   )}
                 </div>
@@ -398,19 +456,19 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   <button
                     type="button"
                     onClick={() => mediaInputRef.current?.click()}
-                    className="text-xs font-mono flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors text-zinc-400 hover:text-white hover:bg-zinc-900 border border-transparent hover:border-zinc-800"
+                    className="text-xs font-mono flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors text-zinc-400 hover:text-white hover:bg-zinc-900 border border-transparent hover:border-zinc-800 cursor-pointer"
                   >
-                    <ImageIcon className="w-3.5 h-3.5 text-blue-400" />
-                    <Video className="w-3.5 h-3.5 text-purple-400" />
+                    <ImageIcon className="w-3.5 h-3.5 text-zinc-300" />
+                    <Video className="w-3.5 h-3.5 text-zinc-300" />
                     <span>{language === 'tr' ? 'Medya' : 'Media'}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setShowCodeAttach(!showCodeAttach)}
-                    className={`text-xs font-mono flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors ${
+                    className={`text-xs font-mono flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
                       showCodeAttach
-                        ? 'bg-blue-950/80 text-blue-400 border border-blue-800/60'
+                        ? 'bg-zinc-800 text-white border border-zinc-700'
                         : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
                     }`}
                   >
@@ -421,9 +479,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowRepoAttach(!showRepoAttach)}
-                    className={`text-xs font-mono flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors ${
+                    className={`text-xs font-mono flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
                       showRepoAttach
-                        ? 'bg-blue-950/80 text-blue-400 border border-blue-800/60'
+                        ? 'bg-zinc-800 text-white border border-zinc-700'
                         : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
                     }`}
                   >
@@ -434,17 +492,17 @@ export const FeedView: React.FC<FeedViewProps> = ({
 
                 <button
                   type="submit"
-                  disabled={isSubmitting || (!content.trim() && !codeSnippet.trim() && !selectedRepo && !mediaUrl)}
-                  className="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-all flex items-center gap-1.5 shadow-md disabled:opacity-40"
+                  disabled={isSubmitDisabled}
+                  className="px-4 py-1.5 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-bold text-xs transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
                 >
                   {isSubmitting ? (
                     <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-950" />
                       <span>{language === 'tr' ? 'Paylaşılıyor...' : 'Posting...'}</span>
                     </>
                   ) : (
                     <>
-                      <Send className="w-3.5 h-3.5" />
+                      <Send className="w-3.5 h-3.5 text-zinc-950" />
                       <span>{language === 'tr' ? 'Paylaş' : 'Post'}</span>
                     </>
                   )}
@@ -458,8 +516,8 @@ export const FeedView: React.FC<FeedViewProps> = ({
       <div className="divide-y divide-zinc-800/40">
         {posts.length === 0 ? (
           <div className="p-12 text-center space-y-3">
-            <div className="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-zinc-500">
-              <Sparkles className="w-6 h-6 text-blue-400" />
+            <div className="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-zinc-300">
+              <Sparkles className="w-6 h-6 text-white" />
             </div>
             <h3 className="text-sm font-bold text-white">
               {language === 'tr' ? 'Henüz Gönderi Yok' : 'No Posts Yet'}
@@ -607,15 +665,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
               )}
 
               {post.code_snippet && (
-                <div className="p-3 bg-zinc-950 border border-zinc-800/80 rounded-xl space-y-1.5 font-mono">
-                  <div className="flex items-center justify-between text-[11px] text-zinc-400 border-b border-zinc-800/60 pb-1.5">
-                    <span className="font-semibold text-white">{post.code_snippet.title}</span>
-                    <span className="text-blue-400">{post.code_snippet.language}</span>
-                  </div>
-                  <pre className="text-xs text-emerald-400 overflow-x-auto p-1 leading-relaxed">
-                    <code>{post.code_snippet.code}</code>
-                  </pre>
-                </div>
+                <CodeSnippetBlock snippet={post.code_snippet} language={language} />
               )}
 
               <div className="flex items-center gap-6 pt-1 text-xs text-zinc-500 font-mono">
@@ -647,7 +697,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   type="button"
                   onClick={() => setActiveCommentPostId(activeCommentPostId === post.id ? null : post.id)}
                   className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
-                    activeCommentPostId === post.id ? 'text-blue-400 font-semibold' : 'hover:text-blue-400'
+                    activeCommentPostId === post.id ? 'text-zinc-200 font-semibold' : 'hover:text-zinc-200'
                   }`}
                   title={language === 'tr' ? 'Yorumları Gör ve Yanıtla' : 'Comments'}
                 >
@@ -758,9 +808,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     <button
                       type="submit"
                       disabled={!commentText.trim()}
-                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-md shadow-blue-600/20 flex items-center gap-1.5"
+                      className="px-4 py-2 rounded-xl bg-zinc-100 hover:bg-white disabled:opacity-40 disabled:pointer-events-none text-zinc-950 text-xs font-bold transition-all shadow-md flex items-center gap-1.5 active:scale-95 cursor-pointer"
                     >
-                      <Send className="w-3 h-3" />
+                      <Send className="w-3 h-3 text-zinc-950" />
                       <span>{language === 'tr' ? 'Yanıtla' : 'Reply'}</span>
                     </button>
                   </form>

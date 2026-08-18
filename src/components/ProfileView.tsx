@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { UserProfile, DynamicTheme, Community, Post } from '../types';
 import { UserBadges } from './UserBadges';
+import { CodeSnippetBlock } from './CodeSnippetBlock';
 import {
   MapPin,
   Github,
@@ -670,15 +671,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     )}
 
                     {post.code_snippet && (
-                      <div className="p-3 bg-zinc-950 border border-zinc-800/80 rounded-xl space-y-1.5 font-mono">
-                        <div className="flex items-center justify-between text-[11px] text-zinc-400 border-b border-zinc-800/60 pb-1.5">
-                          <span className="font-semibold text-white">{post.code_snippet.title}</span>
-                          <span className="text-blue-400">{post.code_snippet.language}</span>
-                        </div>
-                        <pre className="text-xs text-emerald-400 overflow-x-auto p-1 leading-relaxed">
-                          <code>{post.code_snippet.code}</code>
-                        </pre>
-                      </div>
+                      <CodeSnippetBlock snippet={post.code_snippet} language={language} />
                     )}
 
                     {/* Action Bar */}
