@@ -281,7 +281,8 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
           <p className="text-xs text-zinc-400 font-mono">@{formData.username}</p>
           <div className="flex items-center gap-1.5 mt-1 text-[11px] font-mono text-blue-400">
             <Link2 className="w-3.5 h-3.5" />
-            <span>{profileUrl}</span>
+            // burası
+            <span> </span>
           </div>
         </div>
 
