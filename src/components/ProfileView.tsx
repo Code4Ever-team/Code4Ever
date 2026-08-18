@@ -224,7 +224,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }, 2500);
   };
 
-//  const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
+const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
 
   const displayedList =
     profileTab === 'posts'
