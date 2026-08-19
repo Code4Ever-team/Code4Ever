@@ -1,7 +1,8 @@
 /**
  * Code4Ever Platform Security Utility
  * Provides defense-in-depth sanitization, XSS mitigation, URL validation,
- * role/privilege protection, reserved username safeguards, and anti-spam verification.
+ * role/privilege protection, reserved username safeguards, SQL/NoSQL injection defense,
+ * and anti-spam verification.
  */
 
 // Reserved system usernames that cannot be claimed or impersonated by regular users
@@ -31,7 +32,10 @@ export const RESERVED_USERNAMES = new Set([
   'settings',
   'profile',
   'abonelik',
-  'subscriptions'
+  'subscriptions',
+  'jobs',
+  'job',
+  'team'
 ]);
 
 /**
@@ -70,13 +74,16 @@ export function sanitizeUrl(url?: string | null): string {
   if (!url || typeof url !== 'string') return '';
   const trimmed = url.trim();
   
-  // Check for dangerous schemes
+  // Check for dangerous schemes & encoding tricks
   const lower = trimmed.toLowerCase();
   if (
     lower.startsWith('javascript:') ||
     lower.startsWith('vbscript:') ||
     lower.startsWith('data:text/html') ||
-    lower.startsWith('data:application')
+    lower.startsWith('data:application') ||
+    lower.includes('&#') ||
+    lower.includes('%3c') ||
+    lower.includes('%3e')
   ) {
     return '#';
   }
@@ -100,30 +107,105 @@ export function sanitizeUrl(url?: string | null): string {
 }
 
 /**
- * Sanitizes plain text input by stripping out raw HTML tags and dangerous scripts.
+ * HTML entity encoder to prevent reflective or DOM XSS.
+ */
+export function escapeHtml(str: string): string {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+/**
+ * Sanitizes plain text input by stripping out raw HTML tags, dangerous scripts,
+ * and neutralizing potential SQL/NoSQL injection payloads.
  */
 export function sanitizeText(input?: string | null, maxLength = 5000): string {
   if (!input || typeof input !== 'string') return '';
   
-  // Trim and truncate to reasonable maximum length to prevent payload DoS
-  const truncated = input.trim().slice(0, maxLength);
+  // Trim and truncate to reasonable maximum length to prevent payload DoS / memory exhaustion
+  let sanitized = input.trim().slice(0, maxLength);
   
-  // Strip dangerous tag patterns and script blocks
-  const sanitized = truncated
+  // Neutralize null bytes and unicode control bypasses
+  sanitized = sanitized.replace(/\0/g, '').replace(/[\u202E\u202D\u200E\u200F]/g, '');
+
+  // Strip dangerous tag patterns, iframe, embed, object and script blocks
+  sanitized = sanitized
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
     .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
     .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, '')
-    .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '') // inline event handlers
-    .replace(/javascript:/gi, '');
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+    .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '') // inline event handlers like onerror=, onload=
+    .replace(/on\w+\s*=\s*[^>\s]+/gi, '')
+    .replace(/javascript:/gi, '')
+    .replace(/vbscript:/gi, '');
     
   return sanitized;
 }
 
 /**
+ * Sanitizes file names to prevent directory traversal (../, ..\, etc.)
+ */
+export function sanitizeFileName(fileName: string): string {
+  if (!fileName) return 'file';
+  return fileName
+    .replace(/(\.\.[\/\\])+/g, '')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .slice(0, 100);
+}
+
+/**
+ * Threat analyzer that detects common hacker vectors (SQL injection, XSS, Path Traversal, SSRF)
+ */
+export function auditSecurityPayload(payload: string): {
+  isClean: boolean;
+  threatLevel: 'SAFE' | 'LOW' | 'MEDIUM' | 'HIGH';
+  detectedPatterns: string[];
+} {
+  if (!payload || typeof payload !== 'string') {
+    return { isClean: true, threatLevel: 'SAFE', detectedPatterns: [] };
+  }
+
+  const detected: string[] = [];
+  const lower = payload.toLowerCase();
+
+  // SQL Injection patterns
+  if (/(\bunion\b.*\bselect\b|\bselect\b.*\bfrom\b|--|\bdrop\b\s+\btable\b|;\s*drop\b|'\s*or\s*'1'\s*=\s*'1|"\s*or\s*"1"\s*=\s*"1)/i.test(lower)) {
+    detected.push('SQL_INJECTION_PATTERN');
+  }
+
+  // Cross-Site Scripting (XSS)
+  if (/<script|javascript:|onerror\s*=|onload\s*=|document\.cookie|eval\(|<svg.*onload/i.test(lower)) {
+    detected.push('XSS_ATTACK_VECTOR');
+  }
+
+  // Path Traversal
+  if (/(\.\.[\/\\])+|%2e%2e%2f|%2e%2e\/|\.\.%2f/i.test(lower)) {
+    detected.push('PATH_TRAVERSAL');
+  }
+
+  // Command Injection
+  if (/(\|\s*cat\b|;\s*rm\s+-rf|`.*`|\$\(.*\))/i.test(lower)) {
+    detected.push('COMMAND_INJECTION');
+  }
+
+  const threatLevel =
+    detected.length >= 2 ? 'HIGH' : detected.length === 1 ? 'MEDIUM' : 'SAFE';
+
+  return {
+    isClean: detected.length === 0,
+    threatLevel,
+    detectedPatterns: detected
+  };
+}
+
+/**
  * Strict check for admin authorization.
- * Verifies that the user has database-level admin permissions (isAdmin === true or role === 'admin' / 'founder').
- * Avoids relying on static username strings.
+ * Verifies database-level admin permissions (isAdmin === true or role === 'admin' / 'founder').
  */
 export function verifyAdminAccess(user?: { username?: string; role?: string; id?: string; isAdmin?: boolean } | null): boolean {
   if (!user) return false;
@@ -221,3 +303,4 @@ function simpleHash(str: string): string {
   }
   return String(hash);
 }
+

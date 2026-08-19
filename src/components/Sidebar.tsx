@@ -7,6 +7,7 @@ import {
   Bot,
   Code2,
   Users,
+  Briefcase,
   Bookmark,
   Settings,
   PlusCircle,
@@ -48,6 +49,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navItems = [
     { id: 'feed', label: language === 'tr' ? 'Ana Sayfa' : 'Home', icon: Home },
     { id: 'explore', label: language === 'tr' ? 'Keşfet' : 'Explore', icon: Compass },
+    { id: 'jobs', label: language === 'tr' ? 'İş & Ekip İlanları' : 'Job & Team Listings', icon: Briefcase },
     {
       id: 'notifications',
       label: language === 'tr' ? 'Bildirimler' : 'Notifications',

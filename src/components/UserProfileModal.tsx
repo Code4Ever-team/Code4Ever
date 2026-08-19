@@ -17,8 +17,7 @@ import {
 import { UserProfile, Community } from '../types';
 import { UserBadges } from './UserBadges';
 import { sanitizeUrl } from '../utils/securityHelper';
-import { db } from '../services/firebaseClient';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { getSupabaseClient, loadStoredAllUsers } from '../services/supabaseClient';
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -71,13 +70,29 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           return;
         }
 
-        // 2. Query Firestore 'users' collection
-        const qUser = query(collection(db, 'users'), where('username', '==', cleanUsername), limit(1));
-        const querySnapshot = await getDocs(qUser);
+        // 2. Query Supabase 'profiles' table or cached users
+        const client = getSupabaseClient();
+        if (client) {
+          const { data } = await client
+            .from('profiles')
+            .select('*')
+            .ilike('username', cleanUsername)
+            .limit(1)
+            .maybeSingle();
 
-        if (!querySnapshot.empty) {
-          const docData = querySnapshot.docs[0].data() as UserProfile;
-          setProfileData(docData);
+          if (data) {
+            setProfileData(data as UserProfile);
+            setLoading(false);
+            return;
+          }
+        }
+
+        const cachedUsers = loadStoredAllUsers();
+        const foundCached = cachedUsers.find(
+          (u) => u.username.toLowerCase() === cleanUsername
+        );
+        if (foundCached) {
+          setProfileData(foundCached);
           setLoading(false);
           return;
         }
@@ -122,14 +137,19 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           return;
         }
 
-        // 5. Query Firestore 'communities' collection
-        const qComm = query(collection(db, 'communities'), where('handle', '==', `@${cleanUsername}`), limit(1));
-        const commSnapshot = await getDocs(qComm);
-        if (!commSnapshot.empty) {
-          const cData = commSnapshot.docs[0].data() as Community;
-          setCommunityData(cData);
-          setLoading(false);
-          return;
+        // 5. Query Supabase 'communities' table
+        if (client) {
+          const { data: cData } = await client
+            .from('communities')
+            .select('*')
+            .or(`handle.ilike.%${cleanUsername}%,name.ilike.%${cleanUsername}%`)
+            .limit(1)
+            .maybeSingle();
+          if (cData) {
+            setCommunityData(cData as Community);
+            setLoading(false);
+            return;
+          }
         }
 
         // 6. If neither User nor Community found -> setNotFound(true)

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bell, Heart, Star, MessageSquare, Users, CheckCheck, Trash2 } from 'lucide-react';
+import { Bell, Heart, Star, MessageSquare, Users, CheckCheck, Trash2, Briefcase, FileText } from 'lucide-react';
 import { NotificationItem } from '../types';
 
 interface NotificationsViewProps {
@@ -7,13 +7,15 @@ interface NotificationsViewProps {
   language: 'tr' | 'en';
   onMarkAllAsRead: () => void;
   onClearNotifications: () => void;
+  onSelectTab?: (tab: string) => void;
 }
 
 export const NotificationsView: React.FC<NotificationsViewProps> = ({
   notifications,
   language,
   onMarkAllAsRead,
-  onClearNotifications
+  onClearNotifications,
+  onSelectTab
 }) => {
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
 
@@ -21,16 +23,19 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
 
   const getIcon = (type: NotificationItem['type']) => {
     switch (type) {
+      case 'job_application':
+      case 'job_listing':
+        return <Briefcase className="w-4 h-4 text-zinc-200" />;
       case 'like':
         return <Heart className="w-4 h-4 text-red-400 fill-current" />;
       case 'star':
         return <Star className="w-4 h-4 text-amber-400 fill-current" />;
       case 'comment':
-        return <MessageSquare className="w-4 h-4 text-blue-400" />;
+        return <MessageSquare className="w-4 h-4 text-zinc-300" />;
       case 'community':
-        return <Users className="w-4 h-4 text-emerald-400" />;
+        return <Users className="w-4 h-4 text-zinc-300" />;
       default:
-        return <Bell className="w-4 h-4 text-blue-400" />;
+        return <Bell className="w-4 h-4 text-zinc-300" />;
     }
   };
 
@@ -38,21 +43,21 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
     <div className="flex-1 min-w-0 w-full border-r border-zinc-800/60 min-h-screen pb-16 bg-[#09090b]">
       <div className="sticky top-0 z-20 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800/40 px-5 py-3.5 flex items-center justify-between">
         <h2 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
-          <Bell className="w-5 h-5 text-blue-400" />
+          <Bell className="w-5 h-5 text-zinc-300" />
           <span>{language === 'tr' ? 'Bildirimler' : 'Notifications'}</span>
         </h2>
 
         <div className="flex items-center gap-2">
           <button
             onClick={onMarkAllAsRead}
-            className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white transition-colors"
+            className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white transition-colors cursor-pointer"
             title={language === 'tr' ? 'Tümünü okundu işaretle' : 'Mark all as read'}
           >
             <CheckCheck className="w-4 h-4" />
           </button>
           <button
             onClick={onClearNotifications}
-            className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-red-400 transition-colors"
+            className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-red-400 transition-colors cursor-pointer"
             title={language === 'tr' ? 'Bildirimleri temizle' : 'Clear notifications'}
           >
             <Trash2 className="w-4 h-4" />
@@ -63,9 +68,9 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
       <div className="p-4 border-b border-zinc-800/40 flex gap-2 bg-[#0c0c0e]">
         <button
           onClick={() => setFilter('all')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
             filter === 'all'
-              ? 'bg-blue-600 text-white'
+              ? 'bg-zinc-100 text-zinc-950 font-bold shadow-md'
               : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
           }`}
         >
@@ -73,9 +78,9 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
         </button>
         <button
           onClick={() => setFilter('unread')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
             filter === 'unread'
-              ? 'bg-blue-600 text-white'
+              ? 'bg-zinc-100 text-zinc-950 font-bold shadow-md'
               : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
           }`}
         >
@@ -92,8 +97,13 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
           filtered.map((item) => (
             <div
               key={item.id}
-              className={`p-4 flex items-start gap-3.5 transition-colors ${
-                !item.is_read ? 'bg-blue-950/20' : 'hover:bg-zinc-900/30'
+              onClick={() => {
+                if (item.type === 'job_application' && onSelectTab) {
+                  onSelectTab('jobs');
+                }
+              }}
+              className={`p-4 flex items-start gap-3.5 transition-colors cursor-pointer ${
+                !item.is_read ? 'bg-zinc-900/50 border-l-2 border-zinc-400' : 'hover:bg-zinc-900/30'
               }`}
             >
               <div className="p-2 rounded-xl bg-zinc-900 border border-zinc-800/80 flex-shrink-0">
@@ -114,7 +124,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
                   <span className="text-[10px] text-zinc-500 font-mono">{item.time_ago}</span>
                 </div>
 
-                <p className="text-xs text-zinc-300 leading-relaxed">{item.content}</p>
+                <p className="text-xs text-zinc-300 leading-relaxed font-sans">{item.content}</p>
               </div>
             </div>
           ))

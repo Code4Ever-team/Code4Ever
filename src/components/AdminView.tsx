@@ -32,7 +32,7 @@ import {
   Zap,
   Info
 } from 'lucide-react';
-import { DEFAULT_BADGE_DEFINITIONS, DEFAULT_PLATFORM_SETTINGS } from '../services/firebaseClient';
+import { DEFAULT_BADGE_DEFINITIONS, DEFAULT_PLATFORM_SETTINGS } from '../services/supabaseClient';
 import { verifyAdminAccess, sanitizeText } from '../utils/securityHelper';
 
 interface AdminViewProps {

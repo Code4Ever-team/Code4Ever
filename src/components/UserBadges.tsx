@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { CheckCircle2, Home, Shield, Code, Star, Sparkles, X, Award, GitBranch } from 'lucide-react';
 import { UserProfile, BadgeItem, BadgeDefinition } from '../types';
-import { loadStoredBadgeDefinitions } from '../services/firebaseClient';
+import { loadStoredBadgeDefinitions } from '../services/supabaseClient';
 
 export interface NormalizedBadge {
   id: string;

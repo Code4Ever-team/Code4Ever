@@ -3,7 +3,7 @@ import { Post, UserProfile, GitHubRepo, Community } from '../types';
 import { UserBadges } from './UserBadges';
 import { CodeSnippetBlock } from './CodeSnippetBlock';
 import { MessageSquare, Heart, Repeat, Send, Code, Sparkles, Trash2, Bookmark, Share2, Check, GitBranch, ExternalLink, Star, GitFork, Image as ImageIcon, Video, Loader2, Users, Shield, Copy, User, AlertCircle } from 'lucide-react';
-import { getGitHubToken } from '../services/firebaseClient';
+import { getGitHubToken } from '../services/supabaseClient';
 import { validateFileSize, notifyFileSizeExceeded } from '../utils/fileUploadHelper';
 
 interface FeedViewProps {

@@ -11,51 +11,51 @@ import {
   ClosedBetaSettings,
   SubscriptionPlan,
   BadgeDefinition,
-  PlatformSettings
+  PlatformSettings,
+  JobListing,
+  JobApplication
 } from './types';
 import {
-  auth,
-  onAuthStateChanged,
+  supabase,
   getOrFormatUserProfile,
-  formatFirebaseUserToProfile,
-  logoutFirebase,
-  checkAuthRedirect,
+  logoutSupabase,
   loadStoredProfile,
   saveStoredProfile,
   loadStoredPosts,
   saveStoredPosts,
   subscribeToPosts,
-  createPostInFirestore,
-  updatePostInFirestore,
-  deletePostInFirestore,
+  createPostInSupabase,
+  updatePostInSupabase,
+  deletePostInSupabase,
   loadStoredCommunities,
   saveStoredCommunities,
   subscribeToCommunities,
-  createCommunityInFirestore,
-  updateCommunityInFirestore,
-  deleteCommunityFromFirestore,
+  createCommunityInSupabase,
+  updateCommunityInSupabase,
+  deleteCommunityFromSupabase,
   loadLanguage,
   saveLanguage,
   saveGitHubToken,
   subscribeToAllUsers,
-  updateUserProfileInFirestore,
-  deleteUserFromFirestore,
-  subscribeToClosedBetaSettings,
-  saveClosedBetaSettingsInFirestore,
+  updateUserProfileInSupabase,
+  deleteUserFromSupabase,
   loadStoredBetaSettings,
-  subscribeToSubscriptionPlans,
-  saveSubscriptionPlansInFirestore,
+  saveClosedBetaSettings,
   loadStoredSubscriptionPlans,
-  subscribeToBadgeDefinitions,
-  saveBadgeDefinitionsInFirestore,
+  saveSubscriptionPlans,
   loadStoredBadgeDefinitions,
+  saveBadgeDefinitions,
   DEFAULT_BADGE_DEFINITIONS,
-  subscribeToPlatformSettings,
-  savePlatformSettingsInFirestore,
   loadStoredPlatformSettings,
+  savePlatformSettings,
   DEFAULT_PLATFORM_SETTINGS,
-  DEFAULT_USER
-} from './services/firebaseClient';
+  DEFAULT_USER,
+  loadStoredJobListings,
+  saveStoredJobListings,
+  createJobListing as createJobListingService,
+  deleteJobListing as deleteJobListingService,
+  submitJobApplication as submitJobApplicationService
+} from './services/supabaseClient';
 import {
   checkPersistentRateLimit,
   checkDuplicatePost,
@@ -67,6 +67,7 @@ import { RightPanel } from './components/RightPanel';
 import { FeedView } from './components/FeedView';
 import { ExploreView } from './components/ExploreView';
 import { NotificationsView } from './components/NotificationsView';
+import { JobListingsView } from './components/JobListingsView';
 import { DirectMessagesView } from './components/DirectMessagesView';
 import { ProjectsView } from './components/ProjectsView';
 import { CommunitiesView } from './components/CommunitiesView';
@@ -92,7 +93,11 @@ export default function App() {
   const [viewingUser, setViewingUser] = useState<UserProfile | null>(null);
   const [selectedModalUsername, setSelectedModalUsername] = useState<string | null>(null);
   const [posts, setPosts] = useState<Post[]>(loadStoredPosts());
-  const [communities, setCommunities] = useState<Community[]>(loadStoredCommunities());
+  const [communities, setCommunities] = useState<Community[]>(() => {
+    const raw = loadStoredCommunities();
+    return raw.map((c) => ({ ...c, is_joined: false }));
+  });
+  const [jobListings, setJobListings] = useState<JobListing[]>(loadStoredJobListings());
   const [isNewPostOpen, setIsNewPostOpen] = useState<boolean>(false);
   const [betaModalInfo, setBetaModalInfo] = useState<{ title: string; desc: string; iconType?: 'sparkles' | 'lock' } | null>(null);
 
@@ -190,30 +195,42 @@ export default function App() {
 
   useEffect(() => {
     parseHashParams();
-    checkAuthRedirect();
     checkUrlRoute();
 
     const handlePopState = () => checkUrlRoute();
     window.addEventListener('popstate', handlePopState);
 
-    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        const authenticatedUser = await getOrFormatUserProfile(firebaseUser);
-        setUser(authenticatedUser);
-        saveStoredProfile(authenticatedUser);
-        setIsAuthenticated(true);
-        checkUrlRoute(authenticatedUser);
-      } else {
-        const stored = loadStoredProfile();
-        if (stored && stored.username) {
-          setUser(stored);
+    let authSubscription: { unsubscribe: () => void } | null = null;
+    if (supabase) {
+      const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (session?.user) {
+          const authenticatedUser = await getOrFormatUserProfile(session.user);
+          setUser(authenticatedUser);
+          saveStoredProfile(authenticatedUser);
           setIsAuthenticated(true);
-          checkUrlRoute(stored);
+          checkUrlRoute(authenticatedUser);
         } else {
-          setIsAuthenticated(false);
+          const stored = loadStoredProfile();
+          if (stored && stored.username) {
+            setUser(stored);
+            setIsAuthenticated(true);
+            checkUrlRoute(stored);
+          } else {
+            setIsAuthenticated(false);
+          }
         }
+      });
+      authSubscription = data.subscription;
+    } else {
+      const stored = loadStoredProfile();
+      if (stored && stored.username) {
+        setUser(stored);
+        setIsAuthenticated(true);
+        checkUrlRoute(stored);
+      } else {
+        setIsAuthenticated(false);
       }
-    });
+    }
 
     const unsubscribePosts = subscribeToPosts((realtimePosts) => {
       setPosts(realtimePosts);
@@ -225,46 +242,26 @@ export default function App() {
 
     const unsubscribeUsers = subscribeToAllUsers((realtimeUsers) => {
       setAllUsers(realtimeUsers);
-      // If current user updated in firestore (e.g. beta status or badges), keep current user in sync
-      if (auth.currentUser) {
-        const foundSelf = realtimeUsers.find((u) => u.id === auth.currentUser?.uid);
+      const currentStored = loadStoredProfile();
+      if (currentStored && currentStored.id) {
+        const foundSelf = realtimeUsers.find((u) => u.id === currentStored.id);
         if (foundSelf) {
           setUser((prev) => ({ ...prev, ...foundSelf }));
         }
       }
     });
 
-    const unsubscribeBetaSettings = subscribeToClosedBetaSettings((settings) => {
-      setClosedBetaSettings(settings);
-    });
-
-    const unsubscribeSubscriptions = subscribeToSubscriptionPlans((plans) => {
-      setSubscriptionPlans(plans);
-    });
-
-    const unsubscribeBadgeDefinitions = subscribeToBadgeDefinitions((defs) => {
-      setBadgeDefinitions(defs);
-    });
-
-    const unsubscribePlatformSettings = subscribeToPlatformSettings((settings) => {
-      setPlatformSettings(settings);
-    });
-
     return () => {
       window.removeEventListener('popstate', handlePopState);
-      unsubscribeAuth();
+      if (authSubscription) authSubscription.unsubscribe();
       unsubscribePosts();
       unsubscribeCommunities();
       unsubscribeUsers();
-      unsubscribeBetaSettings();
-      unsubscribeSubscriptions();
-      unsubscribeBadgeDefinitions();
-      unsubscribePlatformSettings();
     };
   }, []);
 
   const handleLogout = async () => {
-    await logoutFirebase();
+    await logoutSupabase();
     setIsAuthenticated(false);
   };
 
@@ -278,7 +275,7 @@ export default function App() {
     setUser(merged);
     saveStoredProfile(merged);
     if (merged.id) {
-      updateUserProfileInFirestore(merged.id, merged);
+      updateUserProfileInSupabase(merged.id, merged);
     }
   };
 
@@ -321,7 +318,7 @@ export default function App() {
     });
     setPosts(updated);
     saveStoredPosts(updated);
-    updatePostInFirestore(id, {
+    updatePostInSupabase(id, {
       is_liked: nextIsLiked,
       liked_by: updatedLikedBy,
       likes_count: updatedLikesCount
@@ -357,7 +354,7 @@ export default function App() {
     });
     setPosts(updated);
     saveStoredPosts(updated);
-    updatePostInFirestore(id, {
+    updatePostInSupabase(id, {
       is_reposted: nextIsReposted,
       reposted_by: updatedRepostedBy,
       reposts_count: updatedRepostsCount
@@ -394,7 +391,7 @@ export default function App() {
     });
     setPosts(updated);
     saveStoredPosts(updated);
-    updatePostInFirestore(id, {
+    updatePostInSupabase(id, {
       is_bookmarked: nextIsBookmarked,
       bookmarked_by: updatedBookmarkedBy
     });
@@ -407,7 +404,7 @@ export default function App() {
     setUser(updatedUser);
     saveStoredProfile(updatedUser);
     if (user.id) {
-      updateUserProfileInFirestore(user.id, { saved_post_ids: newSavedIds });
+      updateUserProfileInSupabase(user.id, { saved_post_ids: newSavedIds });
     }
   };
 
@@ -415,7 +412,7 @@ export default function App() {
     const updated = posts.filter((p) => p.id !== id);
     setPosts(updated);
     saveStoredPosts(updated);
-    deletePostInFirestore(id);
+    deletePostInSupabase(id);
   };
 
   const checkRateLimit = (): boolean => {
@@ -518,9 +515,9 @@ export default function App() {
     setPosts(updated);
     saveStoredPosts(updated);
     try {
-      await createPostInFirestore(newPost);
+      await createPostInSupabase(newPost);
     } catch (err) {
-      console.error("Firestore error saving post:", err);
+      console.error("Supabase error saving post:", err);
     }
     return true;
   };
@@ -561,24 +558,48 @@ export default function App() {
     });
     setPosts(updated);
     saveStoredPosts(updated);
-    updatePostInFirestore(postId, {
+    updatePostInSupabase(postId, {
       comments: updatedComments,
       comments_count: newCommentsCount
     });
 
-    const newNotif: NotificationItem = {
-      id: `notif_${Date.now()}`,
-      type: 'comment',
-      actor: {
-        username: user.username,
-        display_name: user.display_name,
-        avatar_url: user.avatar_url
-      },
-      content: `${language === 'tr' ? 'Yorumunuz eklendi:' : 'Comment added:'} "${commentText}"`,
-      time_ago: 'Az önce',
-      is_read: false
-    };
-    setNotifications([newNotif, ...notifications]);
+    // Notify author if commenter is not post author
+    if (target.author.username !== user.username) {
+      const authorNotif: NotificationItem = {
+        id: `notif_${Date.now()}`,
+        type: 'comment',
+        actor: {
+          username: user.username,
+          display_name: user.display_name,
+          avatar_url: user.avatar_url
+        },
+        content: `gönderinize yorum yaptı: "${sanitizedComment.substring(0, 60)}"`,
+        time_ago: 'Az önce',
+        is_read: false
+      };
+      setNotifications((prev) => [authorNotif, ...prev]);
+    }
+  };
+
+  const handleCreateJobListing = async (newListing: JobListing) => {
+    const updated = [newListing, ...jobListings];
+    setJobListings(updated);
+    await createJobListingService(newListing);
+  };
+
+  const handleDeleteJobListing = async (jobId: string) => {
+    const updated = jobListings.filter((j) => j.id !== jobId);
+    setJobListings(updated);
+    await deleteJobListingService(jobId);
+  };
+
+  const handleSubmitJobApplication = async (application: JobApplication) => {
+    const success = await submitJobApplicationService(application, (notif) => {
+      setNotifications((prev) => [notif, ...prev]);
+    });
+    if (success) {
+      setJobListings(loadStoredJobListings());
+    }
   };
 
   const handleToggleJoinCommunity = (id: string) => {
@@ -599,7 +620,7 @@ export default function App() {
     });
     setCommunities(updated);
     saveStoredCommunities(updated);
-    updateCommunityInFirestore(id, { is_joined: joined, members_count: newMembersCount });
+    updateCommunityInSupabase(id, { is_joined: joined, members_count: newMembersCount });
   };
 
   const handleCreateCommunity = (newComm: { name: string; handle: string; description?: string; avatar_url: string; banner_url?: string }) => {
@@ -620,21 +641,21 @@ export default function App() {
     const updated = [created, ...communities];
     setCommunities(updated);
     saveStoredCommunities(updated);
-    createCommunityInFirestore(created);
+    createCommunityInSupabase(created);
   };
 
   const handleUpdateCommunity = (updatedComm: Community) => {
     const updated = communities.map((c) => (c.id === updatedComm.id ? updatedComm : c));
     setCommunities(updated);
     saveStoredCommunities(updated);
-    updateCommunityInFirestore(updatedComm.id, updatedComm);
+    updateCommunityInSupabase(updatedComm.id, updatedComm);
   };
 
   const handleDeleteCommunity = async (commId: string) => {
     const updated = communities.filter((c) => c.id !== commId);
     setCommunities(updated);
     saveStoredCommunities(updated);
-    await deleteCommunityFromFirestore(commId);
+    await deleteCommunityFromSupabase(commId);
   };
 
   const unreadNotificationsCount = notifications.filter((n) => !n.is_read).length;
@@ -646,11 +667,11 @@ export default function App() {
       updatedBy: 'nylithra'
     };
     setClosedBetaSettings(newSettings);
-    saveClosedBetaSettingsInFirestore(newSettings);
+    saveClosedBetaSettings(newSettings);
   };
 
   const handleAdminUpdateUser = (userId: string, updatedFields: Partial<UserProfile>) => {
-    updateUserProfileInFirestore(userId, updatedFields);
+    updateUserProfileInSupabase(userId, updatedFields);
     if (user.id === userId) {
       const updatedUser = { ...user, ...updatedFields };
       setUser(updatedUser);
@@ -667,7 +688,7 @@ export default function App() {
     setUser(updatedUser);
     saveStoredProfile(updatedUser);
     if (user.id) {
-      updateUserProfileInFirestore(user.id, {
+      updateUserProfileInSupabase(user.id, {
         betaContact: contact,
         betaStatus: user.betaStatus || 'pending'
       });
@@ -812,12 +833,25 @@ export default function App() {
             />
           )}
 
+          {activeTab === 'jobs' && (
+            <JobListingsView
+              currentUser={user}
+              language={language}
+              jobListings={jobListings}
+              onCreateListing={handleCreateJobListing}
+              onDeleteListing={handleDeleteJobListing}
+              onSubmitApplication={handleSubmitJobApplication}
+              onSelectUser={handleSelectUser}
+            />
+          )}
+
           {activeTab === 'notifications' && (
             <NotificationsView
               notifications={notifications}
               language={language}
               onMarkAllAsRead={() => setNotifications(notifications.map((n) => ({ ...n, is_read: true })))}
               onClearNotifications={() => setNotifications([])}
+              onSelectTab={(tab) => setActiveTab(tab)}
             />
           )}
 
@@ -917,20 +951,20 @@ export default function App() {
               onToggleClosedBeta={handleToggleClosedBeta}
               onUpdateUser={handleAdminUpdateUser}
               onDeleteUser={async (userId) => {
-                await deleteUserFromFirestore(userId);
+                await deleteUserFromSupabase(userId);
                 setAllUsers((prev) => prev.filter((u) => u.id !== userId));
               }}
               onSaveSubscriptionPlans={(plans) => {
                 setSubscriptionPlans(plans);
-                saveSubscriptionPlansInFirestore(plans);
+                saveSubscriptionPlans(plans);
               }}
               onSaveBadgeDefinitions={(badges) => {
                 setBadgeDefinitions(badges);
-                saveBadgeDefinitionsInFirestore(badges);
+                saveBadgeDefinitions(badges);
               }}
               onSavePlatformSettings={(settings) => {
                 setPlatformSettings(settings);
-                savePlatformSettingsInFirestore(settings);
+                savePlatformSettings(settings);
               }}
             />
           )}

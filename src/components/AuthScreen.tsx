@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Github, Shield, Sparkles, Code2, GitFork, MessageSquare, Zap } from 'lucide-react';
 import { UserProfile } from '../types';
-import { signInWithGitHubProvider, saveStoredProfile, DEFAULT_USER } from '../services/firebaseClient';
+import { signInWithGitHubSupabase, saveStoredProfile, DEFAULT_USER } from '../services/supabaseClient';
 
 interface AuthScreenProps {
   language: 'tr' | 'en';
@@ -18,18 +18,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ language, onChangeLangua
     setLoading(true);
     setAuthError(null);
     try {
-      await signInWithGitHubProvider();
+      await signInWithGitHubSupabase();
     } catch (err: any) {
-      console.warn('Firebase GitHub OAuth attempt:', err);
-      if (err?.code === 'auth/internal-error' || err?.code === 'auth/popup-blocked') {
-        setAuthError(
-          language === 'tr'
-            ? 'Tarayıcı veya pencere kısıtlaması nedeniyle yönlendirme bekleniyor...'
-            : 'Redirecting to GitHub auth provider...'
-        );
-      } else {
-        setAuthError(err?.message || 'Giriş sırasında bir hata oluştu.');
-      }
+      console.warn('Supabase GitHub OAuth attempt:', err);
+      setAuthError(err?.message || 'Giriş sırasında bir hata oluştu.');
     } finally {
       setLoading(false);
     }

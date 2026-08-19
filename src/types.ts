@@ -166,7 +166,7 @@ export interface GitHubRepo {
 
 export interface NotificationItem {
   id: string;
-  type: 'like' | 'star' | 'comment' | 'community' | 'repost' | 'follow';
+  type: 'like' | 'star' | 'comment' | 'community' | 'repost' | 'follow' | 'job_application' | 'job_listing';
   actor: {
     username: string;
     display_name: string;
@@ -175,6 +175,46 @@ export interface NotificationItem {
   content: string;
   time_ago: string;
   is_read: boolean;
+  target_id?: string;
+}
+
+export interface JobApplication {
+  id: string;
+  job_id: string;
+  job_title: string;
+  applicant_user_id: string;
+  applicant_username: string;
+  applicant_avatar?: string;
+  applicant_display_name?: string;
+  name: string; // Adınız
+  age: number; // Yaşınız
+  experience: string; // Deneyim
+  languages: string; // Bildiğiniz Diller
+  description: string; // Açıklama
+  created_at: string;
+  time_ago?: string;
+  status?: 'pending' | 'accepted' | 'rejected';
+}
+
+export interface JobListing {
+  id: string;
+  type: 'job' | 'team'; // İş İlanı / Ekip İlanı
+  title: string; // Başlık
+  description: string; // Açıklama
+  quota: number; // Kontenjan
+  author: {
+    id: string;
+    username: string;
+    display_name: string;
+    avatar_url: string;
+    role?: string;
+  };
+  status: 'active' | 'closed';
+  created_at: string;
+  time_ago?: string;
+  applications_count?: number;
+  applications?: JobApplication[];
+  applied_by?: string[]; // list of applicant user IDs / usernames
 }
 
 export interface Project {
