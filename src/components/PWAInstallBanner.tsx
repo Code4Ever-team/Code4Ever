@@ -49,10 +49,10 @@ export const PWAInstallBanner: React.FC<PWAInstallBannerProps> = ({
         </div>
         <div className="truncate">
           <h4 className="text-xs font-bold text-white tracking-tight">
-            {language === 'tr' ? 'Uygulamayı Telefona İndir' : 'Install Mobile App'}
+            {language === 'tr' ? 'Telefona Nasıl İndirilir?' : 'How to Install on Phone'}
           </h4>
           <p className="text-[11px] text-zinc-400 font-mono truncate">
-            {language === 'tr' ? 'Tek tıkla ana ekrana ekle' : 'Add to home screen in 1 click'}
+            {language === 'tr' ? '3 adımda ana ekrana ekleme rehberi' : '3-step setup guide'}
           </p>
         </div>
       </div>
@@ -62,8 +62,8 @@ export const PWAInstallBanner: React.FC<PWAInstallBannerProps> = ({
           onClick={onOpenInstallModal}
           className="px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1 cursor-pointer"
         >
-          <Download className="w-3.5 h-3.5 text-zinc-950 stroke-[2.5px]" />
-          <span>{language === 'tr' ? 'İndir' : 'Install'}</span>
+          <Smartphone className="w-3.5 h-3.5 text-zinc-950 stroke-[2.5px]" />
+          <span>{language === 'tr' ? 'Rehber' : 'Guide'}</span>
         </button>
 
         <button

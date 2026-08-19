@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Home,
   Compass,
@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, DynamicTheme } from '../types';
 import { verifyAdminAccess } from '../utils/securityHelper';
+import { isPWARunningStandalone } from '../utils/pwaHelper';
 
 interface SidebarProps {
   activeTab: string;
@@ -54,7 +55,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenInstallPWA
 }) => {
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
   const hasAdminAccess = verifyAdminAccess(user);
+
+  useEffect(() => {
+    setIsStandalone(isPWARunningStandalone());
+  }, []);
 
   const navItems = [
     { id: 'feed', label: language === 'tr' ? 'Ana Sayfa' : 'Home', icon: Home },
@@ -129,7 +135,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         <div className="flex items-center gap-1.5">
           {/* PWA Install Button on Mobile Header */}
-          {onOpenInstallPWA && (
+          {!isStandalone && onOpenInstallPWA && (
             <button
               onClick={onOpenInstallPWA}
               className="px-2.5 py-1.5 rounded-xl bg-zinc-900 border border-zinc-700/80 hover:bg-zinc-800 text-zinc-200 active:scale-95 transition-all text-[11px] font-bold flex items-center gap-1 cursor-pointer"
@@ -226,7 +232,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
 
               {/* PWA Download Banner Button inside Drawer */}
-              {onOpenInstallPWA && (
+              {!isStandalone && onOpenInstallPWA && (
                 <button
                   onClick={() => {
                     setIsMobileDrawerOpen(false);
@@ -240,10 +246,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                     <div className="text-left">
                       <span className="text-xs font-bold text-white block">
-                        {language === 'tr' ? 'Uygulamayı Telefona İndir' : 'Install Mobile App'}
+                        {language === 'tr' ? 'Telefona Nasıl İndirilir?' : 'How to Install on Phone'}
                       </span>
-                      <span className="text-[10px] text-emerald-400 font-mono block">
-                        ● {language === 'tr' ? 'Tek tıkla kurulum (PWA)' : '1-click PWA'}
+                      <span className="text-[10px] text-zinc-400 font-mono block">
+                        {language === 'tr' ? 'Kolay kurulum rehberi (PWA)' : 'PWA Setup guide'}
                       </span>
                     </div>
                   </div>
@@ -499,13 +505,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span>{language === 'tr' ? 'Yeni Gönderi' : 'New Post'}</span>
             </button>
 
-            {onOpenInstallPWA && (
+            {!isStandalone && onOpenInstallPWA && (
               <button
                 onClick={onOpenInstallPWA}
                 className="w-full py-2 px-3 rounded-xl font-semibold text-zinc-400 hover:text-white bg-zinc-900/60 hover:bg-zinc-800/80 border border-zinc-800/80 text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
               >
                 <Smartphone className="w-3.5 h-3.5 text-zinc-400" />
-                <span>{language === 'tr' ? 'Uygulamayı İndir (PWA)' : 'Install App (PWA)'}</span>
+                <span>{language === 'tr' ? 'Telefona İndir (PWA)' : 'Install App (PWA)'}</span>
               </button>
             )}
           </div>

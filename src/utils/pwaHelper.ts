@@ -27,6 +27,13 @@ export function registerServiceWorker() {
   }
 
   if (typeof window !== 'undefined') {
+    // Check if launched as PWA and mark in session
+    if (isPWARunningStandalone()) {
+      try {
+        localStorage.setItem('c4e_is_pwa_installed', 'true');
+      } catch {}
+    }
+
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       deferredPrompt = e as BeforeInstallPromptEvent;
@@ -36,6 +43,9 @@ export function registerServiceWorker() {
     window.addEventListener('appinstalled', () => {
       console.log('[PWA] Code4Ever app successfully installed');
       deferredPrompt = null;
+      try {
+        localStorage.setItem('c4e_is_pwa_installed', 'true');
+      } catch {}
       notifyListeners(false);
     });
   }
@@ -63,6 +73,9 @@ export async function promptPWAInstall(): Promise<'accepted' | 'dismissed' | 'un
     const choice = await deferredPrompt.userChoice;
     if (choice.outcome === 'accepted') {
       deferredPrompt = null;
+      try {
+        localStorage.setItem('c4e_is_pwa_installed', 'true');
+      } catch {}
       notifyListeners(false);
       return 'accepted';
     }
@@ -75,15 +88,25 @@ export async function promptPWAInstall(): Promise<'accepted' | 'dismissed' | 'un
 
 export function isPWARunningStandalone(): boolean {
   if (typeof window === 'undefined') return false;
-  return (
-    window.matchMedia('(display-mode: standalone)').matches ||
-    (window.navigator as any).standalone === true ||
-    document.referrer.includes('android-app://')
-  );
+  
+  const isStandaloneMedia = window.matchMedia('(display-mode: standalone)').matches;
+  const isFullscreenMedia = window.matchMedia('(display-mode: fullscreen)').matches;
+  const isMinimalUIMedia = window.matchMedia('(display-mode: minimal-ui)').matches;
+  const isIOSStandalone = (window.navigator as any).standalone === true;
+  const isAndroidTWA = document.referrer.includes('android-app://');
+  const isLocalStoragePWA = localStorage.getItem('c4e_is_pwa_installed') === 'true';
+
+  return isStandaloneMedia || isFullscreenMedia || isMinimalUIMedia || isIOSStandalone || isAndroidTWA || isLocalStoragePWA;
 }
 
 export function isIOSDevice(): boolean {
   if (typeof window === 'undefined') return false;
   const ua = window.navigator.userAgent.toLowerCase();
   return /iphone|ipad|ipod/.test(ua);
+}
+
+export function isAndroidDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+  const ua = window.navigator.userAgent.toLowerCase();
+  return /android/.test(ua);
 }

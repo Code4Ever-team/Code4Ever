@@ -1,7 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { UserProfile } from '../types';
 import { User, Globe, LogOut, CheckCircle2, Shield, Save, Sparkles, ChevronRight, ArrowLeft, Upload, AtSign, Smartphone, Download } from 'lucide-react';
 import { validateFileSize, notifyFileSizeExceeded } from '../utils/fileUploadHelper';
+import { isPWARunningStandalone } from '../utils/pwaHelper';
 
 interface SettingsViewProps {
   user: UserProfile;
@@ -23,6 +24,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'main' | 'profile'>('main');
   const [formData, setFormData] = useState<UserProfile>(user);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+
+  useEffect(() => {
+    setIsStandalone(isPWARunningStandalone());
+  }, []);
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
@@ -128,7 +134,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             {/* PWA Mobile App Card */}
-            {onOpenInstallPWA && (
+            {isStandalone ? (
+              <div className="bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-2">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800/40 pb-3">
+                  <Smartphone className="w-4 h-4 text-emerald-400" />
+                  <span>{language === 'tr' ? 'Mobil Uygulama (PWA)' : 'Mobile App (PWA)'}</span>
+                </h3>
+                <div className="flex items-center gap-2 text-xs font-mono text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{language === 'tr' ? 'Uygulama Yüklü & Standalone Modunda Çalışıyor' : 'App Installed & Running in Standalone Mode'}</span>
+                </div>
+              </div>
+            ) : onOpenInstallPWA ? (
               <div className="bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800/40 pb-3">
                   <Smartphone className="w-4 h-4 text-zinc-300" />
@@ -145,11 +162,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   onClick={onOpenInstallPWA}
                   className="w-full py-3 px-4 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-md cursor-pointer"
                 >
-                  <Download className="w-4 h-4 text-zinc-950 stroke-[2.5px]" />
-                  <span>{language === 'tr' ? 'Uygulamayı Telefona İndir' : 'Install to Phone'}</span>
+                  <Smartphone className="w-4 h-4 text-zinc-950 stroke-[2.5px]" />
+                  <span>{language === 'tr' ? 'Telefona Nasıl İndirilir? (Rehber)' : 'How to Install on Phone (Guide)'}</span>
                 </button>
               </div>
-            )}
+            ) : null}
 
             <div className="bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-4">
               <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800/40 pb-3">
