@@ -85,6 +85,7 @@ import { AdminView } from './components/AdminView';
 import { ClosedBetaScreen } from './components/ClosedBetaScreen';
 import { PWAInstallModal } from './components/PWAInstallModal';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
+import { sendNativeNotification } from './utils/notificationSound';
 import { Sparkles, X, AlertTriangle, Lock } from 'lucide-react';
 
 export default function App() {
@@ -265,6 +266,18 @@ export default function App() {
   const handleChangeLanguage = (newLang: 'tr' | 'en') => {
     setLanguage(newLang);
     saveLanguage(newLang);
+  };
+
+  const triggerNotification = (notif: NotificationItem) => {
+    setNotifications((prev) => [notif, ...prev]);
+    const sender = notif.actor?.display_name || notif.actor?.username || 'Code4Ever';
+    sendNativeNotification({
+      title: `Code4Ever • @${sender}`,
+      body: notif.content,
+      icon: notif.actor?.avatar_url || '/logo.png',
+      playSound: true,
+      vibrate: true
+    });
   };
 
   const handleUpdateProfile = (updated: Partial<UserProfile> | UserProfile) => {
@@ -574,7 +587,7 @@ export default function App() {
         time_ago: 'Az önce',
         is_read: false
       };
-      setNotifications((prev) => [authorNotif, ...prev]);
+      triggerNotification(authorNotif);
     }
   };
 
@@ -592,7 +605,7 @@ export default function App() {
 
   const handleSubmitJobApplication = async (application: JobApplication) => {
     const success = await submitJobApplicationService(application, (notif) => {
-      setNotifications((prev) => [notif, ...prev]);
+      triggerNotification(notif);
     });
     if (success) {
       setJobListings(loadStoredJobListings());

@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { User, Globe, LogOut, CheckCircle2, Shield, Save, Sparkles, ChevronRight, ArrowLeft, Upload, AtSign, Smartphone, Download } from 'lucide-react';
+import { User, Globe, LogOut, CheckCircle2, Shield, Save, Sparkles, ChevronRight, ArrowLeft, Upload, AtSign, Smartphone, Download, BellRing, Volume2, Bell } from 'lucide-react';
 import { validateFileSize, notifyFileSizeExceeded } from '../utils/fileUploadHelper';
 import { isPWARunningStandalone } from '../utils/pwaHelper';
+import { getNotificationPermission, requestNotificationPermission, sendNativeNotification, playNotificationSound } from '../utils/notificationSound';
 
 interface SettingsViewProps {
   user: UserProfile;
@@ -25,10 +26,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [formData, setFormData] = useState<UserProfile>(user);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>('default');
 
   useEffect(() => {
     setIsStandalone(isPWARunningStandalone());
+    setNotifPermission(getNotificationPermission());
   }, []);
+
+  const handleRequestNotif = async () => {
+    const res = await requestNotificationPermission();
+    setNotifPermission(res);
+    if (res === 'granted') {
+      sendNativeNotification({
+        title: 'Code4Ever Bildirimleri Aktif! 🔔',
+        body: language === 'tr'
+          ? 'Telefonunuza ve bilgisayarınıza gelen bildirimler artık sesli olarak iletilecektir.'
+          : 'Notifications on your phone and PC are now active with sound.',
+        playSound: true
+      });
+    }
+  };
+
+  const handleTestNotification = () => {
+    sendNativeNotification({
+      title: 'Code4Ever - Bildirim Sesi 🔔',
+      body: language === 'tr'
+        ? 'WhatsApp tarzı bildirim sesi ve sistem uyarısı başarıyla test edildi!'
+        : 'WhatsApp-style notification chime & system alert tested successfully!',
+      playSound: true
+    });
+  };
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
@@ -167,6 +194,50 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </button>
               </div>
             ) : null}
+
+            {/* Notification & Sound Settings Card */}
+            <div className="bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-zinc-800/40 pb-3">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <BellRing className="w-4 h-4 text-zinc-300" />
+                  <span>{language === 'tr' ? 'Bildirimler & Ses (Masaüstü & Mobil)' : 'Notifications & Sound (Desktop & Mobile)'}</span>
+                </h3>
+                {notifPermission === 'granted' && (
+                  <span className="text-[11px] font-mono text-emerald-400 font-semibold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>{language === 'tr' ? 'İzin Verildi' : 'Granted'}</span>
+                  </span>
+                )}
+              </div>
+
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                {language === 'tr'
+                  ? 'Uygulama arka plandayken veya telefonunuz kilitliyken bile WhatsApp tarzı bildirim sesi ve masaüstü/telefon bildirimleri alırsınız.'
+                  : 'Receive WhatsApp-style notification chimes and system notifications on your phone and PC when the app is in the background.'}
+              </p>
+
+              <div className="flex flex-col sm:flex-row items-center gap-2.5">
+                {notifPermission !== 'granted' ? (
+                  <button
+                    type="button"
+                    onClick={handleRequestNotif}
+                    className="w-full py-2.5 px-4 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-md cursor-pointer"
+                  >
+                    <Bell className="w-4 h-4 text-zinc-950 fill-zinc-950" />
+                    <span>{language === 'tr' ? 'Sistem Bildirimlerine İzin Ver' : 'Enable System Notifications'}</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleTestNotification}
+                    className="w-full py-2.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] cursor-pointer"
+                  >
+                    <Volume2 className="w-4 h-4 text-zinc-300" />
+                    <span>{language === 'tr' ? 'Bildirim Sesini Test Et (WhatsApp Tarzı)' : 'Test Notification Chime'}</span>
+                  </button>
+                )}
+              </div>
+            </div>
 
             <div className="bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-4">
               <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800/40 pb-3">

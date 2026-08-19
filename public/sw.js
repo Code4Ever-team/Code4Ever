@@ -92,3 +92,46 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
+// Push & Notification Click Handlers (Native Mobile & Desktop Notifications)
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = (event.notification.data && event.notification.data.url) || '/';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl);
+      }
+    })
+  );
+});
+
+self.addEventListener('push', (event) => {
+  if (event.data) {
+    try {
+      const data = event.data.json();
+      const title = data.title || 'Code4Ever';
+      const options = {
+        body: data.body || 'Yeni bir bildiriminiz var.',
+        icon: data.icon || '/logo.png',
+        badge: '/logo.png',
+        vibrate: [100, 50, 100, 50, 200],
+        tag: data.tag || 'c4e-notification',
+        renotify: true,
+        data: {
+          url: data.url || '/'
+        }
+      };
+      event.waitUntil(self.registration.showNotification(title, options));
+    } catch (e) {
+      console.warn('Error displaying push notification:', e);
+    }
+  }
+});
+
