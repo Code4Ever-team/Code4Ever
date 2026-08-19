@@ -145,13 +145,7 @@ export default function App() {
       }))
       .sort((a, b) => b.posts_count - a.posts_count);
 
-    if (list.length > 0) return list;
-
-    return [
-      { id: 't1', tag: '#code4ever', topic: '#code4ever', category: 'Gündem', posts_count: Math.max(1, posts.length) },
-      { id: 't2', tag: '#react', topic: '#react', category: 'Yazılım', posts_count: 12 },
-      { id: 't3', tag: '#typescript', topic: '#typescript', category: 'Geliştirme', posts_count: 8 }
-    ];
+    return list;
   }, [posts, language]);
 
   const parseHashParams = () => {

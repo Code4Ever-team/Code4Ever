@@ -195,54 +195,19 @@ export async function getOrFormatUserProfile(user: SupabaseUser): Promise<UserPr
 // POSTS (FEED & CODE SNIPPETS)
 // -------------------------------------------------------------
 
-export const INITIAL_POSTS: Post[] = [
-  {
-    id: 'post_1',
-    author: {
-      username: 'c4e_core',
-      display_name: 'Code4Ever Core',
-      avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
-    },
-    time_ago: '1 saat önce',
-    content: 'Code4Ever Supabase PostgreSQL altyapısına başarıyla geçirildi! 🚀 Hızlı sorgular, sağlam güvenlik kuralları ve yeni iş ilanları modülü aktif.',
-    code_snippet: {
-      title: 'Supabase Config',
-      language: 'typescript',
-      code: 'import { createClient } from "@supabase/supabase-js";\n\nexport const supabase = createClient(\n  process.env.SUPABASE_URL,\n  process.env.SUPABASE_ANON_KEY\n);'
-    },
-    likes_count: 8,
-    comments_count: 2,
-    reposts_count: 3,
-    is_liked: false,
-    is_reposted: false,
-    is_bookmarked: false,
-    created_at: new Date(Date.now() - 3600000).toISOString(),
-    comments: [
-      {
-        id: 'c1',
-        author: {
-          username: 'nylithra',
-          display_name: 'Nylithra',
-          avatar_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150'
-        },
-        content: 'PostgreSQL mimarisi harika çalışıyor! ⚡️',
-        created_at: new Date(Date.now() - 1800000).toISOString()
-      }
-    ]
-  }
-];
+export const INITIAL_POSTS: Post[] = [];
 
 export function loadStoredPosts(): Post[] {
   const data = localStorage.getItem(STORAGE_KEYS.POSTS);
   if (data) {
     try {
       const parsed: Post[] = JSON.parse(data);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     } catch {
       // Fallback
     }
   }
-  return INITIAL_POSTS;
+  return [];
 }
 
 export function saveStoredPosts(posts: Post[]): void {
@@ -357,40 +322,19 @@ export async function deletePostInSupabase(postId: string): Promise<void> {
 // COMMUNITIES
 // -------------------------------------------------------------
 
-export const INITIAL_COMMUNITIES: Community[] = [
-  {
-    id: 'comm_ts',
-    name: 'TypeScript & JavaScript',
-    handle: 'typescript',
-    avatar_url: 'https://images.unsplash.com/photo-1516116211227-bbc15456f916?w=200&auto=format&fit=crop&q=80',
-    banner_url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&auto=format&fit=crop&q=80',
-    description: 'Modern web, Node.js ve tip güvenli JavaScript geliştiricileri.',
-    members_count: 142,
-    is_joined: false
-  },
-  {
-    id: 'comm_sec',
-    name: 'Siber Güvenlik & DevSecOps',
-    handle: 'cybersec',
-    avatar_url: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=200&auto=format&fit=crop&q=80',
-    banner_url: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=1200&auto=format&fit=crop&q=80',
-    description: 'Güvenli kodlama standartları, tersine mühendislik ve zafiyet analizleri.',
-    members_count: 98,
-    is_joined: false
-  }
-];
+export const INITIAL_COMMUNITIES: Community[] = [];
 
 export function loadStoredCommunities(): Community[] {
   const data = localStorage.getItem(STORAGE_KEYS.COMMUNITIES);
   if (data) {
     try {
       const parsed: Community[] = JSON.parse(data);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     } catch {
       // Fallback
     }
   }
-  return INITIAL_COMMUNITIES;
+  return [];
 }
 
 export function saveStoredCommunities(communities: Community[]): void {
@@ -481,77 +425,19 @@ export async function deleteCommunityFromSupabase(commId: string): Promise<void>
 // JOB & TEAM LISTINGS (SUPABASE POSTGRESQL)
 // -------------------------------------------------------------
 
-export const INITIAL_JOB_LISTINGS: JobListing[] = [
-  {
-    id: 'job_1',
-    type: 'job',
-    title: 'Senior Full-Stack TypeScript Geliştirici',
-    description: 'Modern web mimarileri, React 19, Supabase PostgreSQL ve Node.js ekosisteminde deneyimli ekip arkadaşı arıyoruz. Uzaktan tam zamanlı çalışma imkanı.',
-    quota: 2,
-    author: {
-      id: 'usr_c4e_core',
-      username: 'code4ever_team',
-      display_name: 'Code4Ever Core Team',
-      avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-      role: 'Core Team'
-    },
-    status: 'active',
-    created_at: new Date(Date.now() - 3600000 * 5).toISOString(),
-    time_ago: '5s',
-    applications_count: 3,
-    applications: [
-      {
-        id: 'app_sample_1',
-        job_id: 'job_1',
-        job_title: 'Senior Full-Stack TypeScript Geliştirici',
-        applicant_user_id: 'usr_sample_1',
-        applicant_username: 'mert_dev',
-        applicant_display_name: 'Mert Yılmaz',
-        applicant_avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-        name: 'Mert Yılmaz',
-        age: 27,
-        experience: '5 yıl React ve Node.js ekosisteminde kurumsal projeler geliştirdim.',
-        languages: 'TypeScript, React, Node.js, PostgreSQL, Docker',
-        description: 'Code4Ever açık kaynak ekosisteminde aktif olarak katkı sağlamak istiyorum.',
-        created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
-        time_ago: '2s'
-      }
-    ],
-    applied_by: ['usr_sample_1']
-  },
-  {
-    id: 'job_2',
-    type: 'team',
-    title: 'Açık Kaynak CLI & Güvenlik Aracı Geliştirme Ekibi',
-    description: 'Geliştiriciler için terminal tabanlı statik analiz ve güvenlik tarama aracı geliştiriyoruz. Rust ve Go bilen 3 ekip üyesi arıyoruz.',
-    quota: 3,
-    author: {
-      id: 'usr_sec_lead',
-      username: 'cyber_guardian',
-      display_name: 'Cyber Guardian',
-      avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-      role: 'Security Lead'
-    },
-    status: 'active',
-    created_at: new Date(Date.now() - 3600000 * 12).toISOString(),
-    time_ago: '12s',
-    applications_count: 1,
-    applications: [],
-    applied_by: []
-  }
-];
+export const INITIAL_JOB_LISTINGS: JobListing[] = [];
 
 export function loadStoredJobListings(): JobListing[] {
   const data = localStorage.getItem(STORAGE_KEYS.JOB_LISTINGS);
   if (data) {
     try {
       const parsed: JobListing[] = JSON.parse(data);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     } catch {
       // Fallback
     }
   }
-  return INITIAL_JOB_LISTINGS;
+  return [];
 }
 
 export function saveStoredJobListings(listings: JobListing[]): void {

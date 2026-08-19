@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, GitBranch, Star, GitFork, Plus, Trash2, Check, Sparkles, AlertTriangle, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, GitBranch, Star, GitFork, Plus, Trash2, Check, Sparkles, AlertTriangle, ExternalLink, Loader2 } from 'lucide-react';
 import { GitHubRepo, UserProfile } from '../types';
 import { sanitizeText, sanitizeUrl } from '../utils/securityHelper';
 
@@ -12,53 +12,6 @@ interface ShowcaseReposModalProps {
   onSavePinnedRepos: (repos: GitHubRepo[]) => void;
 }
 
-const DEFAULT_SAMPLE_REPOS: GitHubRepo[] = [
-  {
-    id: 101,
-    name: 'code4ever-core',
-    full_name: 'developer/code4ever-core',
-    description: 'Modern developer social network and open-source project collaboration engine.',
-    html_url: 'https://github.com/developer/code4ever-core',
-    stargazers_count: 142,
-    forks_count: 38,
-    language: 'TypeScript',
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: 102,
-    name: 'quantum-ai-toolkit',
-    full_name: 'developer/quantum-ai-toolkit',
-    description: 'High performance algorithmic toolkit for neural network state management.',
-    html_url: 'https://github.com/developer/quantum-ai-toolkit',
-    stargazers_count: 89,
-    forks_count: 14,
-    language: 'Rust',
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: 103,
-    name: 'react-fluent-charts',
-    full_name: 'developer/react-fluent-charts',
-    description: 'Lightweight, hardware-accelerated charting components built for React 19.',
-    html_url: 'https://github.com/developer/react-fluent-charts',
-    stargazers_count: 310,
-    forks_count: 75,
-    language: 'TypeScript',
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: 104,
-    name: 'zero-trust-auth-guard',
-    full_name: 'developer/zero-trust-auth-guard',
-    description: 'Client-side E2EE key distribution and zero-knowledge proof validator.',
-    html_url: 'https://github.com/developer/zero-trust-auth-guard',
-    stargazers_count: 67,
-    forks_count: 12,
-    language: 'Go',
-    updated_at: new Date().toISOString()
-  }
-];
-
 export const ShowcaseReposModal: React.FC<ShowcaseReposModalProps> = ({
   isOpen,
   user,
@@ -70,6 +23,8 @@ export const ShowcaseReposModal: React.FC<ShowcaseReposModalProps> = ({
   if (!isOpen) return null;
 
   const [selectedList, setSelectedList] = useState<GitHubRepo[]>(pinnedRepos || []);
+  const [userGitHubRepos, setUserGitHubRepos] = useState<GitHubRepo[]>([]);
+  const [loadingRepos, setLoadingRepos] = useState<boolean>(false);
   const [customName, setCustomName] = useState('');
   const [customDesc, setCustomDesc] = useState('');
   const [customLang, setCustomLang] = useState('TypeScript');
@@ -78,6 +33,27 @@ export const ShowcaseReposModal: React.FC<ShowcaseReposModalProps> = ({
   const [customForks, setCustomForks] = useState(0);
   const [showAddCustom, setShowAddCustom] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user.username) return;
+    const fetchRepos = async () => {
+      setLoadingRepos(true);
+      try {
+        const res = await fetch(`https://api.github.com/users/${encodeURIComponent(user.username)}/repos?sort=updated&per_page=15`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setUserGitHubRepos(data);
+          }
+        }
+      } catch {
+        // Ignore fetch error
+      } finally {
+        setLoadingRepos(false);
+      }
+    };
+    fetchRepos();
+  }, [user.username]);
 
   const isRepoPinned = (repoName: string) => {
     return selectedList.some((r) => r.name.toLowerCase() === repoName.toLowerCase());
@@ -237,7 +213,7 @@ export const ShowcaseReposModal: React.FC<ShowcaseReposModalProps> = ({
           )}
         </div>
 
-        {/* Available Suggested / Sample Repositories */}
+        {/* User Real Repositories */}
         <div className="space-y-3 pt-2">
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold text-zinc-300 font-mono block">
@@ -330,41 +306,58 @@ export const ShowcaseReposModal: React.FC<ShowcaseReposModalProps> = ({
             </form>
           )}
 
-          {/* Preset / Sample Repos to Pick */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-            {DEFAULT_SAMPLE_REPOS.map((repo) => {
-              const isPinned = isRepoPinned(repo.name);
-              return (
-                <div
-                  key={repo.name}
-                  onClick={() => toggleRepo(repo)}
-                  className={`p-3 rounded-2xl border cursor-pointer transition-all ${
-                    isPinned
-                      ? 'bg-zinc-900/90 border-zinc-500 ring-1 ring-zinc-400'
-                      : 'bg-zinc-950 hover:bg-zinc-900/60 border-zinc-800/80'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-white truncate">{repo.name}</span>
-                    {isPinned ? (
-                      <span className="p-1 rounded-lg bg-zinc-100 text-zinc-950 flex-shrink-0">
-                        <Check className="w-3 h-3" />
-                      </span>
-                    ) : (
-                      <span className="p-1 rounded-lg bg-zinc-900 text-zinc-500 border border-zinc-800 flex-shrink-0">
-                        <Plus className="w-3 h-3" />
-                      </span>
+          {/* User Real GitHub Repositories to Pick */}
+          {loadingRepos ? (
+            <div className="p-6 text-center text-zinc-500 text-xs flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-zinc-400" />
+              <span>{language === 'tr' ? 'GitHub depoları yükleniyor...' : 'Loading GitHub repositories...'}</span>
+            </div>
+          ) : userGitHubRepos.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              {userGitHubRepos.map((repo) => {
+                const isPinned = isRepoPinned(repo.name);
+                return (
+                  <div
+                    key={repo.id || repo.name}
+                    onClick={() => toggleRepo(repo)}
+                    className={`p-3 rounded-2xl border cursor-pointer transition-all ${
+                      isPinned
+                        ? 'bg-zinc-900/90 border-zinc-500 ring-1 ring-zinc-400'
+                        : 'bg-zinc-950 hover:bg-zinc-900/60 border-zinc-800/80'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-white truncate">{repo.name}</span>
+                      {isPinned ? (
+                        <span className="p-1 rounded-lg bg-zinc-100 text-zinc-950 flex-shrink-0">
+                          <Check className="w-3 h-3" />
+                        </span>
+                      ) : (
+                        <span className="p-1 rounded-lg bg-zinc-900 text-zinc-500 border border-zinc-800 flex-shrink-0">
+                          <Plus className="w-3 h-3" />
+                        </span>
+                      )}
+                    </div>
+                    {repo.description && (
+                      <p className="text-[11px] text-zinc-400 line-clamp-1 mt-1">{repo.description}</p>
                     )}
+                    <div className="flex items-center gap-2 text-[10px] text-zinc-500 font-mono mt-2">
+                      {repo.language && (
+                        <span className="px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-300">{repo.language}</span>
+                      )}
+                      <span>★ {repo.stargazers_count || 0}</span>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-zinc-400 line-clamp-1 mt-1">{repo.description}</p>
-                  <div className="flex items-center gap-2 text-[10px] text-zinc-500 font-mono mt-2">
-                    <span className="px-1.5 py-0.2 rounded bg-zinc-900 text-zinc-300">{repo.language}</span>
-                    <span>★ {repo.stargazers_count}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800/60 text-center text-zinc-500 text-xs font-mono">
+              {language === 'tr'
+                ? 'GitHub hesabınızda açık kaynak depo bulunamadı veya yukarıdaki "Özel Depo Ekle" ile projenizi ekleyebilirsiniz.'
+                : 'No public repositories found on your GitHub or use "Add Custom Repo" above.'}
+            </div>
+          )}
         </div>
 
         {/* Footer Actions */}
