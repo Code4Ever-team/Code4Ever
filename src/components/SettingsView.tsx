@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { UserProfile } from '../types';
-import { User, Globe, LogOut, CheckCircle2, Shield, Save, Sparkles, ChevronRight, ArrowLeft, Upload, AtSign } from 'lucide-react';
+import { User, Globe, LogOut, CheckCircle2, Shield, Save, Sparkles, ChevronRight, ArrowLeft, Upload, AtSign, Smartphone, Download } from 'lucide-react';
 import { validateFileSize, notifyFileSizeExceeded } from '../utils/fileUploadHelper';
 
 interface SettingsViewProps {
@@ -9,6 +9,7 @@ interface SettingsViewProps {
   onUpdateProfile: (updated: UserProfile) => void;
   onChangeLanguage: (lang: 'tr' | 'en') => void;
   onLogout: () => void;
+  onOpenInstallPWA?: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -16,7 +17,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   language,
   onUpdateProfile,
   onChangeLanguage,
-  onLogout
+  onLogout,
+  onOpenInstallPWA
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'main' | 'profile'>('main');
   const [formData, setFormData] = useState<UserProfile>(user);
@@ -125,35 +127,59 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </button>
             </div>
 
+            {/* PWA Mobile App Card */}
+            {onOpenInstallPWA && (
+              <div className="bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-3">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800/40 pb-3">
+                  <Smartphone className="w-4 h-4 text-zinc-300" />
+                  <span>{language === 'tr' ? 'Mobil Uygulama (PWA)' : 'Mobile App (PWA)'}</span>
+                </h3>
+
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  {language === 'tr'
+                    ? 'Code4Ever uygulamasını telefonunuza doğrudan indirin. Hızlı açılış, tam ekran deneyimi ve çevrimdışı önbellek desteği sağlar.'
+                    : 'Install Code4Ever directly to your smartphone. Enjoy fast startup, full-screen experience and offline cache.'}
+                </p>
+
+                <button
+                  onClick={onOpenInstallPWA}
+                  className="w-full py-3 px-4 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-md cursor-pointer"
+                >
+                  <Download className="w-4 h-4 text-zinc-950 stroke-[2.5px]" />
+                  <span>{language === 'tr' ? 'Uygulamayı Telefona İndir' : 'Install to Phone'}</span>
+                </button>
+              </div>
+            )}
+
             <div className="bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-4">
               <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800/40 pb-3">
-                <Globe className="w-4 h-4 text-blue-400" />
+                <Globe className="w-4 h-4 text-zinc-300" />
                 <span>{language === 'tr' ? 'Dil Tercihi' : 'Language Preference'}</span>
               </h3>
 
               <div className="grid grid-cols-2 gap-3">
                 <button
                   onClick={() => onChangeLanguage('tr')}
-                  className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-between transition-all ${
+                  className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${
                     language === 'tr'
-                      ? 'bg-blue-950/60 border-blue-500 text-white'
+                      ? 'bg-zinc-800 border-zinc-600 text-white font-bold'
                       : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
                   }`}
                 >
                   <span>Türkçe (TR)</span>
-                  {language === 'tr' && <Sparkles className="w-3.5 h-3.5 text-blue-400" />}
+                  {language === 'tr' && <Sparkles className="w-3.5 h-3.5 text-zinc-300" />}
                 </button>
 
                 <button
                   onClick={() => onChangeLanguage('en')}
-                  className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-between transition-all ${
+                  className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${
                     language === 'en'
-                      ? 'bg-blue-950/60 border-blue-500 text-white'
+                      ? 'bg-zinc-800 border-zinc-600 text-white font-bold'
                       : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
                   }`}
                 >
                   <span>English (US)</span>
-                  {language === 'en' && <Sparkles className="w-3.5 h-3.5 text-blue-400" />}
+                  {language === 'en' && <Sparkles className="w-3.5 h-3.5 text-zinc-300" />}
                 </button>
               </div>
             </div>
@@ -167,13 +193,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="text-xs font-mono text-zinc-400 space-y-1.5">
                 <div className="flex items-center gap-2 text-emerald-400">
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>{language === 'tr' ? 'Firebase GitHub Oturumu Aktif' : 'Firebase GitHub Session Active'}</span>
+                  <span>{language === 'tr' ? 'Supabase Oturumu Aktif' : 'Supabase Session Active'}</span>
                 </div>
               </div>
 
               <button
                 onClick={onLogout}
-                className="w-full py-2.5 rounded-xl bg-red-950/50 hover:bg-red-900/60 border border-red-800/60 text-red-300 font-semibold text-xs transition-colors flex items-center justify-center gap-2"
+                className="w-full py-2.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-800/50 text-red-300 font-semibold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
                 <span>{language === 'tr' ? 'Oturumu Kapat' : 'Sign Out'}</span>

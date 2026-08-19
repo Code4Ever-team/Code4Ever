@@ -83,6 +83,8 @@ import { UserProfileModal } from './components/UserProfileModal';
 import { EveryChatView } from './components/EveryChatView';
 import { AdminView } from './components/AdminView';
 import { ClosedBetaScreen } from './components/ClosedBetaScreen';
+import { PWAInstallModal } from './components/PWAInstallModal';
+import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { Sparkles, X, AlertTriangle, Lock } from 'lucide-react';
 
 export default function App() {
@@ -99,6 +101,7 @@ export default function App() {
   });
   const [jobListings, setJobListings] = useState<JobListing[]>(loadStoredJobListings());
   const [isNewPostOpen, setIsNewPostOpen] = useState<boolean>(false);
+  const [isPWAInstallModalOpen, setIsPWAInstallModalOpen] = useState<boolean>(false);
   const [betaModalInfo, setBetaModalInfo] = useState<{ title: string; desc: string; iconType?: 'sparkles' | 'lock' } | null>(null);
 
   const [lastActionTimestamp, setLastActionTimestamp] = useState<number>(0);
@@ -775,6 +778,7 @@ export default function App() {
           onOpenNewPost={() => setIsNewPostOpen(true)}
           onLogout={handleLogout}
           onChangeLanguage={handleChangeLanguage}
+          onOpenInstallPWA={() => setIsPWAInstallModalOpen(true)}
           onOpenBetaModal={(tabType) => {
             if (tabType === 'everychat') {
               setBetaModalInfo({
@@ -923,6 +927,7 @@ export default function App() {
               onUpdateProfile={handleUpdateProfile}
               onChangeLanguage={handleChangeLanguage}
               onLogout={handleLogout}
+              onOpenInstallPWA={() => setIsPWAInstallModalOpen(true)}
             />
           )}
 
@@ -998,6 +1003,17 @@ export default function App() {
           setViewingUser(profile);
           setActiveTab('profile');
         }}
+      />
+
+      <PWAInstallBanner
+        onOpenInstallModal={() => setIsPWAInstallModalOpen(true)}
+        language={language}
+      />
+
+      <PWAInstallModal
+        isOpen={isPWAInstallModalOpen}
+        onClose={() => setIsPWAInstallModalOpen(false)}
+        language={language}
       />
 
       {betaModalInfo && (

@@ -1,0 +1,43 @@
+{
+  "name": "Code4Ever - Developer Community",
+  "short_name": "Code4Ever",
+  "description": "Geliştiriciler için modern topluluk ve sosyal kodlama platformu",
+  "start_url": "/",
+  "id": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["social", "developer", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Yeni Gönderi",
+      "short_name": "Gönderi",
+      "description": "Hızlıca yeni bir kod veya durum paylaş",
+      "url": "/?action=new-post",
+      "icons": [{ "src": "/logo.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "İş İlanları",
+      "short_name": "İlanlar",
+      "description": "İş ve ekip ilanlarını görüntüle",
+      "url": "/?tab=jobs",
+      "icons": [{ "src": "/logo.png", "sizes": "192x192" }]
+    }
+  ]
+}
