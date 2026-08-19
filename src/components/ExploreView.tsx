@@ -50,12 +50,12 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           />
         </div>
 
-        <div className="flex items-center gap-2 pt-1">
+        <div className="flex items-center gap-2 pt-1 overflow-x-auto pb-0.5 no-scrollbar">
           <button
             onClick={() => setFilter('all')}
-            className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
               filter === 'all'
-                ? 'bg-blue-600 text-white'
+                ? 'bg-zinc-100 text-zinc-950 font-bold shadow-sm'
                 : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'
             }`}
           >
@@ -63,9 +63,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           </button>
           <button
             onClick={() => setFilter('posts')}
-            className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
               filter === 'posts'
-                ? 'bg-blue-600 text-white'
+                ? 'bg-zinc-100 text-zinc-950 font-bold shadow-sm'
                 : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'
             }`}
           >
@@ -73,9 +73,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           </button>
           <button
             onClick={() => setFilter('communities')}
-            className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
               filter === 'communities'
-                ? 'bg-blue-600 text-white'
+                ? 'bg-zinc-100 text-zinc-950 font-bold shadow-sm'
                 : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'
             }`}
           >
@@ -88,11 +88,11 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         {!query && (
           <div className="bg-[#0c0c0e] border border-zinc-800/50 rounded-2xl p-4 space-y-3">
             <h3 className="text-xs font-bold text-white flex items-center gap-2 border-b border-zinc-800/40 pb-2">
-              <TrendingUp className="w-4 h-4 text-blue-400" />
+              <TrendingUp className="w-4 h-4 text-zinc-300" />
               <span>{language === 'tr' ? 'Popüler Konular' : 'Popular Topics'}</span>
             </h3>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {trends.map((t) => (
                 <div
                   key={t.id}
@@ -115,7 +115,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         {(filter === 'all' || filter === 'communities') && (
           <div className="space-y-3">
             <h3 className="text-xs font-bold text-white flex items-center gap-2">
-              <Users className="w-4 h-4 text-blue-400" />
+              <Users className="w-4 h-4 text-zinc-300" />
               <span>{language === 'tr' ? 'Topluluk Sonuçları' : 'Community Results'}</span>
             </h3>
             <div className="space-y-2">

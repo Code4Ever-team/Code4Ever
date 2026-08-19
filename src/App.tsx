@@ -761,7 +761,7 @@ export default function App() {
         </div>
       )}
 
-      <div className="w-full flex relative min-h-screen min-w-0">
+      <div className="w-full flex flex-col md:flex-row relative min-h-screen min-w-0">
         <Sidebar
           activeTab={activeTab}
           setActiveTab={(tab) => {
@@ -774,6 +774,7 @@ export default function App() {
           unreadCount={unreadNotificationsCount}
           onOpenNewPost={() => setIsNewPostOpen(true)}
           onLogout={handleLogout}
+          onChangeLanguage={handleChangeLanguage}
           onOpenBetaModal={(tabType) => {
             if (tabType === 'everychat') {
               setBetaModalInfo({
@@ -795,7 +796,7 @@ export default function App() {
           }}
         />
 
-        <main className="flex-1 flex min-h-screen w-full">
+        <main className="flex-1 flex min-h-screen w-full pt-[52px] md:pt-0 pb-16 md:pb-0 min-w-0">
           {activeTab === 'feed' && (
             <FeedView
               posts={posts}

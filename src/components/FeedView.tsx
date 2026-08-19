@@ -72,13 +72,18 @@ export const FeedView: React.FC<FeedViewProps> = ({
   const [copiedPostId, setCopiedPostId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Right-click context menu state (specifically for nylithra / admins)
+  // Right-click context menu state (specifically for nylithra / admins / all users)
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
     x: number;
     y: number;
     post: Post | null;
   }>({ visible: false, x: 0, y: 0, post: null });
+
+  // 2-second touch and hold (long-press) on mobile for post context menu
+  const touchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const [longPressingPostId, setLongPressingPostId] = useState<string | null>(null);
 
   const isNylithra =
     user?.username?.toLowerCase() === 'nylithra' ||
@@ -106,6 +111,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
       window.removeEventListener('click', handleWindowClick);
       window.removeEventListener('scroll', handleWindowScroll);
       window.removeEventListener('keydown', handleKeyDown);
+      if (touchTimerRef.current) {
+        clearTimeout(touchTimerRef.current);
+      }
     };
   }, []);
 
@@ -117,6 +125,62 @@ export const FeedView: React.FC<FeedViewProps> = ({
     const x = Math.min(e.clientX, window.innerWidth - menuWidth - 16);
     const y = Math.min(e.clientY, window.innerHeight - menuHeight - 16);
     setContextMenu({ visible: true, x, y, post });
+  };
+
+  const handleTouchStart = (e: React.TouchEvent, post: Post) => {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+    setLongPressingPostId(post.id);
+
+    if (touchTimerRef.current) {
+      clearTimeout(touchTimerRef.current);
+    }
+
+    // 2 seconds held without significant movement activates context menu
+    touchTimerRef.current = setTimeout(() => {
+      if (touchStartPosRef.current) {
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          try {
+            navigator.vibrate(50);
+          } catch {}
+        }
+        const posX = touchStartPosRef.current.x;
+        const posY = touchStartPosRef.current.y;
+        const menuWidth = 240;
+        const menuHeight = 220;
+        const x = Math.min(Math.max(16, posX - 100), window.innerWidth - menuWidth - 16);
+        const y = Math.min(Math.max(16, posY - 50), window.innerHeight - menuHeight - 16);
+        setContextMenu({ visible: true, x, y, post });
+      }
+      setLongPressingPostId(null);
+      touchTimerRef.current = null;
+    }, 2000);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartPosRef.current || !touchTimerRef.current) return;
+    const touch = e.touches[0];
+    const dx = Math.abs(touch.clientX - touchStartPosRef.current.x);
+    const dy = Math.abs(touch.clientY - touchStartPosRef.current.y);
+    // If finger moves more than 10px, cancel long-press (user is scrolling)
+    if (dx > 10 || dy > 10) {
+      if (touchTimerRef.current) {
+        clearTimeout(touchTimerRef.current);
+        touchTimerRef.current = null;
+      }
+      touchStartPosRef.current = null;
+      setLongPressingPostId(null);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (touchTimerRef.current) {
+      clearTimeout(touchTimerRef.current);
+      touchTimerRef.current = null;
+    }
+    touchStartPosRef.current = null;
+    setLongPressingPostId(null);
   };
 
   const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -556,9 +620,13 @@ export const FeedView: React.FC<FeedViewProps> = ({
               <article
                 key={post.id}
                 onContextMenu={(e) => handlePostContextMenu(e, post)}
-                className={`p-4 hover:bg-zinc-900/30 transition-colors space-y-3 relative ${
-                  isNylithra ? 'cursor-context-menu select-text' : ''
-                }`}
+                onTouchStart={(e) => handleTouchStart(e, post)}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                onTouchCancel={handleTouchEnd}
+                className={`p-4 hover:bg-zinc-900/30 transition-colors space-y-3 relative select-text ${
+                  isNylithra ? 'cursor-context-menu' : ''
+                } ${longPressingPostId === post.id ? 'bg-zinc-900/50 scale-[0.995] transition-transform' : ''}`}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
@@ -822,7 +890,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
         )}
       </div>
 
-      {/* Right-Click Context Menu for all users */}
+      {/* Context Menu (Desktop Right-Click + Mobile 2-Second Hold) */}
       {contextMenu.visible && contextMenu.post && (() => {
         const isPostAuthor =
           (contextMenu.post.author.username?.toLowerCase() === user.username?.toLowerCase()) ||
@@ -831,110 +899,131 @@ export const FeedView: React.FC<FeedViewProps> = ({
 
         return (
           <div
-            style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
-            className="fixed z-50 min-w-[230px] rounded-2xl bg-[#121215]/95 border border-zinc-700/80 shadow-2xl backdrop-blur-xl p-1.5 space-y-1 animate-in fade-in zoom-in-95 select-none"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex sm:block items-end sm:items-stretch justify-center select-none p-0 sm:p-0"
+            onClick={() => setContextMenu({ visible: false, x: 0, y: 0, post: null })}
           >
-            <div className="px-3 py-1.5 border-b border-zinc-800/80 flex items-center justify-between text-[11px] font-mono text-zinc-400">
-              <span className="flex items-center gap-1.5 font-bold text-zinc-300">
-                {isNylithra ? (
-                  <>
-                    <Shield className="w-3 h-3 text-amber-400" />
-                    <span className="text-amber-400">Yönetici Menüsü</span>
-                  </>
-                ) : isPostAuthor ? (
-                  <>
-                    <User className="w-3 h-3 text-blue-400" />
-                    <span>Gönderiniz</span>
-                  </>
-                ) : (
-                  <>
-                    <Code className="w-3 h-3 text-zinc-400" />
-                    <span>Gönderi Seçenekleri</span>
-                  </>
-                )}
-              </span>
-              <span className="text-[10px] text-zinc-500 font-mono">@{contextMenu.post.author.username}</span>
-            </div>
-
-            {/* Profile Button */}
-            <button
-              type="button"
-              onClick={() => {
-                if (contextMenu.post) {
-                  onSelectUser(contextMenu.post.author.username);
-                  setContextMenu({ visible: false, x: 0, y: 0, post: null });
-                }
-              }}
-              className="w-full px-3 py-2 rounded-xl text-left text-xs font-semibold text-zinc-200 hover:bg-zinc-800/80 transition-colors flex items-center gap-2.5"
+            <div
+              style={
+                typeof window !== 'undefined' && window.innerWidth >= 640
+                  ? { top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }
+                  : undefined
+              }
+              className="w-full sm:w-auto sm:fixed z-50 sm:min-w-[240px] rounded-t-3xl sm:rounded-2xl bg-[#121215]/98 border border-zinc-700/80 shadow-2xl backdrop-blur-xl p-4 sm:p-1.5 space-y-1.5 sm:space-y-1 animate-in slide-in-from-bottom-5 sm:zoom-in-95 select-none max-w-lg mx-auto sm:mx-0 pb-8 sm:pb-1.5"
+              onClick={(e) => e.stopPropagation()}
             >
-              <User className="w-4 h-4 text-blue-400" />
-              <span>{language === 'tr' ? 'Yazar Profilini Aç' : 'View Author Profile'}</span>
-            </button>
+              {/* Mobile handle indicator */}
+              <div className="w-10 h-1 bg-zinc-700 rounded-full mx-auto mb-2 sm:hidden" />
 
-            {/* Copy Link Button */}
-            <button
-              type="button"
-              onClick={() => {
-                if (contextMenu.post) {
-                  handleShare(contextMenu.post);
-                  setContextMenu({ visible: false, x: 0, y: 0, post: null });
-                }
-              }}
-              className="w-full px-3 py-2 rounded-xl text-left text-xs font-semibold text-zinc-300 hover:bg-zinc-800/80 transition-colors flex items-center gap-2.5"
-            >
-              <Copy className="w-4 h-4 text-zinc-400" />
-              <span>{language === 'tr' ? 'Bağlantıyı Kopyala' : 'Copy Post Link'}</span>
-            </button>
+              <div className="px-3 py-2 sm:py-1.5 border-b border-zinc-800/80 flex items-center justify-between text-xs sm:text-[11px] font-mono text-zinc-400">
+                <span className="flex items-center gap-1.5 font-bold text-zinc-300">
+                  {isNylithra ? (
+                    <>
+                      <Shield className="w-3.5 h-3.5 sm:w-3 sm:h-3 text-amber-400" />
+                      <span className="text-amber-400">Yönetici Menüsü</span>
+                    </>
+                  ) : isPostAuthor ? (
+                    <>
+                      <User className="w-3.5 h-3.5 sm:w-3 sm:h-3 text-blue-400" />
+                      <span>Gönderiniz</span>
+                    </>
+                  ) : (
+                    <>
+                      <Code className="w-3.5 h-3.5 sm:w-3 sm:h-3 text-zinc-400" />
+                      <span>Gönderi Seçenekleri</span>
+                    </>
+                  )}
+                </span>
+                <span className="text-[11px] sm:text-[10px] text-zinc-500 font-mono">@{contextMenu.post.author.username}</span>
+              </div>
 
-            {/* Bookmark Button */}
-            <button
-              type="button"
-              onClick={() => {
-                if (contextMenu.post) {
-                  onBookmarkPost(contextMenu.post.id);
-                  setToastMessage(language === 'tr' ? 'Yer işaretleri güncellendi.' : 'Bookmarks updated.');
-                  setTimeout(() => setToastMessage(null), 2000);
-                  setContextMenu({ visible: false, x: 0, y: 0, post: null });
-                }
-              }}
-              className="w-full px-3 py-2 rounded-xl text-left text-xs font-semibold text-zinc-300 hover:bg-zinc-800/80 transition-colors flex items-center gap-2.5"
-            >
-              <Bookmark className="w-4 h-4 text-amber-400" />
-              <span>
-                {user.saved_post_ids?.includes(contextMenu.post.id)
-                  ? (language === 'tr' ? 'Yer İşaretlerinden Kaldır' : 'Remove Bookmark')
-                  : (language === 'tr' ? 'Yer İşaretlerine Ekle' : 'Save to Bookmarks')}
-              </span>
-            </button>
-
-            {/* Delete Button (Only for Author or Admin/Nylithra) */}
-            {canDelete && (
+              {/* Profile Button */}
               <button
                 type="button"
                 onClick={() => {
                   if (contextMenu.post) {
-                    const confirmMsg = language === 'tr'
-                      ? 'Bu gönderiyi silmek istediğinize emin misiniz?'
-                      : 'Are you sure you want to delete this post?';
-                    if (window.confirm(confirmMsg)) {
-                      onDeletePost(contextMenu.post.id);
-                      setToastMessage(language === 'tr' ? 'Gönderi silindi.' : 'Post deleted.');
-                      setTimeout(() => setToastMessage(null), 2500);
-                      setContextMenu({ visible: false, x: 0, y: 0, post: null });
-                    }
+                    onSelectUser(contextMenu.post.author.username);
+                    setContextMenu({ visible: false, x: 0, y: 0, post: null });
                   }
                 }}
-                className="w-full px-3 py-2 rounded-xl text-left text-xs font-bold text-red-400 hover:bg-red-500/15 transition-colors flex items-center gap-2.5 border-t border-zinc-800/80 mt-1"
+                className="w-full px-3 py-3 sm:py-2 rounded-xl text-left text-xs font-semibold text-zinc-200 hover:bg-zinc-800/80 active:bg-zinc-800 transition-colors flex items-center gap-3 cursor-pointer"
               >
-                <Trash2 className="w-4 h-4 text-red-400" />
+                <User className="w-4 h-4 text-blue-400" />
+                <span>{language === 'tr' ? 'Yazar Profilini Aç' : 'View Author Profile'}</span>
+              </button>
+
+              {/* Copy Link Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (contextMenu.post) {
+                    handleShare(contextMenu.post);
+                    setContextMenu({ visible: false, x: 0, y: 0, post: null });
+                  }
+                }}
+                className="w-full px-3 py-3 sm:py-2 rounded-xl text-left text-xs font-semibold text-zinc-300 hover:bg-zinc-800/80 active:bg-zinc-800 transition-colors flex items-center gap-3 cursor-pointer"
+              >
+                <Copy className="w-4 h-4 text-zinc-400" />
+                <span>{language === 'tr' ? 'Bağlantıyı Kopyala' : 'Copy Post Link'}</span>
+              </button>
+
+              {/* Bookmark Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (contextMenu.post) {
+                    onBookmarkPost(contextMenu.post.id);
+                    setToastMessage(language === 'tr' ? 'Yer işaretleri güncellendi.' : 'Bookmarks updated.');
+                    setTimeout(() => setToastMessage(null), 2000);
+                    setContextMenu({ visible: false, x: 0, y: 0, post: null });
+                  }
+                }}
+                className="w-full px-3 py-3 sm:py-2 rounded-xl text-left text-xs font-semibold text-zinc-300 hover:bg-zinc-800/80 active:bg-zinc-800 transition-colors flex items-center gap-3 cursor-pointer"
+              >
+                <Bookmark className="w-4 h-4 text-amber-400" />
                 <span>
-                  {isNylithra && !isPostAuthor
-                    ? (language === 'tr' ? 'Bu Gönderiyi Sil (Yönetici)' : 'Delete Post (Admin)')
-                    : (language === 'tr' ? 'Bu Gönderiyi Sil' : 'Delete Post')}
+                  {user.saved_post_ids?.includes(contextMenu.post.id)
+                    ? (language === 'tr' ? 'Yer İşaretlerinden Kaldır' : 'Remove Bookmark')
+                    : (language === 'tr' ? 'Yer İşaretlerine Ekle' : 'Save to Bookmarks')}
                 </span>
               </button>
-            )}
+
+              {/* Delete Button (Only for Author or Admin/Nylithra) */}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (contextMenu.post) {
+                      const confirmMsg = language === 'tr'
+                        ? 'Bu gönderiyi silmek istediğinize emin misiniz?'
+                        : 'Are you sure you want to delete this post?';
+                      if (window.confirm(confirmMsg)) {
+                        onDeletePost(contextMenu.post.id);
+                        setToastMessage(language === 'tr' ? 'Gönderi silindi.' : 'Post deleted.');
+                        setTimeout(() => setToastMessage(null), 2500);
+                        setContextMenu({ visible: false, x: 0, y: 0, post: null });
+                      }
+                    }
+                  }}
+                  className="w-full px-3 py-3 sm:py-2 rounded-xl text-left text-xs font-bold text-red-400 hover:bg-red-500/15 active:bg-red-500/20 transition-colors flex items-center gap-3 border-t border-zinc-800/80 mt-1 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4 text-red-400" />
+                  <span>
+                    {isNylithra && !isPostAuthor
+                      ? (language === 'tr' ? 'Bu Gönderiyi Sil (Yönetici)' : 'Delete Post (Admin)')
+                      : (language === 'tr' ? 'Bu Gönderiyi Sil' : 'Delete Post')}
+                  </span>
+                </button>
+              )}
+
+              {/* Mobile Cancel Button */}
+              <button
+                type="button"
+                onClick={() => setContextMenu({ visible: false, x: 0, y: 0, post: null })}
+                className="w-full sm:hidden mt-2 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs font-semibold text-zinc-400 hover:text-white transition-colors"
+              >
+                {language === 'tr' ? 'Kapat' : 'Close'}
+              </button>
+            </div>
           </div>
         );
       })()}
