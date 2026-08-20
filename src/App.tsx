@@ -60,7 +60,8 @@ import {
   checkPersistentRateLimit,
   checkDuplicatePost,
   sanitizeText,
-  sanitizeUrl
+  sanitizeUrl,
+  runSecurityPenetrationTest
 } from './utils/securityHelper';
 import { Sidebar } from './components/Sidebar';
 import { RightPanel } from './components/RightPanel';
@@ -248,6 +249,14 @@ export default function App() {
         }
       }
     });
+
+    // Run Simulated Attacker Security Audit on boot
+    try {
+      const auditResult = runSecurityPenetrationTest();
+      console.log(`%c[Security Audit] Attacker Simulation Complete: ${auditResult.passed}/${auditResult.totalTests} tests neutralized (Status: ${auditResult.overallStatus})`, 'color: #10b981; font-weight: bold;');
+    } catch (e) {
+      console.warn('Security audit run warning:', e);
+    }
 
     return () => {
       window.removeEventListener('popstate', handlePopState);
@@ -870,7 +879,10 @@ export default function App() {
           {activeTab === 'messages' && (
             <DirectMessagesView
               user={user}
+              allUsers={allUsers}
               language={language}
+              onSelectUser={(u) => setSelectedModalUsername(u)}
+              onTriggerNotification={triggerNotification}
             />
           )}
 

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { User, Globe, LogOut, CheckCircle2, Shield, Save, Sparkles, ChevronRight, ArrowLeft, Upload, AtSign, Smartphone, Download, BellRing, Volume2, Bell } from 'lucide-react';
+import { User, Globe, LogOut, CheckCircle2, Shield, Save, Sparkles, ChevronRight, ArrowLeft, Upload, AtSign, Smartphone, Download, BellRing, Volume2, Bell, Users, Lock, Key, Eye, EyeOff } from 'lucide-react';
+import { saveCustomSupabaseCredentials } from '../services/supabaseClient';
 import { validateFileSize, notifyFileSizeExceeded } from '../utils/fileUploadHelper';
 import { isPWARunningStandalone } from '../utils/pwaHelper';
 import { getNotificationPermission, requestNotificationPermission, sendNativeNotification, playNotificationSound } from '../utils/notificationSound';
@@ -160,9 +161,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </button>
             </div>
 
-            {/* PWA Mobile App Card */}
+            {/* PWA Mobile App Card (Mobile Only) */}
             {isStandalone ? (
-              <div className="bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-2">
+              <div className="md:hidden bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-2">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800/40 pb-3">
                   <Smartphone className="w-4 h-4 text-emerald-400" />
                   <span>{language === 'tr' ? 'Mobil Uygulama (PWA)' : 'Mobile App (PWA)'}</span>
@@ -173,7 +174,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               </div>
             ) : onOpenInstallPWA ? (
-              <div className="bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-3">
+              <div className="md:hidden bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800/40 pb-3">
                   <Smartphone className="w-4 h-4 text-zinc-300" />
                   <span>{language === 'tr' ? 'Mobil Uygulama (PWA)' : 'Mobile App (PWA)'}</span>
@@ -268,6 +269,56 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 >
                   <span>English (US)</span>
                   {language === 'en' && <Sparkles className="w-3.5 h-3.5 text-zinc-300" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Group Privacy Settings */}
+            <div className="bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-4">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800/40 pb-3">
+                <Users className="w-4 h-4 text-purple-400" />
+                <span>{language === 'tr' ? 'Grup Davetleri & Gizlilik' : 'Group Invites & Privacy'}</span>
+              </h3>
+
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                {language === 'tr'
+                  ? 'Diğer geliştiricilerin sizi gruplara eklemesini veya davet göndermesini buradan kontrol edebilirsiniz.'
+                  : 'Control whether other developers can invite or add you to chat groups.'}
+              </p>
+
+              <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-950 border border-zinc-800/80">
+                <div className="space-y-0.5">
+                  <p className="text-xs font-bold text-white">
+                    {language === 'tr' ? 'Grup Davetlerine İzin Ver' : 'Allow Group Invites'}
+                  </p>
+                  <p className="text-[11px] text-zinc-500 font-mono">
+                    {formData.allow_group_invites !== false
+                      ? language === 'tr'
+                        ? 'Herkes grup daveti gönderebilir'
+                        : 'Anyone can invite you'
+                      : language === 'tr'
+                      ? 'Hiç kimse gruba ekleyemez (Korumalı)'
+                      : 'No one can invite you (Protected)'}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newVal = formData.allow_group_invites === false ? true : false;
+                    const updated = { ...formData, allow_group_invites: newVal };
+                    setFormData(updated);
+                    onUpdateProfile(updated);
+                  }}
+                  className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
+                    formData.allow_group_invites !== false ? 'bg-purple-600' : 'bg-zinc-800'
+                  }`}
+                >
+                  <span
+                    className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
+                      formData.allow_group_invites !== false ? 'left-7' : 'left-1'
+                    }`}
+                  />
                 </button>
               </div>
             </div>

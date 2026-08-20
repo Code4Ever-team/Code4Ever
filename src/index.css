@@ -26,8 +26,8 @@
   --radius: 0.875rem;
 
   /* Tipografi */
-  --font-display: "Space Grotesk", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-display: "DM Mono", ui-monospace, monospace;
+  --font-mono: "DM Mono", "JetBrains Mono", ui-monospace, monospace;
 }
 
 @layer base {
@@ -53,10 +53,9 @@
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
     color: var(--foreground);
-    font-feature-settings: "ss01", "ss02", "cv01";
   }
 
-  p, span, label, div {
+  p, span, label, div, button {
     font-family: var(--font-display);
   }
 

@@ -62,6 +62,76 @@ export interface UserProfile {
   suspendedUntil?: string; // ISO string if temporarily suspended
   subscription?: UserSubscriptionInfo;
   saved_post_ids?: string[];
+  allow_group_invites?: boolean; // Privacy setting: allow group invites
+  is_online?: boolean;
+  last_seen_at?: string;
+}
+
+export interface GroupMember {
+  id: string;
+  username: string;
+  display_name: string;
+  avatar_url: string;
+  role: 'admin' | 'member';
+  joined_at: string;
+}
+
+export interface ChatGroup {
+  id: string;
+  name: string;
+  avatar_url: string;
+  description?: string;
+  creator_id: string;
+  creator_username: string;
+  admins: string[]; // usernames
+  members: GroupMember[];
+  last_message?: {
+    text: string;
+    sender_username: string;
+    sender_name: string;
+    timestamp: string;
+  };
+  unread_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GroupInvite {
+  id: string;
+  group_id: string;
+  group_name: string;
+  group_avatar: string;
+  group_description?: string;
+  invited_by_username: string;
+  invited_by_name: string;
+  invited_by_avatar: string;
+  target_username: string;
+  target_user_id?: string;
+  status: 'pending' | 'accepted' | 'declined';
+  created_at: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversation_id: string; // channel_id or group_id
+  is_group?: boolean;
+  sender_id: string;
+  sender_username: string;
+  sender_display_name: string;
+  sender_avatar: string;
+  content: string; // E2EE encrypted ciphertext `e2ee:...`
+  decrypted_text?: string;
+  media_url?: string;
+  media_type?: 'image' | 'video' | 'file' | 'code';
+  media_name?: string;
+  status: 'sending' | 'sent' | 'delivered' | 'read';
+  created_at: string;
+  encryption_duration_ms?: number;
+  reply_to?: {
+    id: string;
+    sender_username: string;
+    text: string;
+  };
 }
 
 export interface SubscriptionPlan {
@@ -166,7 +236,8 @@ export interface GitHubRepo {
 
 export interface NotificationItem {
   id: string;
-  type: 'like' | 'star' | 'comment' | 'community' | 'repost' | 'follow' | 'job_application' | 'job_listing';
+  type: 'like' | 'star' | 'comment' | 'community' | 'repost' | 'follow' | 'job_application' | 'job_listing' | 'group_invite' | 'message';
+  recipient_id?: string;
   actor: {
     username: string;
     display_name: string;

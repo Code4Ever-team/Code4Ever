@@ -5,6 +5,7 @@ import { CodeSnippetBlock } from './CodeSnippetBlock';
 import { MessageSquare, Heart, Repeat, Send, Code, Sparkles, Trash2, Bookmark, Share2, Check, GitBranch, ExternalLink, Star, GitFork, Image as ImageIcon, Video, Loader2, Users, Shield, Copy, User, AlertCircle } from 'lucide-react';
 import { getGitHubToken } from '../services/supabaseClient';
 import { validateFileSize, notifyFileSizeExceeded } from '../utils/fileUploadHelper';
+import { formatTimeAgo } from '../utils/timeAgo';
 
 interface FeedViewProps {
   posts: Post[];
@@ -652,7 +653,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
                           @{authorProfile.username}
                         </span>
                         <span className="text-xs text-zinc-600">·</span>
-                        <span className="text-[11px] text-zinc-500 font-mono">{post.time_ago}</span>
+                        <span className="text-[11px] text-zinc-500 font-mono" title={post.created_at ? new Date(post.created_at).toLocaleString() : ''}>
+                          {formatTimeAgo(post.created_at || post.time_ago, language)}
+                        </span>
                         {post.community_name && (
                           <>
                             <span className="text-xs text-zinc-600">·</span>
@@ -847,8 +850,8 @@ export const FeedView: React.FC<FeedViewProps> = ({
                                   @{commentAuthor.username}
                                 </span>
                               </div>
-                              <span className="text-[10px] text-zinc-600 font-mono">
-                                {comment.created_at ? new Date(comment.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                              <span className="text-[10px] text-zinc-500 font-mono" title={comment.created_at ? new Date(comment.created_at).toLocaleString() : ''}>
+                                {formatTimeAgo(comment.created_at, language)}
                               </span>
                             </div>
                             <p className="text-xs text-zinc-300 pl-7 leading-relaxed font-sans select-text">

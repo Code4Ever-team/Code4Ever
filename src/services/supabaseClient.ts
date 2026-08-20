@@ -10,34 +10,13 @@ import {
   ClosedBetaSettings,
   SubscriptionPlan,
   BadgeDefinition,
-  PlatformSettings
+  PlatformSettings,
+  ChatMessage,
+  ChatGroup,
+  GroupInvite,
+  GroupMember
 } from '../types';
 import { sanitizeText, sanitizeUrl } from '../utils/securityHelper';
-
-// Read Supabase credentials from environment
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-
-let supabaseInstance: SupabaseClient | null = null;
-
-export function getSupabaseClient(): SupabaseClient | null {
-  if (!supabaseInstance && supabaseUrl && supabaseAnonKey) {
-    try {
-      supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: true
-        }
-      });
-    } catch (e) {
-      console.warn('Supabase client initialization fallback to storage:', e);
-    }
-  }
-  return supabaseInstance;
-}
-
-export const supabase = getSupabaseClient();
 
 // Local Storage Cache Keys
 export const STORAGE_KEYS = {
@@ -46,6 +25,11 @@ export const STORAGE_KEYS = {
   COMMUNITIES: 'c4e_supabase_communities',
   JOB_LISTINGS: 'c4e_supabase_job_listings',
   NOTIFICATIONS: 'c4e_supabase_notifications',
+  MESSAGES: 'c4e_supabase_messages',
+  GROUPS: 'c4e_supabase_groups',
+  GROUP_INVITES: 'c4e_supabase_group_invites',
+  SUPABASE_CUSTOM_URL: 'c4e_custom_supabase_url',
+  SUPABASE_CUSTOM_KEY: 'c4e_custom_supabase_anon_key',
   GH_TOKEN: 'c4e_gh_access_token',
   LANG: 'c4e_lang',
   CLOSED_BETA: 'c4e_closed_beta_settings',
@@ -53,6 +37,103 @@ export const STORAGE_KEYS = {
   BADGES: 'c4e_badge_definitions',
   PLATFORM: 'c4e_platform_settings'
 };
+
+export function getActiveSupabaseCredentials(): { url: string; anonKey: string; isCustom: boolean } {
+  let customUrl = '';
+  let customKey = '';
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      customUrl = localStorage.getItem(STORAGE_KEYS.SUPABASE_CUSTOM_URL) || '';
+      customKey = localStorage.getItem(STORAGE_KEYS.SUPABASE_CUSTOM_KEY) || '';
+    }
+  } catch {}
+
+  const envUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+  const envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
+
+  const url = customUrl.trim() || envUrl;
+  const anonKey = customKey.trim() || envKey;
+
+  return {
+    url,
+    anonKey,
+    isCustom: Boolean(customUrl.trim() && customKey.trim())
+  };
+}
+
+export function isValidSupabaseConfig(url: string, key: string): boolean {
+  if (!url || !key) return false;
+  if (!url.startsWith('https://') && !url.startsWith('http://')) return false;
+  if (key.length < 20) return false; // Valid anon key check prevents "No API key found in request" errors
+  return true;
+}
+
+let supabaseInstance: SupabaseClient | null = null;
+let lastInitUrl = '';
+let lastInitKey = '';
+
+export function getSupabaseClient(): SupabaseClient | null {
+  const { url, anonKey } = getActiveSupabaseCredentials();
+
+  if (!isValidSupabaseConfig(url, anonKey)) {
+    return null;
+  }
+
+  if (supabaseInstance && lastInitUrl === url && lastInitKey === anonKey) {
+    return supabaseInstance;
+  }
+
+  try {
+    supabaseInstance = createClient(url, anonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+      },
+      global: {
+        headers: {
+          apikey: anonKey,
+          'X-Client-Info': 'code4ever-app'
+        }
+      }
+    });
+    lastInitUrl = url;
+    lastInitKey = anonKey;
+    return supabaseInstance;
+  } catch (e) {
+    console.warn('Supabase client initialization fallback to local storage:', e);
+    return null;
+  }
+}
+
+export function saveCustomSupabaseCredentials(url: string, anonKey: string): boolean {
+  try {
+    const cleanUrl = url.trim();
+    const cleanKey = anonKey.trim();
+    if (!cleanUrl && !cleanKey) {
+      localStorage.removeItem(STORAGE_KEYS.SUPABASE_CUSTOM_URL);
+      localStorage.removeItem(STORAGE_KEYS.SUPABASE_CUSTOM_KEY);
+      supabaseInstance = null;
+      lastInitUrl = '';
+      lastInitKey = '';
+      return true;
+    }
+    if (!isValidSupabaseConfig(cleanUrl, cleanKey)) {
+      return false;
+    }
+    localStorage.setItem(STORAGE_KEYS.SUPABASE_CUSTOM_URL, cleanUrl);
+    localStorage.setItem(STORAGE_KEYS.SUPABASE_CUSTOM_KEY, cleanKey);
+    supabaseInstance = null;
+    lastInitUrl = '';
+    lastInitKey = '';
+    getSupabaseClient();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const supabase = getSupabaseClient();
 
 export const DEFAULT_USER: UserProfile = {
   id: '',
@@ -818,3 +899,430 @@ export function saveGitHubToken(token: string): void {
 export function getGitHubToken(): string | null {
   return localStorage.getItem(STORAGE_KEYS.GH_TOKEN);
 }
+
+// -------------------------------------------------------------
+// REAL-TIME E2EE MESSAGES & GROUPS ENGINE
+// -------------------------------------------------------------
+
+export function loadStoredMessages(conversationId: string): ChatMessage[] {
+  try {
+    const raw = localStorage.getItem(`${STORAGE_KEYS.MESSAGES}_${conversationId}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+export function saveStoredMessages(conversationId: string, messages: ChatMessage[]): void {
+  try {
+    localStorage.setItem(`${STORAGE_KEYS.MESSAGES}_${conversationId}`, JSON.stringify(messages));
+  } catch {}
+}
+
+export function subscribeToConversationMessages(
+  conversationId: string,
+  onUpdate: (messages: ChatMessage[]) => void
+): () => void {
+  const client = getSupabaseClient();
+  const localMessages = loadStoredMessages(conversationId);
+  onUpdate(localMessages);
+
+  if (!client) {
+    // Return storage event listener for multi-tab sync
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === `${STORAGE_KEYS.MESSAGES}_${conversationId}`) {
+        onUpdate(loadStoredMessages(conversationId));
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }
+
+  // Fetch initial messages from Supabase
+  client
+    .from('messages')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: true })
+    .then(
+      ({ data, error }) => {
+        if (!error && data && data.length > 0) {
+          saveStoredMessages(conversationId, data as ChatMessage[]);
+          onUpdate(data as ChatMessage[]);
+        }
+      },
+      () => {}
+    );
+
+  // Realtime subscription via Supabase Channels
+  const channel = client
+    .channel(`messages:${conversationId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'messages',
+        filter: `conversation_id=eq.${conversationId}`
+      },
+      async () => {
+        const { data } = await client
+          .from('messages')
+          .select('*')
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: true });
+        if (data) {
+          saveStoredMessages(conversationId, data as ChatMessage[]);
+          onUpdate(data as ChatMessage[]);
+        }
+      }
+    )
+    .subscribe();
+
+  return () => {
+    client.removeChannel(channel);
+  };
+}
+
+export async function sendMessageService(message: ChatMessage): Promise<void> {
+  const current = loadStoredMessages(message.conversation_id);
+  const updated = [...current, message];
+  saveStoredMessages(message.conversation_id, updated);
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client.from('messages').insert({
+        id: message.id,
+        conversation_id: message.conversation_id,
+        is_group: Boolean(message.is_group),
+        sender_id: message.sender_id,
+        sender_username: message.sender_username,
+        sender_display_name: message.sender_display_name,
+        sender_avatar: message.sender_avatar,
+        content: message.content,
+        media_url: message.media_url || null,
+        media_type: message.media_type || null,
+        media_name: message.media_name || null,
+        status: message.status || 'delivered',
+        created_at: message.created_at,
+        encryption_duration_ms: message.encryption_duration_ms || 0,
+        reply_to: message.reply_to || null
+      });
+    } catch (err) {
+      console.warn('Supabase message insert error fallback:', err);
+    }
+  }
+}
+
+export async function markMessagesAsReadService(conversationId: string, readerUsername: string): Promise<void> {
+  const current = loadStoredMessages(conversationId);
+  let changed = false;
+  const updated = current.map((m) => {
+    if (m.sender_username !== readerUsername && m.status !== 'read') {
+      changed = true;
+      return { ...m, status: 'read' as const };
+    }
+    return m;
+  });
+
+  if (changed) {
+    saveStoredMessages(conversationId, updated);
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        await client
+          .from('messages')
+          .update({ status: 'read' })
+          .eq('conversation_id', conversationId)
+          .neq('sender_username', readerUsername);
+      } catch (err) {
+        console.warn('Supabase mark read error:', err);
+      }
+    }
+  }
+}
+
+// -------------------------------------------------------------
+// GROUPS ENGINE
+// -------------------------------------------------------------
+
+export function loadStoredGroups(): ChatGroup[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.GROUPS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+export function saveStoredGroups(groups: ChatGroup[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(groups));
+  } catch {}
+}
+
+export function subscribeToGroupsService(
+  username: string,
+  onUpdate: (groups: ChatGroup[]) => void
+): () => void {
+  const client = getSupabaseClient();
+  const local = loadStoredGroups();
+  onUpdate(local);
+
+  if (!client) {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEYS.GROUPS) {
+        onUpdate(loadStoredGroups());
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }
+
+  client
+    .from('groups')
+    .select('*')
+    .then(
+      ({ data, error }) => {
+        if (!error && data && data.length > 0) {
+          saveStoredGroups(data as ChatGroup[]);
+          onUpdate(data as ChatGroup[]);
+        }
+      },
+      () => {}
+    );
+
+  const channel = client
+    .channel('public:groups')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'groups' }, async () => {
+      const { data } = await client.from('groups').select('*');
+      if (data) {
+        saveStoredGroups(data as ChatGroup[]);
+        onUpdate(data as ChatGroup[]);
+      }
+    })
+    .subscribe();
+
+  return () => {
+    client.removeChannel(channel);
+  };
+}
+
+export async function createGroupService(group: ChatGroup): Promise<void> {
+  const current = loadStoredGroups();
+  const updated = [group, ...current.filter((g) => g.id !== group.id)];
+  saveStoredGroups(updated);
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client.from('groups').upsert({
+        id: group.id,
+        name: sanitizeText(group.name, 60),
+        avatar_url: group.avatar_url,
+        description: group.description ? sanitizeText(group.description, 250) : null,
+        creator_id: group.creator_id,
+        creator_username: group.creator_username,
+        admins: group.admins,
+        members: group.members,
+        last_message: group.last_message || null,
+        created_at: group.created_at,
+        updated_at: group.updated_at
+      });
+    } catch (err) {
+      console.warn('Supabase create group error:', err);
+    }
+  }
+}
+
+export async function updateGroupService(groupId: string, updateData: Partial<ChatGroup>): Promise<void> {
+  const current = loadStoredGroups();
+  const updated = current.map((g) => (g.id === groupId ? { ...g, ...updateData, updated_at: new Date().toISOString() } : g));
+  saveStoredGroups(updated);
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client
+        .from('groups')
+        .update({ ...updateData, updated_at: new Date().toISOString() })
+        .eq('id', groupId);
+    } catch (err) {
+      console.warn('Supabase update group error:', err);
+    }
+  }
+}
+
+// -------------------------------------------------------------
+// GROUP INVITES
+// -------------------------------------------------------------
+
+export function loadStoredGroupInvites(): GroupInvite[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.GROUP_INVITES);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+export function saveStoredGroupInvites(invites: GroupInvite[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.GROUP_INVITES, JSON.stringify(invites));
+  } catch {}
+}
+
+export function subscribeToGroupInvitesService(
+  username: string,
+  onUpdate: (invites: GroupInvite[]) => void
+): () => void {
+  const cleanUsername = username.toLowerCase();
+  const client = getSupabaseClient();
+  const local = loadStoredGroupInvites().filter((i) => i.target_username.toLowerCase() === cleanUsername);
+  onUpdate(local);
+
+  if (!client) {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEYS.GROUP_INVITES) {
+        onUpdate(loadStoredGroupInvites().filter((i) => i.target_username.toLowerCase() === cleanUsername));
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }
+
+  client
+    .from('group_invites')
+    .select('*')
+    .eq('target_username', username)
+    .eq('status', 'pending')
+    .then(
+      ({ data, error }) => {
+        if (!error && data) {
+          saveStoredGroupInvites(data as GroupInvite[]);
+          onUpdate(data as GroupInvite[]);
+        }
+      },
+      () => {}
+    );
+
+  const channel = client
+    .channel(`invites:${username}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'group_invites',
+        filter: `target_username=eq.${username}`
+      },
+      async () => {
+        const { data } = await client
+          .from('group_invites')
+          .select('*')
+          .eq('target_username', username)
+          .eq('status', 'pending');
+        if (data) {
+          saveStoredGroupInvites(data as GroupInvite[]);
+          onUpdate(data as GroupInvite[]);
+        }
+      }
+    )
+    .subscribe();
+
+  return () => {
+    client.removeChannel(channel);
+  };
+}
+
+export async function sendGroupInviteService(invite: GroupInvite): Promise<boolean> {
+  const current = loadStoredGroupInvites();
+  const updated = [invite, ...current.filter((i) => i.id !== invite.id)];
+  saveStoredGroupInvites(updated);
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client.from('group_invites').upsert({
+        id: invite.id,
+        group_id: invite.group_id,
+        group_name: invite.group_name,
+        group_avatar: invite.group_avatar,
+        group_description: invite.group_description || null,
+        invited_by_username: invite.invited_by_username,
+        invited_by_name: invite.invited_by_name,
+        invited_by_avatar: invite.invited_by_avatar,
+        target_username: invite.target_username,
+        target_user_id: invite.target_user_id || null,
+        status: invite.status || 'pending',
+        created_at: invite.created_at
+      });
+      return true;
+    } catch (err) {
+      console.warn('Supabase send group invite error:', err);
+      return true;
+    }
+  }
+  return true;
+}
+
+export async function respondToGroupInviteService(
+  inviteId: string,
+  status: 'accepted' | 'declined',
+  currentUser: UserProfile
+): Promise<void> {
+  const invites = loadStoredGroupInvites();
+  const targetInvite = invites.find((i) => i.id === inviteId);
+  const updatedInvites = invites.map((i) => (i.id === inviteId ? { ...i, status } : i));
+  saveStoredGroupInvites(updatedInvites);
+
+  if (status === 'accepted' && targetInvite) {
+    // Add user to the group
+    const groups = loadStoredGroups();
+    const targetGroup = groups.find((g) => g.id === targetInvite.group_id);
+    if (targetGroup) {
+      const isAlreadyMember = targetGroup.members.some((m) => m.username.toLowerCase() === currentUser.username.toLowerCase());
+      if (!isAlreadyMember) {
+        const newMember: GroupMember = {
+          id: currentUser.id || `mem_${Date.now()}`,
+          username: currentUser.username,
+          display_name: currentUser.display_name,
+          avatar_url: currentUser.avatar_url,
+          role: 'member',
+          joined_at: new Date().toISOString()
+        };
+        const updatedMembers = [...targetGroup.members, newMember];
+        await updateGroupService(targetGroup.id, { members: updatedMembers });
+      }
+    }
+  }
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client.from('group_invites').update({ status }).eq('id', inviteId);
+    } catch (err) {
+      console.warn('Supabase respond invite error:', err);
+    }
+  }
+}
+
+export async function updateUserPresence(userId: string, isOnline: boolean): Promise<void> {
+  const client = getSupabaseClient();
+  if (client && userId) {
+    try {
+      await client.from('profiles').update({
+        is_online: isOnline,
+        last_seen_at: new Date().toISOString()
+      }).eq('id', userId);
+    } catch {}
+  }
+}
+

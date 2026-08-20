@@ -94,9 +94,8 @@ export function isPWARunningStandalone(): boolean {
   const isMinimalUIMedia = window.matchMedia('(display-mode: minimal-ui)').matches;
   const isIOSStandalone = (window.navigator as any).standalone === true;
   const isAndroidTWA = document.referrer.includes('android-app://');
-  const isLocalStoragePWA = localStorage.getItem('c4e_is_pwa_installed') === 'true';
 
-  return isStandaloneMedia || isFullscreenMedia || isMinimalUIMedia || isIOSStandalone || isAndroidTWA || isLocalStoragePWA;
+  return isStandaloneMedia || isFullscreenMedia || isMinimalUIMedia || isIOSStandalone || isAndroidTWA;
 }
 
 export function isIOSDevice(): boolean {

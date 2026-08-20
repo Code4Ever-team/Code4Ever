@@ -1,5 +1,5 @@
-// Code4Ever PWA Service Worker
-const CACHE_NAME = 'c4e-pwa-cache-v1';
+// Code4Ever PWA Service Worker v2 - Resilient Offline & Notification Engine
+const CACHE_NAME = 'c4e-pwa-cache-v2';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
@@ -10,10 +10,11 @@ const PRECACHE_ASSETS = [
 // Install Event
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(PRECACHE_ASSETS).catch((err) => {
-        console.warn('Pre-caching error in service worker:', err);
-      });
+    caches.open(CACHE_NAME).then(async (cache) => {
+      // Robust asset precaching: cache each individually so 1 failure doesn't block install
+      await Promise.allSettled(
+        PRECACHE_ASSETS.map((asset) => cache.add(asset).catch(() => {}))
+      );
     })
   );
   self.skipWaiting();
@@ -39,18 +40,41 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Skip non-GET, API, Supabase, OAuth, and live communication calls
+  // Bypass non-GET, API, Supabase, OAuth, Google and WebSockets
   if (
     event.request.method !== 'GET' ||
     url.pathname.startsWith('/api') ||
     url.hostname.includes('supabase.co') ||
     url.hostname.includes('googleapis.com') ||
     url.hostname.includes('firebase') ||
+    url.hostname.includes('github.com') ||
     url.protocol.startsWith('ws')
   ) {
     return;
   }
 
+  // 1. Navigation requests (HTML): Network-first with cache fallback
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const clone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, clone);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(async () => {
+          const cached = await caches.match('/index.html');
+          return cached || new Response('Offline', { status: 503, statusText: 'Offline' });
+        })
+    );
+    return;
+  }
+
+  // 2. Static Assets: Cache-first with background revalidation
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
@@ -84,16 +108,16 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         })
-        .catch(() => {
-          if (event.request.mode === 'navigate') {
-            return caches.match('/index.html');
-          }
+        .catch(async () => {
+          // If offline and looking for index fallback
+          const fallback = await caches.match('/index.html');
+          return fallback || new Response('', { status: 408, statusText: 'Request Timeout' });
         });
     })
   );
 });
 
-// Push & Notification Click Handlers (Native Mobile & Desktop Notifications)
+// Push & Notification Click Handlers
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const targetUrl = (event.notification.data && event.notification.data.url) || '/';

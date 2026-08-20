@@ -95,6 +95,56 @@ CREATE TABLE IF NOT EXISTS public.notifications (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 7. Groups Table (Gruplar)
+CREATE TABLE IF NOT EXISTS public.groups (
+  id TEXT PRIMARY KEY,
+  name VARCHAR(60) NOT NULL,
+  avatar_url TEXT NOT NULL,
+  description VARCHAR(250),
+  creator_id TEXT NOT NULL,
+  creator_username TEXT NOT NULL,
+  admins JSONB DEFAULT '[]'::jsonb,
+  members JSONB DEFAULT '[]'::jsonb,
+  last_message JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 8. Messages Table (E2EE Şifreli Mesajlar)
+CREATE TABLE IF NOT EXISTS public.messages (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  is_group BOOLEAN DEFAULT false,
+  sender_id TEXT NOT NULL,
+  sender_username TEXT NOT NULL,
+  sender_display_name TEXT NOT NULL,
+  sender_avatar TEXT,
+  content TEXT NOT NULL, -- E2EE ciphertext (AES-GCM 256-bit)
+  media_url TEXT,
+  media_type VARCHAR(20),
+  media_name TEXT,
+  status VARCHAR(20) DEFAULT 'delivered',
+  encryption_duration_ms NUMERIC DEFAULT 0,
+  reply_to JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 9. Group Invites Table (Grup Davetleri)
+CREATE TABLE IF NOT EXISTS public.group_invites (
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL,
+  group_name VARCHAR(60) NOT NULL,
+  group_avatar TEXT,
+  group_description VARCHAR(250),
+  invited_by_username TEXT NOT NULL,
+  invited_by_name TEXT NOT NULL,
+  invited_by_avatar TEXT,
+  target_username TEXT NOT NULL,
+  target_user_id TEXT,
+  status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'declined')),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- ================================================================
@@ -105,20 +155,34 @@ ALTER TABLE public.communities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.job_listings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.job_applications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.groups ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.group_invites ENABLE ROW LEVEL SECURITY;
 
 -- Read policies (Herkese Açık Okuma)
 CREATE POLICY "Public read access for profiles" ON public.profiles FOR SELECT USING (true);
 CREATE POLICY "Public read access for posts" ON public.posts FOR SELECT USING (true);
 CREATE POLICY "Public read access for communities" ON public.communities FOR SELECT USING (true);
 CREATE POLICY "Public read access for job listings" ON public.job_listings FOR SELECT USING (true);
+CREATE POLICY "Public read access for groups" ON public.groups FOR SELECT USING (true);
+CREATE POLICY "Public read access for messages" ON public.messages FOR SELECT USING (true);
+CREATE POLICY "Public read access for group invites" ON public.group_invites FOR SELECT USING (true);
 
 -- Insert/Update policies
 CREATE POLICY "Authenticated users can insert posts" ON public.posts FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 CREATE POLICY "Authenticated users can update their posts" ON public.posts FOR UPDATE USING (auth.role() = 'authenticated');
 CREATE POLICY "Authenticated users can create job listings" ON public.job_listings FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 CREATE POLICY "Users can apply to job listings" ON public.job_applications FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "Users can insert messages" ON public.messages FOR INSERT WITH CHECK (true);
+CREATE POLICY "Users can update messages" ON public.messages FOR UPDATE USING (true);
+CREATE POLICY "Users can insert groups" ON public.groups FOR INSERT WITH CHECK (true);
+CREATE POLICY "Users can update groups" ON public.groups FOR UPDATE USING (true);
+CREATE POLICY "Users can insert group invites" ON public.group_invites FOR INSERT WITH CHECK (true);
+CREATE POLICY "Users can update group invites" ON public.group_invites FOR UPDATE USING (true);
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_posts_created_at ON public.posts(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_job_listings_created_at ON public.job_listings(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_profiles_username ON public.profiles(username);
+CREATE INDEX IF NOT EXISTS idx_messages_conv ON public.messages(conversation_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_group_invites_target ON public.group_invites(target_username, status);

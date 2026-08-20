@@ -38,7 +38,7 @@ export const PWAInstallBanner: React.FC<PWAInstallBannerProps> = ({
   return (
     <aside
       aria-label="PWA Install Banner"
-      className="fixed bottom-16 md:bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-30 bg-[#0e0e11]/95 backdrop-blur-xl border border-zinc-800 rounded-2xl p-3 shadow-2xl flex items-center justify-between gap-3 animate-in slide-in-from-bottom duration-300"
+      className="md:hidden fixed bottom-16 left-4 right-4 z-30 bg-[#0e0e11]/95 backdrop-blur-xl border border-zinc-800 rounded-2xl p-3 shadow-2xl flex items-center justify-between gap-3 animate-in slide-in-from-bottom duration-300"
     >
       <div
         onClick={onOpenInstallModal}

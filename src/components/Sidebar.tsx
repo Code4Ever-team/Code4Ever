@@ -75,8 +75,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       id: 'messages',
       label: language === 'tr' ? 'Mesajlar' : 'Messages',
-      icon: Mail,
-      isBetaModal: true
+      icon: Mail
     },
     {
       id: 'everychat',
@@ -504,16 +503,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <PlusCircle className="w-4 h-4 text-zinc-950" />
               <span>{language === 'tr' ? 'Yeni Gönderi' : 'New Post'}</span>
             </button>
-
-            {!isStandalone && onOpenInstallPWA && (
-              <button
-                onClick={onOpenInstallPWA}
-                className="w-full py-2 px-3 rounded-xl font-semibold text-zinc-400 hover:text-white bg-zinc-900/60 hover:bg-zinc-800/80 border border-zinc-800/80 text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
-              >
-                <Smartphone className="w-3.5 h-3.5 text-zinc-400" />
-                <span>{language === 'tr' ? 'Telefona İndir (PWA)' : 'Install App (PWA)'}</span>
-              </button>
-            )}
           </div>
         </div>
 
