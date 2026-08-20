@@ -54,7 +54,8 @@ import {
   saveStoredJobListings,
   createJobListing as createJobListingService,
   deleteJobListing as deleteJobListingService,
-  submitJobApplication as submitJobApplicationService
+  submitJobApplication as submitJobApplicationService,
+  subscribeToUserIncomingMessages
 } from './services/supabaseClient';
 import {
   checkPersistentRateLimit,
@@ -266,6 +267,43 @@ export default function App() {
       unsubscribeUsers();
     };
   }, []);
+
+  // Global Realtime Incoming Message Listener & Notification Engine
+  useEffect(() => {
+    if (!user.username) return;
+
+    const unsubscribeMessages = subscribeToUserIncomingMessages(
+      user.username,
+      (incomingMsg) => {
+        const senderName = incomingMsg.sender_display_name || incomingMsg.sender_username;
+        sendNativeNotification({
+          title: `Code4Ever • @${senderName}`,
+          body: language === 'tr' ? 'Sana yeni bir mesaj gönderdi.' : 'Sent you a new direct message.',
+          icon: incomingMsg.sender_avatar || '/logo.png',
+          playSound: true,
+          vibrate: true
+        });
+
+        const notifItem: NotificationItem = {
+          id: `msg_notif_${incomingMsg.id}`,
+          type: 'message',
+          actor: {
+            username: incomingMsg.sender_username,
+            display_name: incomingMsg.sender_display_name,
+            avatar_url: incomingMsg.sender_avatar
+          },
+          content: language === 'tr' ? 'Sana yeni bir mesaj gönderdi.' : 'Sent you a new direct message.',
+          time_ago: language === 'tr' ? 'Şimdi' : 'Just now',
+          is_read: false
+        };
+        setNotifications((prev) => [notifItem, ...prev]);
+      }
+    );
+
+    return () => {
+      unsubscribeMessages();
+    };
+  }, [user.username, language]);
 
   const handleLogout = async () => {
     await logoutSupabase();

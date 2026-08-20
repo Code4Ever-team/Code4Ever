@@ -26,8 +26,8 @@
   --radius: 0.875rem;
 
   /* Tipografi */
-  --font-display: "DM Mono", ui-monospace, monospace;
-  --font-mono: "DM Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-display: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
 @layer base {

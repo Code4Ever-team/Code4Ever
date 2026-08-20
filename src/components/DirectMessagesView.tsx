@@ -552,11 +552,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
           </div>
           <div>
             <h2 className="text-base font-bold text-white flex items-center gap-2">
-              <span>{language === 'tr' ? 'Şifreli Mesajlaşma & Gruplar' : 'E2EE Messages & Groups'}</span>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-mono text-emerald-400 flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3" />
-                <span>AES-GCM 256-bit</span>
-              </span>
+              <span>{language === 'tr' ? 'Mesajlar & Gruplar' : 'Messages & Groups'}</span>
             </h2>
           </div>
         </div>
@@ -736,7 +732,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                           <p className="text-[11px] text-zinc-400 truncate mt-0.5">
                             {group.last_message
                               ? `${group.last_message.sender_name}: ${group.last_message.text}`
-                              : `${group.members.length} üye · Uçtan uca şifreli`}
+                              : `${group.members.length} üye`}
                           </p>
                         </div>
                       </div>
@@ -865,7 +861,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                     </h3>
                     <p className="text-[11px] text-zinc-400 font-mono truncate">
                       {selectedGroup
-                        ? `${selectedGroup.members.length} üye · Uçtan uca şifreli`
+                        ? `${selectedGroup.members.length} üye`
                         : formatLastSeen(
                             selectedTargetUser?.last_seen_at,
                             Boolean(selectedTargetUser?.is_online),
@@ -1010,7 +1006,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                   <div className="h-64 flex flex-col items-center justify-center text-center space-y-2 text-zinc-500">
                     <Sparkles className="w-6 h-6 text-zinc-600" />
                     <p className="text-xs">
-                      {language === 'tr' ? 'İlk şifreli mesajı gönderin!' : 'Send the first encrypted message!'}
+                      {language === 'tr' ? 'İlk mesajı gönderin!' : 'Send the first message!'}
                     </p>
                   </div>
                 ) : (
@@ -1078,7 +1074,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                               <FileText className="w-5 h-5 opacity-80" />
                               <div className="min-w-0 flex-1">
                                 <p className="text-xs font-bold truncate">{msg.media_name || 'Dosya'}</p>
-                                <p className="text-[10px] opacity-70">Uçtan Uca Şifreli Belge</p>
+                                <p className="text-[10px] opacity-70">Belge</p>
                               </div>
                             </div>
                           )}
@@ -1174,7 +1170,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                   <div className="flex items-center justify-between text-xs text-zinc-400">
                     <span className="font-bold text-white flex items-center gap-1.5">
                       <Code className="w-3.5 h-3.5 text-blue-400" />
-                      <span>Kod Parçası Ekle (Uçtan Uca Şifreli)</span>
+                      <span>Kod Parçası Ekle</span>
                     </span>
                     <button
                       type="button"
@@ -1223,10 +1219,10 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                   onChange={(e) => setInputText(e.target.value)}
                   placeholder={
                     selectedGroup
-                      ? `${selectedGroup.name} grubuna şifreli mesaj yaz...`
+                      ? `${selectedGroup.name} grubuna mesaj yaz...`
                       : language === 'tr'
-                      ? 'Uçtan uca şifreli mesaj yaz...'
-                      : 'Type an end-to-end encrypted message...'
+                      ? 'mesaj yaz...'
+                      : 'Type an message...'
                   }
                   className="flex-1 bg-zinc-900/90 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-colors"
                 />
@@ -1243,16 +1239,16 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4">
               <div className="w-16 h-16 rounded-3xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400 shadow-xl">
-                <Lock className="w-8 h-8 text-blue-400" />
+                <MessageSquare className="w-8 h-8 text-blue-400" />
               </div>
               <div className="space-y-1 max-w-sm">
                 <h3 className="text-sm font-bold text-white">
-                  {language === 'tr' ? 'Uçtan Uca Şifreli Mesajlaşma' : 'End-to-End Encrypted Chat'}
+                  {language === 'tr' ? 'Mesaj Yok' : 'No Message Yet'}
                 </h3>
                 <p className="text-xs text-zinc-500 leading-relaxed">
                   {language === 'tr'
-                    ? 'Soldaki listeden bir arkadaşınızı veya grubu seçerek güvenli ve anlık sohbet başlatın.'
-                    : 'Select a contact or group from the left panel to start a secure real-time conversation.'}
+                    ? 'Soldaki listeden bir arkadaşınızı veya grubu seçerek sohbet başlatın.'
+                    : 'Select a contact or group from the left panel to start conversation.'}
                 </p>
               </div>
             </div>

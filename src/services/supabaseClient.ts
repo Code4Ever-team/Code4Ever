@@ -986,6 +986,55 @@ export function subscribeToConversationMessages(
   };
 }
 
+/**
+ * Global incoming messages listener for active user.
+ * Triggered whenever a new message is inserted in Supabase that involves the current user,
+ * firing audio, mobile vibrate, and desktop/PWA notifications.
+ */
+export function subscribeToUserIncomingMessages(
+  currentUsername: string,
+  onIncomingMessage: (msg: ChatMessage) => void
+): () => void {
+  const client = getSupabaseClient();
+  if (!client || !currentUsername) return () => {};
+
+  const cleanUser = currentUsername.toLowerCase().trim();
+
+  const channel = client
+    .channel(`user-incoming-messages:${cleanUser}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages'
+      },
+      (payload) => {
+        const newMsg = payload.new as ChatMessage;
+        if (!newMsg || newMsg.sender_username?.toLowerCase() === cleanUser) {
+          return; // Ignore own messages
+        }
+
+        const convId = (newMsg.conversation_id || '').toLowerCase();
+        // Check if DM involves this user OR if user belongs to group
+        const isUserDM = convId.startsWith('dm_') && convId.includes(cleanUser);
+        const groups = loadStoredGroups();
+        const isUserGroup = groups.some(
+          (g) => g.id === newMsg.conversation_id && g.members?.some((m) => m.username?.toLowerCase() === cleanUser)
+        );
+
+        if (isUserDM || isUserGroup) {
+          onIncomingMessage(newMsg);
+        }
+      }
+    )
+    .subscribe();
+
+  return () => {
+    client.removeChannel(channel);
+  };
+}
+
 export async function sendMessageService(message: ChatMessage): Promise<void> {
   const current = loadStoredMessages(message.conversation_id);
   const updated = [...current, message];
