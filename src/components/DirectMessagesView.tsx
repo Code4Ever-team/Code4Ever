@@ -41,6 +41,9 @@ import {
   loadStoredMessages,
   saveStoredMessages,
   subscribeToConversationMessages,
+  subscribeToOnlinePresence,
+  getActiveConversationsMap,
+  subscribeToUserIncomingMessages,
   sendMessageService,
   markMessagesAsReadService,
   loadStoredGroups,
@@ -67,6 +70,20 @@ interface DirectMessagesViewProps {
   onTriggerNotification?: (notif: NotificationItem) => void;
 }
 
+interface UnifiedConversation {
+  id: string;
+  type: 'direct' | 'group';
+  title: string;
+  avatar: string;
+  lastMessageText: string;
+  lastMessageSender?: string;
+  lastMessageTimestamp: string;
+  isOnline: boolean;
+  targetUser?: UserProfile;
+  group?: ChatGroup;
+  membersCount?: number;
+}
+
 export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   user,
   allUsers = [],
@@ -81,6 +98,14 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   const [selectedTargetUser, setSelectedTargetUser] = useState<UserProfile | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<ChatGroup | null>(null);
 
+  // Realtime Presence (Set of online usernames)
+  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
+
+  // Active Direct Chats Map (tracks conversations with actual messages)
+  const [activeDirectMap, setActiveDirectMap] = useState<
+    Record<string, { lastMessage: ChatMessage; otherUsername: string }>
+  >(() => getActiveConversationsMap(user.username));
+
   // Messages & Groups Realtime State
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [decryptedTextMap, setDecryptedTextMap] = useState<Record<string, string>>({});
@@ -91,6 +116,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
   // Modals & Panels
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
+  const [newChatSearchQuery, setNewChatSearchQuery] = useState('');
   const [isNewGroupModalOpen, setIsNewGroupModalOpen] = useState(false);
   const [isGroupInfoOpen, setIsGroupInfoOpen] = useState(false);
   const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false);
@@ -128,7 +154,40 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     getOrCreateDeviceMasterToken();
   }, []);
 
-  // Subscribe to Groups & Group Invites
+  // 1. Subscribe to Online Presence
+  useEffect(() => {
+    const unsubPresence = subscribeToOnlinePresence(user, (onlineSet) => {
+      setOnlineUsers(new Set(onlineSet));
+    });
+
+    return () => {
+      unsubPresence();
+    };
+  }, [user.username]);
+
+  // 2. Track & Sync Active Direct Chats Map in Realtime
+  useEffect(() => {
+    const refreshMap = () => {
+      setActiveDirectMap(getActiveConversationsMap(user.username));
+    };
+    refreshMap();
+
+    const handleCustom = () => refreshMap();
+    window.addEventListener('c4e_message_broadcast', handleCustom);
+    window.addEventListener('storage', handleCustom);
+
+    const unsubIncoming = subscribeToUserIncomingMessages(user.username, () => {
+      refreshMap();
+    });
+
+    return () => {
+      window.removeEventListener('c4e_message_broadcast', handleCustom);
+      window.removeEventListener('storage', handleCustom);
+      unsubIncoming();
+    };
+  }, [user.username]);
+
+  // 3. Subscribe to Groups & Group Invites
   useEffect(() => {
     const unsubGroups = subscribeToGroupsService(user.username, (loadedGroups) => {
       setGroups(loadedGroups);
@@ -148,7 +207,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     };
   }, [user.username, selectedGroup?.id]);
 
-  // Subscribe to conversation messages
+  // 4. Subscribe to Active Conversation Messages in Realtime
   useEffect(() => {
     if (!selectedConversationId) {
       setMessages([]);
@@ -194,24 +253,132 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     return () => window.removeEventListener('click', handleGlobalClick);
   }, [memberContextMenu.visible]);
 
-  // Compute conversation list (Direct Messages + Groups)
-  const conversationList = React.useMemo(() => {
-    // 1. Groups where user is a member
+  // Compute unified conversation list (Direct Messages + Groups) sorted by latest message
+  const unifiedConversations = React.useMemo(() => {
+    const list: UnifiedConversation[] = [];
+
+    // A. Direct conversations where messages exist
+    Object.entries(activeDirectMap).forEach(([convId, rawData]) => {
+      const data = rawData as { lastMessage: ChatMessage; otherUsername: string };
+      if (!data || !data.otherUsername) return;
+      const target = allUsers.find((u) => u.username?.toLowerCase() === data.otherUsername.toLowerCase()) || {
+        id: `usr_${data.otherUsername}`,
+        username: data.otherUsername,
+        display_name:
+          data.lastMessage?.sender_username === data.otherUsername
+            ? data.lastMessage.sender_display_name
+            : data.otherUsername,
+        avatar_url:
+          data.lastMessage?.sender_username === data.otherUsername
+            ? data.lastMessage.sender_avatar
+            : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+        role: 'Geliştirici',
+        verified: false,
+        bio: '',
+        banner_url: '',
+        joined_communities: [],
+        custom_fields: {},
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const isOnline = onlineUsers.has(data.otherUsername.toLowerCase());
+      let previewText = data.lastMessage?.decrypted_text || data.lastMessage?.content || '';
+      if (previewText.startsWith('e2ee:')) {
+        previewText = language === 'tr' ? 'Mesaj' : 'Message';
+      } else if (previewText.startsWith('[CODE_SNIPPET]')) {
+        previewText = language === 'tr' ? '💻 Kod Parçası' : '💻 Code Snippet';
+      } else if (previewText.startsWith('[MEDIA:IMAGE]')) {
+        previewText = language === 'tr' ? '📷 Görsel' : '📷 Image';
+      } else if (previewText.startsWith('[MEDIA:FILE]')) {
+        previewText = language === 'tr' ? '📎 Dosya' : '📎 File';
+      }
+
+      list.push({
+        id: convId,
+        type: 'direct',
+        title: target.display_name || target.username,
+        avatar: target.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+        lastMessageText: previewText,
+        lastMessageSender: data.lastMessage?.sender_display_name || data.lastMessage?.sender_username,
+        lastMessageTimestamp: data.lastMessage?.created_at || new Date().toISOString(),
+        isOnline,
+        targetUser: target
+      });
+    });
+
+    // If a direct chat was actively opened in UI (e.g. from New Chat Modal), keep it visible
+    if (selectedTargetUser) {
+      const sorted = [user.username.toLowerCase(), selectedTargetUser.username.toLowerCase()].sort();
+      const convId = `dm_${sorted.join('_')}`;
+      if (!list.some((item) => item.id === convId)) {
+        list.unshift({
+          id: convId,
+          type: 'direct',
+          title: selectedTargetUser.display_name || selectedTargetUser.username,
+          avatar: selectedTargetUser.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+          lastMessageText: language === 'tr' ? 'Sohbet başlatıldı' : 'Chat started',
+          lastMessageTimestamp: new Date().toISOString(),
+          isOnline: onlineUsers.has(selectedTargetUser.username.toLowerCase()),
+          targetUser: selectedTargetUser
+        });
+      }
+    }
+
+    // B. Groups where user is a member
     const userGroups = groups.filter((g) =>
-      g.members.some((m) => m.username.toLowerCase() === user.username.toLowerCase())
+      g.members?.some((m) => m.username.toLowerCase() === user.username.toLowerCase())
     );
 
-    // 2. Direct message contacts from allUsers (except current user)
-    const directContacts = allUsers.filter(
-      (u) => u.username && u.username.toLowerCase() !== user.username.toLowerCase()
+    userGroups.forEach((g) => {
+      let previewText = g.last_message
+        ? g.last_message.text
+        : `${g.members.length} ${language === 'tr' ? 'üye' : 'members'}`;
+      list.push({
+        id: g.id,
+        type: 'group',
+        title: g.name,
+        avatar: g.avatar_url || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150',
+        lastMessageText: previewText,
+        lastMessageSender: g.last_message?.sender_name,
+        lastMessageTimestamp: g.last_message?.timestamp || g.created_at || new Date().toISOString(),
+        isOnline: false,
+        group: g,
+        membersCount: g.members.length
+      });
+    });
+
+    // Sort combined list chronologically: newest activity on top!
+    list.sort(
+      (a, b) => new Date(b.lastMessageTimestamp).getTime() - new Date(a.lastMessageTimestamp).getTime()
     );
 
-    return { userGroups, directContacts };
-  }, [groups, allUsers, user.username]);
+    return list;
+  }, [activeDirectMap, allUsers, onlineUsers, language, user.username, selectedTargetUser, groups]);
+
+  // Filtered list based on active tab and search query
+  const displayedConversations = React.useMemo(() => {
+    let filtered = unifiedConversations;
+    if (activeTab === 'direct') {
+      filtered = filtered.filter((c) => c.type === 'direct');
+    } else if (activeTab === 'groups') {
+      filtered = filtered.filter((c) => c.type === 'group');
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(
+        (c) =>
+          c.title.toLowerCase().includes(q) ||
+          c.lastMessageText.toLowerCase().includes(q) ||
+          (c.targetUser?.username && c.targetUser.username.toLowerCase().includes(q))
+      );
+    }
+    return filtered;
+  }, [unifiedConversations, activeTab, searchQuery]);
 
   // Handle opening a direct message
   const handleOpenDirectChat = (targetUser: UserProfile) => {
-    // Deterministic channel ID for 1-on-1: sorted usernames
     const sortedUsernames = [user.username.toLowerCase(), targetUser.username.toLowerCase()].sort();
     const convId = `dm_${sortedUsernames.join('_')}`;
 
@@ -601,11 +768,21 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
             <div className="flex gap-1">
               {[
-                { id: 'all', label: language === 'tr' ? 'Tümü' : 'All' },
-                { id: 'direct', label: language === 'tr' ? 'Kişisel' : 'Direct' },
+                {
+                  id: 'all',
+                  label: `${language === 'tr' ? 'Tümü' : 'All'} (${unifiedConversations.length})`
+                },
+                {
+                  id: 'direct',
+                  label: `${language === 'tr' ? 'Kişisel' : 'Direct'} (${
+                    unifiedConversations.filter((c) => c.type === 'direct').length
+                  })`
+                },
                 {
                   id: 'groups',
-                  label: `${language === 'tr' ? 'Gruplar' : 'Groups'} (${conversationList.userGroups.length})`
+                  label: `${language === 'tr' ? 'Gruplar' : 'Groups'} (${
+                    unifiedConversations.filter((c) => c.type === 'group').length
+                  })`
                 },
                 {
                   id: 'invites',
@@ -653,7 +830,10 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                       >
                         <div className="flex items-center gap-3">
                           <img
-                            src={invite.group_avatar || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150'}
+                            src={
+                              invite.group_avatar ||
+                              'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150'
+                            }
                             alt={invite.group_name}
                             className="w-10 h-10 rounded-xl object-cover ring-1 ring-zinc-800"
                           />
@@ -690,120 +870,104 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
               </div>
             )}
 
-            {/* NORMAL CONVERSATIONS & GROUPS */}
+            {/* UNIFIED CONVERSATIONS LIST */}
             {activeTab !== 'invites' && (
               <>
-                {/* Groups Section */}
-                {(activeTab === 'all' || activeTab === 'groups') &&
-                  conversationList.userGroups
-                    .filter((g) => g.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                    .map((group) => (
+                {displayedConversations.length > 0 ? (
+                  displayedConversations.map((conv) => {
+                    const isSelected = selectedConversationId === conv.id;
+                    const isTargetOnline =
+                      conv.type === 'direct' &&
+                      conv.targetUser &&
+                      onlineUsers.has(conv.targetUser.username.toLowerCase());
+
+                    return (
                       <div
-                        key={group.id}
-                        onClick={() => handleOpenGroupChat(group)}
+                        key={conv.id}
+                        onClick={() => {
+                          if (conv.type === 'direct' && conv.targetUser) {
+                            handleOpenDirectChat(conv.targetUser);
+                          } else if (conv.type === 'group' && conv.group) {
+                            handleOpenGroupChat(conv.group);
+                          }
+                        }}
                         className={`p-3.5 cursor-pointer transition-colors flex items-center gap-3 ${
-                          selectedConversationId === group.id ? 'bg-zinc-800/80' : 'hover:bg-zinc-900/50'
+                          isSelected ? 'bg-zinc-800/80' : 'hover:bg-zinc-900/50'
                         }`}
                       >
-                        <div className="relative">
+                        <div className="relative shrink-0">
                           <img
-                            src={group.avatar_url || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150'}
-                            alt={group.name}
-                            className="w-10 h-10 rounded-2xl object-cover ring-1 ring-zinc-800"
+                            src={conv.avatar}
+                            alt={conv.title}
+                            className={`w-10 h-10 object-cover ring-1 ring-zinc-800 ${
+                              conv.type === 'group' ? 'rounded-2xl' : 'rounded-full'
+                            }`}
                           />
-                          <span className="w-4 h-4 rounded-full bg-purple-600 text-white text-[9px] flex items-center justify-center absolute -bottom-1 -right-1 font-bold">
-                            <Users className="w-2.5 h-2.5" />
-                          </span>
+                          {conv.type === 'group' ? (
+                            <span className="w-4 h-4 rounded-full bg-purple-600 text-white text-[9px] flex items-center justify-center absolute -bottom-1 -right-1 font-bold">
+                              <Users className="w-2.5 h-2.5" />
+                            </span>
+                          ) : (
+                            <span
+                              className={`w-2.5 h-2.5 rounded-full absolute -bottom-0.5 -right-0.5 border-2 border-[#0c0c0e] ${
+                                isTargetOnline ? 'bg-emerald-500 ring-2 ring-emerald-500/20' : 'bg-zinc-600'
+                              }`}
+                            />
+                          )}
                         </div>
+
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-white truncate flex items-center gap-1.5">
-                              <span>{group.name}</span>
-                              <span className="text-[10px] font-mono text-zinc-500">
-                                ({group.members.length})
-                              </span>
+                              <span>{conv.title}</span>
+                              {conv.type === 'group' && conv.membersCount && (
+                                <span className="text-[10px] font-mono text-zinc-500">
+                                  ({conv.membersCount})
+                                </span>
+                              )}
                             </span>
-                            {group.last_message && (
-                              <span className="text-[10px] text-zinc-500 font-mono">
-                                {formatTimeAgo(group.last_message.timestamp, language)}
-                              </span>
+                            <span className="text-[10px] text-zinc-500 font-mono">
+                              {formatTimeAgo(conv.lastMessageTimestamp, language)}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between mt-0.5">
+                            <p className="text-[11px] text-zinc-400 truncate max-w-[190px]">
+                              {conv.lastMessageSender && conv.type === 'group'
+                                ? `${conv.lastMessageSender}: `
+                                : ''}
+                              {conv.lastMessageText}
+                            </p>
+                            {conv.type === 'direct' && isTargetOnline && (
+                              <span className="text-[9px] font-medium text-emerald-400">Çevrim içi</span>
                             )}
                           </div>
-                          <p className="text-[11px] text-zinc-400 truncate mt-0.5">
-                            {group.last_message
-                              ? `${group.last_message.sender_name}: ${group.last_message.text}`
-                              : `${group.members.length} üye`}
-                          </p>
                         </div>
                       </div>
-                    ))}
-
-                {/* Direct Messages Section */}
-                {(activeTab === 'all' || activeTab === 'direct') &&
-                  conversationList.directContacts
-                    .filter(
-                      (u) =>
-                        u.display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        u.username.toLowerCase().includes(searchQuery.toLowerCase())
-                    )
-                    .map((contact) => {
-                      const sorted = [user.username.toLowerCase(), contact.username.toLowerCase()].sort();
-                      const convId = `dm_${sorted.join('_')}`;
-                      const isSelected = selectedConversationId === convId;
-
-                      return (
-                        <div
-                          key={contact.id || contact.username}
-                          onClick={() => handleOpenDirectChat(contact)}
-                          className={`p-3.5 cursor-pointer transition-colors flex items-center gap-3 ${
-                            isSelected ? 'bg-zinc-800/80' : 'hover:bg-zinc-900/50'
-                          }`}
-                        >
-                          <div className="relative">
-                            <img
-                              src={
-                                contact.avatar_url ||
-                                'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'
-                              }
-                              alt={contact.display_name}
-                              className="w-10 h-10 rounded-full object-cover ring-1 ring-zinc-800"
-                            />
-                            <span
-                              className={`w-2.5 h-2.5 rounded-full absolute -bottom-0.5 -right-0.5 border-2 border-[#0c0c0e] ${
-                                contact.is_online ? 'bg-emerald-500' : 'bg-zinc-600'
-                              }`}
-                            />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-bold text-white truncate">
-                                {contact.display_name}
-                              </span>
-                              <span className="text-[10px] text-zinc-500 font-mono">
-                                {contact.is_online
-                                  ? 'Çevrim içi'
-                                  : formatTimeAgo(contact.last_seen_at, language)}
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-zinc-400 truncate mt-0.5">
-                              @{contact.username} · {contact.role || 'Geliştirici'}
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                {conversationList.userGroups.length === 0 &&
-                  conversationList.directContacts.length === 0 && (
-                    <div className="p-8 text-center space-y-3 text-zinc-500">
-                      <MessageSquare className="w-8 h-8 mx-auto text-zinc-600" />
-                      <p className="text-xs">
-                        {language === 'tr'
-                          ? 'Henüz bir sohbetiniz yok. Yeni sohbet veya grup başlatın.'
-                          : 'No active chats yet. Start a new chat or group.'}
-                      </p>
-                    </div>
-                  )}
+                    );
+                  })
+                ) : (
+                  <div className="p-8 text-center space-y-3 text-zinc-500">
+                    <MessageSquare className="w-8 h-8 mx-auto text-zinc-600" />
+                    <p className="text-xs">
+                      {searchQuery
+                        ? language === 'tr'
+                          ? 'Aramanızla eşleşen sohbet bulunamadı.'
+                          : 'No chats match your search.'
+                        : language === 'tr'
+                        ? 'Henüz aktif bir sohbetiniz yok.'
+                        : 'No active chats yet.'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setIsNewChatModalOpen(true)}
+                      className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>{language === 'tr' ? 'Yeni Sohbet Başlat' : 'Start New Chat'}</span>
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -844,7 +1008,9 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                     {selectedTargetUser && (
                       <span
                         className={`w-2.5 h-2.5 rounded-full absolute -bottom-0.5 -right-0.5 border-2 border-[#0c0c0e] ${
-                          selectedTargetUser.is_online ? 'bg-emerald-500' : 'bg-zinc-600'
+                          onlineUsers.has(selectedTargetUser.username.toLowerCase())
+                            ? 'bg-emerald-500 ring-2 ring-emerald-500/20'
+                            : 'bg-zinc-600'
                         }`}
                       />
                     )}
@@ -862,9 +1028,11 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                     <p className="text-[11px] text-zinc-400 font-mono truncate">
                       {selectedGroup
                         ? `${selectedGroup.members.length} üye`
+                        : onlineUsers.has(selectedTargetUser?.username.toLowerCase() || '')
+                        ? '● Çevrim içi'
                         : formatLastSeen(
                             selectedTargetUser?.last_seen_at,
-                            Boolean(selectedTargetUser?.is_online),
+                            false,
                             language
                           )}
                     </p>
@@ -1345,36 +1513,98 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
               </h3>
               <button
                 type="button"
-                onClick={() => setIsNewChatModalOpen(false)}
-                className="p-1 rounded-lg text-zinc-400 hover:text-white"
+                onClick={() => {
+                  setIsNewChatModalOpen(false);
+                  setNewChatSearchQuery('');
+                }}
+                className="p-1 rounded-lg text-zinc-400 hover:text-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="max-h-64 overflow-y-auto divide-y divide-zinc-800/50">
+            {/* Search user input */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-zinc-500 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                value={newChatSearchQuery}
+                onChange={(e) => setNewChatSearchQuery(e.target.value)}
+                placeholder={
+                  language === 'tr' ? 'Kullanıcı adı veya isim ara...' : 'Search user or name...'
+                }
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-colors"
+                autoFocus
+              />
+            </div>
+
+            <div className="max-h-72 overflow-y-auto divide-y divide-zinc-800/50 space-y-1">
               {allUsers
-                .filter((u) => u.username && u.username.toLowerCase() !== user.username.toLowerCase())
-                .map((u) => (
-                  <div
-                    key={u.id || u.username}
-                    onClick={() => handleOpenDirectChat(u)}
-                    className="p-3 flex items-center justify-between hover:bg-zinc-800/60 rounded-xl cursor-pointer transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={u.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
-                        alt={u.display_name}
-                        className="w-9 h-9 rounded-full object-cover"
-                      />
-                      <div>
-                        <p className="text-xs font-bold text-white">{u.display_name}</p>
-                        <p className="text-[10px] text-zinc-500 font-mono">@{u.username}</p>
+                .filter(
+                  (u) =>
+                    u.username &&
+                    u.username.toLowerCase() !== user.username.toLowerCase() &&
+                    (newChatSearchQuery.trim() === '' ||
+                      u.display_name.toLowerCase().includes(newChatSearchQuery.toLowerCase()) ||
+                      u.username.toLowerCase().includes(newChatSearchQuery.toLowerCase()))
+                )
+                .map((u) => {
+                  const isUserOnline = onlineUsers.has(u.username.toLowerCase());
+                  return (
+                    <div
+                      key={u.id || u.username}
+                      onClick={() => handleOpenDirectChat(u)}
+                      className="p-3 flex items-center justify-between hover:bg-zinc-800/60 rounded-xl cursor-pointer transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <img
+                            src={
+                              u.avatar_url ||
+                              'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'
+                            }
+                            alt={u.display_name}
+                            className="w-9 h-9 rounded-full object-cover"
+                          />
+                          <span
+                            className={`w-2.5 h-2.5 rounded-full absolute -bottom-0.5 -right-0.5 border-2 border-[#09090b] ${
+                              isUserOnline ? 'bg-emerald-500 ring-2 ring-emerald-500/20' : 'bg-zinc-600'
+                            }`}
+                          />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs font-bold text-white">{u.display_name}</p>
+                            {isUserOnline && (
+                              <span className="text-[9px] text-emerald-400 font-medium font-mono">
+                                Çevrim içi
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-zinc-500 font-mono">
+                            @{u.username} · {u.role || 'Geliştirici'}
+                          </p>
+                        </div>
                       </div>
+                      <span className="text-xs text-blue-400 font-bold bg-blue-500/10 px-2.5 py-1 rounded-lg border border-blue-500/20">
+                        {language === 'tr' ? 'Sohbet' : 'Chat'}
+                      </span>
                     </div>
-                    <span className="text-xs text-blue-400 font-bold">Mesaj</span>
-                  </div>
-                ))}
+                  );
+                })}
+
+              {allUsers.filter(
+                (u) =>
+                  u.username &&
+                  u.username.toLowerCase() !== user.username.toLowerCase() &&
+                  (newChatSearchQuery.trim() === '' ||
+                    u.display_name.toLowerCase().includes(newChatSearchQuery.toLowerCase()) ||
+                    u.username.toLowerCase().includes(newChatSearchQuery.toLowerCase()))
+              ).length === 0 && (
+                <div className="p-6 text-center text-zinc-500 text-xs font-mono">
+                  {language === 'tr' ? 'Kullanıcı bulunamadı.' : 'No users found.'}
+                </div>
+              )}
             </div>
           </div>
         </div>

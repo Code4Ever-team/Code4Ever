@@ -901,6 +901,76 @@ export function getGitHubToken(): string | null {
 }
 
 // -------------------------------------------------------------
+// REAL-TIME PRESENCE (ONLINE / OFFLINE STATUS)
+// -------------------------------------------------------------
+
+export function subscribeToOnlinePresence(
+  currentUser: UserProfile,
+  onPresenceUpdate: (onlineUsernames: Set<string>) => void
+): () => void {
+  const client = getSupabaseClient();
+  const cleanSelf = (currentUser?.username || '').toLowerCase().trim();
+
+  if (!client || !cleanSelf) {
+    onPresenceUpdate(new Set(cleanSelf ? [cleanSelf] : []));
+    return () => {};
+  }
+
+  const channel = client.channel('online_presence_hub', {
+    config: {
+      presence: {
+        key: cleanSelf
+      }
+    }
+  });
+
+  const syncState = () => {
+    const state = channel.presenceState();
+    const onlineSet = new Set<string>();
+    Object.keys(state).forEach((key) => {
+      if (key) onlineSet.add(key.toLowerCase().trim());
+    });
+    if (cleanSelf) onlineSet.add(cleanSelf);
+    onPresenceUpdate(onlineSet);
+  };
+
+  channel
+    .on('presence', { event: 'sync' }, syncState)
+    .on('presence', { event: 'join' }, syncState)
+    .on('presence', { event: 'leave' }, syncState)
+    .subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        try {
+          await channel.track({
+            username: cleanSelf,
+            display_name: currentUser.display_name,
+            online_at: new Date().toISOString()
+          });
+        } catch (e) {
+          console.warn('Presence track error:', e);
+        }
+      }
+    });
+
+  // Heartbeat to keep presence alive every 20 seconds
+  const heartbeat = setInterval(async () => {
+    try {
+      await channel.track({
+        username: cleanSelf,
+        display_name: currentUser.display_name,
+        online_at: new Date().toISOString()
+      });
+    } catch {}
+  }, 20000);
+
+  return () => {
+    clearInterval(heartbeat);
+    channel.untrack().catch(() => {});
+    client.removeChannel(channel);
+  };
+}
+
+// -------------------------------------------------------------
 // REAL-TIME E2EE MESSAGES & GROUPS ENGINE
 // -------------------------------------------------------------
 
@@ -921,6 +991,37 @@ export function saveStoredMessages(conversationId: string, messages: ChatMessage
   } catch {}
 }
 
+/**
+ * Scans all conversation IDs and last messages for the given username.
+ */
+export function getActiveConversationsMap(currentUsername: string): Record<string, { lastMessage: ChatMessage; otherUsername: string }> {
+  const cleanUser = (currentUsername || '').toLowerCase().trim();
+  const map: Record<string, { lastMessage: ChatMessage; otherUsername: string }> = {};
+
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(`${STORAGE_KEYS.MESSAGES}_dm_`)) {
+        const convId = key.replace(`${STORAGE_KEYS.MESSAGES}_`, '');
+        if (convId.toLowerCase().includes(cleanUser)) {
+          const parts = convId.replace('dm_', '').split('_');
+          const other = parts.find((p) => p.toLowerCase() !== cleanUser) || parts[0];
+          const messages = loadStoredMessages(convId);
+          if (messages.length > 0) {
+            const lastMsg = messages[messages.length - 1];
+            map[convId] = {
+              lastMessage: lastMsg,
+              otherUsername: other
+            };
+          }
+        }
+      }
+    }
+  } catch {}
+
+  return map;
+}
+
 export function subscribeToConversationMessages(
   conversationId: string,
   onUpdate: (messages: ChatMessage[]) => void
@@ -929,15 +1030,41 @@ export function subscribeToConversationMessages(
   const localMessages = loadStoredMessages(conversationId);
   onUpdate(localMessages);
 
+  // Helper to cleanly merge and sort messages
+  const mergeAndEmit = (incoming: ChatMessage[]) => {
+    const current = loadStoredMessages(conversationId);
+    const map = new Map<string, ChatMessage>();
+    current.forEach((m) => map.set(m.id, m));
+    incoming.forEach((m) => map.set(m.id, m));
+
+    const merged = Array.from(map.values()).sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+    saveStoredMessages(conversationId, merged);
+    onUpdate(merged);
+  };
+
+  // Same-window broadcast event listener
+  const handleCustomEvent = (e: any) => {
+    if (e.detail && e.detail.conversation_id === conversationId) {
+      mergeAndEmit([e.detail]);
+    }
+  };
+  window.addEventListener('c4e_message_broadcast', handleCustomEvent);
+
+  // Multi-tab storage event listener
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key === `${STORAGE_KEYS.MESSAGES}_${conversationId}`) {
+      onUpdate(loadStoredMessages(conversationId));
+    }
+  };
+  window.addEventListener('storage', handleStorage);
+
   if (!client) {
-    // Return storage event listener for multi-tab sync
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === `${STORAGE_KEYS.MESSAGES}_${conversationId}`) {
-        onUpdate(loadStoredMessages(conversationId));
-      }
+    return () => {
+      window.removeEventListener('c4e_message_broadcast', handleCustomEvent);
+      window.removeEventListener('storage', handleStorage);
     };
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
   }
 
   // Fetch initial messages from Supabase
@@ -949,59 +1076,110 @@ export function subscribeToConversationMessages(
     .then(
       ({ data, error }) => {
         if (!error && data && data.length > 0) {
-          saveStoredMessages(conversationId, data as ChatMessage[]);
-          onUpdate(data as ChatMessage[]);
+          mergeAndEmit(data as ChatMessage[]);
         }
       },
       () => {}
     );
 
-  // Realtime subscription via Supabase Channels
+  // Realtime Broadcast Channel & Postgres Changes
   const channel = client
-    .channel(`messages:${conversationId}`)
+    .channel(`room_msg_${conversationId}`)
+    .on('broadcast', { event: 'new_msg' }, ({ payload }) => {
+      if (payload && (payload as ChatMessage).conversation_id === conversationId) {
+        mergeAndEmit([payload as ChatMessage]);
+      }
+    })
     .on(
       'postgres_changes',
       {
-        event: '*',
+        event: 'INSERT',
         schema: 'public',
         table: 'messages',
         filter: `conversation_id=eq.${conversationId}`
       },
-      async () => {
-        const { data } = await client
-          .from('messages')
-          .select('*')
-          .eq('conversation_id', conversationId)
-          .order('created_at', { ascending: true });
-        if (data) {
-          saveStoredMessages(conversationId, data as ChatMessage[]);
-          onUpdate(data as ChatMessage[]);
+      (payload) => {
+        if (payload.new) {
+          mergeAndEmit([payload.new as ChatMessage]);
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'messages',
+        filter: `conversation_id=eq.${conversationId}`
+      },
+      (payload) => {
+        if (payload.new) {
+          mergeAndEmit([payload.new as ChatMessage]);
         }
       }
     )
     .subscribe();
 
   return () => {
+    window.removeEventListener('c4e_message_broadcast', handleCustomEvent);
+    window.removeEventListener('storage', handleStorage);
     client.removeChannel(channel);
   };
 }
 
 /**
  * Global incoming messages listener for active user.
- * Triggered whenever a new message is inserted in Supabase that involves the current user,
+ * Triggered whenever a new message is inserted in Supabase or broadcast that involves the current user,
  * firing audio, mobile vibrate, and desktop/PWA notifications.
  */
 export function subscribeToUserIncomingMessages(
   currentUsername: string,
   onIncomingMessage: (msg: ChatMessage) => void
 ): () => void {
-  const client = getSupabaseClient();
-  if (!client || !currentUsername) return () => {};
+  const cleanUser = (currentUsername || '').toLowerCase().trim();
+  if (!cleanUser) return () => {};
 
-  const cleanUser = currentUsername.toLowerCase().trim();
+  const handleIncoming = (newMsg: ChatMessage) => {
+    if (!newMsg || newMsg.sender_username?.toLowerCase() === cleanUser) {
+      return; // Ignore own messages
+    }
+
+    const convId = (newMsg.conversation_id || '').toLowerCase();
+    // Check if DM involves this user OR if user belongs to group
+    const isUserDM = convId.startsWith('dm_') && convId.includes(cleanUser);
+    const groups = loadStoredGroups();
+    const isUserGroup = groups.some(
+      (g) => g.id === newMsg.conversation_id && g.members?.some((m) => m.username?.toLowerCase() === cleanUser)
+    );
+
+    if (isUserDM || isUserGroup) {
+      // Store in local storage for that conversation
+      const current = loadStoredMessages(newMsg.conversation_id);
+      if (!current.some((m) => m.id === newMsg.id)) {
+        saveStoredMessages(newMsg.conversation_id, [...current, newMsg]);
+      }
+      onIncomingMessage(newMsg);
+    }
+  };
+
+  // Same-window broadcast listener
+  const handleCustom = (e: any) => {
+    if (e.detail) handleIncoming(e.detail);
+  };
+  window.addEventListener('c4e_message_broadcast', handleCustom);
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return () => {
+      window.removeEventListener('c4e_message_broadcast', handleCustom);
+    };
+  }
 
   const channel = client
-    .channel(`user-incoming-messages:${cleanUser}`)
+    .channel(`global_user_feed_${cleanUser}`)
+    .on('broadcast', { event: 'incoming_msg' }, ({ payload }) => {
+      if (payload) handleIncoming(payload as ChatMessage);
+    })
     .on(
       'postgres_changes',
       {
@@ -1010,38 +1188,59 @@ export function subscribeToUserIncomingMessages(
         table: 'messages'
       },
       (payload) => {
-        const newMsg = payload.new as ChatMessage;
-        if (!newMsg || newMsg.sender_username?.toLowerCase() === cleanUser) {
-          return; // Ignore own messages
-        }
-
-        const convId = (newMsg.conversation_id || '').toLowerCase();
-        // Check if DM involves this user OR if user belongs to group
-        const isUserDM = convId.startsWith('dm_') && convId.includes(cleanUser);
-        const groups = loadStoredGroups();
-        const isUserGroup = groups.some(
-          (g) => g.id === newMsg.conversation_id && g.members?.some((m) => m.username?.toLowerCase() === cleanUser)
-        );
-
-        if (isUserDM || isUserGroup) {
-          onIncomingMessage(newMsg);
-        }
+        if (payload.new) handleIncoming(payload.new as ChatMessage);
       }
     )
     .subscribe();
 
   return () => {
+    window.removeEventListener('c4e_message_broadcast', handleCustom);
     client.removeChannel(channel);
   };
 }
 
 export async function sendMessageService(message: ChatMessage): Promise<void> {
   const current = loadStoredMessages(message.conversation_id);
-  const updated = [...current, message];
-  saveStoredMessages(message.conversation_id, updated);
+  const exists = current.some((m) => m.id === message.id);
+  if (!exists) {
+    const updated = [...current, message];
+    saveStoredMessages(message.conversation_id, updated);
+  }
+
+  // Local window event for same-tab instant reactivity
+  window.dispatchEvent(new CustomEvent('c4e_message_broadcast', { detail: message }));
 
   const client = getSupabaseClient();
   if (client) {
+    // 1. Broadcast to specific room channel
+    const roomChannel = client.channel(`room_msg_${message.conversation_id}`);
+    roomChannel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        roomChannel.send({
+          type: 'broadcast',
+          event: 'new_msg',
+          payload: message
+        }).then(() => {
+          client.removeChannel(roomChannel);
+        }).catch(() => {});
+      }
+    });
+
+    // 2. Broadcast globally for background recipient notifications
+    const globalChannel = client.channel('global_user_feed_all');
+    globalChannel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        globalChannel.send({
+          type: 'broadcast',
+          event: 'incoming_msg',
+          payload: message
+        }).then(() => {
+          client.removeChannel(globalChannel);
+        }).catch(() => {});
+      }
+    });
+
+    // 3. Database persistence
     try {
       await client.from('messages').insert({
         id: message.id,
@@ -1061,7 +1260,7 @@ export async function sendMessageService(message: ChatMessage): Promise<void> {
         reply_to: message.reply_to || null
       });
     } catch (err) {
-      console.warn('Supabase message insert error fallback:', err);
+      console.warn('Supabase message insert fallback:', err);
     }
   }
 }
