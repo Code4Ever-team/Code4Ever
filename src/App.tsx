@@ -55,8 +55,11 @@ import {
   createJobListing as createJobListingService,
   deleteJobListing as deleteJobListingService,
   submitJobApplication as submitJobApplicationService,
-  subscribeToUserIncomingMessages
+  subscribeToUserIncomingMessages,
+  loadStoredNotifications,
+  saveStoredNotifications
 } from './services/supabaseClient';
+import { decryptE2EEMessage } from './utils/e2eeHelper';
 import {
   checkPersistentRateLimit,
   checkDuplicatePost,
@@ -112,7 +115,8 @@ export default function App() {
   const [rateLimitToast, setRateLimitToast] = useState<string | null>(null);
   const [selectedHashtag, setSelectedHashtag] = useState<string | null>(null);
 
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>(() => loadStoredNotifications());
+  const [directChatTargetUser, setDirectChatTargetUser] = useState<UserProfile | null>(null);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [closedBetaSettings, setClosedBetaSettings] = useState<ClosedBetaSettings>(loadStoredBetaSettings());
   const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>(loadStoredSubscriptionPlans());
@@ -274,29 +278,45 @@ export default function App() {
 
     const unsubscribeMessages = subscribeToUserIncomingMessages(
       user.username,
-      (incomingMsg) => {
-        const senderName = incomingMsg.sender_display_name || incomingMsg.sender_username;
-        sendNativeNotification({
-          title: `Code4Ever • @${senderName}`,
-          body: language === 'tr' ? 'Sana yeni bir mesaj gönderdi.' : 'Sent you a new direct message.',
-          icon: incomingMsg.sender_avatar || '/logo.png',
-          playSound: true,
-          vibrate: true
-        });
+      async (incomingMsg) => {
+        // 1. Decrypt incoming message content if E2EE encrypted
+        let decrypted = incomingMsg.decrypted_text || incomingMsg.content || '';
+        if (decrypted.startsWith('e2ee:')) {
+          try {
+            decrypted = await decryptE2EEMessage(decrypted, incomingMsg.conversation_id);
+          } catch {
+            decrypted = language === 'tr' ? 'Yeni bir mesaj' : 'New message';
+          }
+        }
 
+        // 2. Format preview content for snippets or attachments
+        let bodyText = decrypted;
+        if (decrypted.startsWith('[CODE_SNIPPET]')) {
+          bodyText = language === 'tr' ? '💻 Sana bir kod parçası gönderdi.' : '💻 Sent you a code snippet.';
+        } else if (decrypted.startsWith('[MEDIA:IMAGE]')) {
+          bodyText = language === 'tr' ? '📷 Sana bir görsel gönderdi.' : '📷 Sent you an image.';
+        } else if (decrypted.startsWith('[MEDIA:FILE]')) {
+          bodyText = language === 'tr' ? '📎 Sana bir dosya gönderdi.' : '📎 Sent you a file.';
+        }
+
+        const senderDisplay = incomingMsg.sender_display_name || incomingMsg.sender_username;
         const notifItem: NotificationItem = {
-          id: `msg_notif_${incomingMsg.id}`,
+          id: `msg_notif_${incomingMsg.id || Date.now()}`,
           type: 'message',
+          recipient_id: user.username,
           actor: {
             username: incomingMsg.sender_username,
-            display_name: incomingMsg.sender_display_name,
-            avatar_url: incomingMsg.sender_avatar
+            display_name: senderDisplay,
+            avatar_url: incomingMsg.sender_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'
           },
-          content: language === 'tr' ? 'Sana yeni bir mesaj gönderdi.' : 'Sent you a new direct message.',
+          content: bodyText,
           time_ago: language === 'tr' ? 'Şimdi' : 'Just now',
-          is_read: false
+          is_read: false,
+          target_id: incomingMsg.conversation_id,
+          created_at: incomingMsg.created_at || new Date().toISOString()
         };
-        setNotifications((prev) => [notifItem, ...prev]);
+
+        triggerNotification(notifItem);
       }
     );
 
@@ -316,7 +336,14 @@ export default function App() {
   };
 
   const triggerNotification = (notif: NotificationItem) => {
-    setNotifications((prev) => [notif, ...prev]);
+    setNotifications((prev) => {
+      const exists = prev.some((n) => n.id === notif.id);
+      if (exists) return prev;
+      const updated = [notif, ...prev];
+      saveStoredNotifications(updated);
+      return updated;
+    });
+
     const sender = notif.actor?.display_name || notif.actor?.username || 'Code4Ever';
     sendNativeNotification({
       title: `Code4Ever • @${sender}`,
@@ -325,6 +352,23 @@ export default function App() {
       playSound: true,
       vibrate: true
     });
+  };
+
+  const handleMarkAllNotificationsAsRead = () => {
+    const updated = notifications.map((n) => ({ ...n, is_read: true }));
+    setNotifications(updated);
+    saveStoredNotifications(updated);
+  };
+
+  const handleClearNotifications = () => {
+    setNotifications([]);
+    saveStoredNotifications([]);
+  };
+
+  const handleStartDirectChat = (targetUser: UserProfile) => {
+    setDirectChatTargetUser(targetUser);
+    setActiveTab('messages');
+    setSelectedModalUsername(null);
   };
 
   const handleUpdateProfile = (updated: Partial<UserProfile> | UserProfile) => {
@@ -908,8 +952,8 @@ export default function App() {
             <NotificationsView
               notifications={notifications}
               language={language}
-              onMarkAllAsRead={() => setNotifications(notifications.map((n) => ({ ...n, is_read: true })))}
-              onClearNotifications={() => setNotifications([])}
+              onMarkAllAsRead={handleMarkAllNotificationsAsRead}
+              onClearNotifications={handleClearNotifications}
               onSelectTab={(tab) => setActiveTab(tab)}
             />
           )}
@@ -919,6 +963,7 @@ export default function App() {
               user={user}
               allUsers={allUsers}
               language={language}
+              initialTargetUser={directChatTargetUser}
               onSelectUser={(u) => setSelectedModalUsername(u)}
               onTriggerNotification={triggerNotification}
             />
@@ -980,6 +1025,7 @@ export default function App() {
               onDeletePost={handleDeletePost}
               onAddComment={handleAddComment}
               onSelectUser={(uname) => setSelectedModalUsername(uname)}
+              onStartDirectChat={handleStartDirectChat}
             />
           )}
 
@@ -1066,6 +1112,7 @@ export default function App() {
           setViewingUser(profile);
           setActiveTab('profile');
         }}
+        onStartDirectChat={handleStartDirectChat}
       />
 
       <PWAInstallBanner

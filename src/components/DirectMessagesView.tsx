@@ -66,6 +66,7 @@ interface DirectMessagesViewProps {
   user: UserProfile;
   allUsers?: UserProfile[];
   language: 'tr' | 'en';
+  initialTargetUser?: UserProfile | null;
   onSelectUser?: (username: string) => void;
   onTriggerNotification?: (notif: NotificationItem) => void;
 }
@@ -88,6 +89,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   user,
   allUsers = [],
   language,
+  initialTargetUser,
   onSelectUser,
   onTriggerNotification
 }) => {
@@ -97,6 +99,17 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [selectedTargetUser, setSelectedTargetUser] = useState<UserProfile | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<ChatGroup | null>(null);
+
+  // Handle external initial target user (e.g. from user profile or message button)
+  useEffect(() => {
+    if (initialTargetUser && initialTargetUser.username) {
+      const sortedUsernames = [user.username.toLowerCase(), initialTargetUser.username.toLowerCase()].sort();
+      const convId = `dm_${sortedUsernames.join('_')}`;
+      setSelectedConversationId(convId);
+      setSelectedTargetUser(initialTargetUser);
+      setSelectedGroup(null);
+    }
+  }, [initialTargetUser, user.username]);
 
   // Realtime Presence (Set of online usernames)
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());

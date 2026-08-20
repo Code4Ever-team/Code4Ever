@@ -12,7 +12,9 @@ import {
   Volume2,
   Sparkles,
   Smartphone,
-  Laptop
+  Laptop,
+  Mail,
+  UserPlus
 } from 'lucide-react';
 import { NotificationItem } from '../types';
 import {
@@ -64,8 +66,8 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
     sendNativeNotification({
       title: 'Code4Ever - Test Bildirimi 💬',
       body: language === 'tr'
-        ? 'Ahmet sana bir yanıt gönderdi: "Harika proje! 🚀"'
-        : 'Alex sent you a reply: "Awesome project! 🚀"',
+        ? 'Ahmet sana bir mesaj gönderdi: "Harika proje! 🚀"'
+        : 'Alex sent you a message: "Awesome project! 🚀"',
       playSound: true
     });
     setTimeout(() => setIsTesting(false), 800);
@@ -75,19 +77,23 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
 
   const getIcon = (type: NotificationItem['type']) => {
     switch (type) {
+      case 'message':
+        return <Mail className="w-3.5 h-3.5 text-blue-400" />;
+      case 'group_invite':
+        return <Users className="w-3.5 h-3.5 text-purple-400" />;
       case 'job_application':
       case 'job_listing':
-        return <Briefcase className="w-4 h-4 text-zinc-200" />;
+        return <Briefcase className="w-3.5 h-3.5 text-zinc-200" />;
       case 'like':
-        return <Heart className="w-4 h-4 text-red-400 fill-current" />;
+        return <Heart className="w-3.5 h-3.5 text-red-400 fill-current" />;
       case 'star':
-        return <Star className="w-4 h-4 text-amber-400 fill-current" />;
+        return <Star className="w-3.5 h-3.5 text-amber-400 fill-current" />;
       case 'comment':
-        return <MessageSquare className="w-4 h-4 text-zinc-300" />;
+        return <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />;
       case 'community':
-        return <Users className="w-4 h-4 text-zinc-300" />;
+        return <Users className="w-3.5 h-3.5 text-indigo-400" />;
       default:
-        return <Bell className="w-4 h-4 text-zinc-300" />;
+        return <Bell className="w-3.5 h-3.5 text-zinc-300" />;
     }
   };
 
@@ -196,43 +202,66 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
             {language === 'tr' ? 'Hiç bildirim yok.' : 'No notifications found.'}
           </div>
         ) : (
-          filtered.map((item) => (
-            <div
-              key={item.id}
-              onClick={() => {
-                if (item.type === 'job_application' && onSelectTab) {
-                  onSelectTab('jobs');
-                }
-              }}
-              className={`p-4 flex items-start gap-3.5 transition-colors cursor-pointer ${
-                item.is_read ? 'bg-[#09090b] hover:bg-zinc-900/30' : 'bg-zinc-900/40 hover:bg-zinc-900/60'
-              }`}
-            >
-              <div className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800/80 flex-shrink-0 mt-0.5">
-                {getIcon(item.type)}
-              </div>
+          filtered.map((item) => {
+            const actorName = item.actor?.display_name || item.actor?.username || item.actor_username;
+            const actorAvatar = item.actor?.avatar_url;
 
-              <div className="flex-1 min-w-0 space-y-1">
-                <p className="text-xs text-zinc-200 leading-snug">
-                  {item.actor_username && (
-                    <span className="font-bold text-white mr-1.5">
-                      @{item.actor_username}
-                    </span>
+            return (
+              <div
+                key={item.id}
+                onClick={() => {
+                  if ((item.type === 'message' || item.type === 'group_invite') && onSelectTab) {
+                    onSelectTab('messages');
+                  } else if (item.type === 'job_application' && onSelectTab) {
+                    onSelectTab('jobs');
+                  }
+                }}
+                className={`p-4 flex items-start gap-3.5 transition-colors cursor-pointer ${
+                  item.is_read ? 'bg-[#09090b] hover:bg-zinc-900/30' : 'bg-zinc-900/40 hover:bg-zinc-900/60'
+                }`}
+              >
+                <div className="relative flex-shrink-0 mt-0.5">
+                  {actorAvatar ? (
+                    <img
+                      src={actorAvatar}
+                      alt={actorName || 'User'}
+                      className="w-10 h-10 rounded-full object-cover ring-1 ring-zinc-700 bg-zinc-900"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+                      {getIcon(item.type)}
+                    </div>
                   )}
-                  <span>{item.content}</span>
-                </p>
-                <span className="text-[10px] font-mono text-zinc-400 block">
-                  {item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Şimdi'}
-                </span>
-              </div>
+                  {actorAvatar && (
+                    <div className="absolute -bottom-1 -right-1 p-0.5 rounded-full bg-[#09090b] ring-1 ring-zinc-800">
+                      {getIcon(item.type)}
+                    </div>
+                  )}
+                </div>
 
-              {!item.is_read && (
-                <div className="w-2 h-2 rounded-full bg-zinc-100 flex-shrink-0 mt-2" />
-              )}
-            </div>
-          ))
+                <div className="flex-1 min-w-0 space-y-1">
+                  <p className="text-xs text-zinc-200 leading-snug">
+                    {actorName && (
+                      <span className="font-bold text-white mr-1.5">
+                        {item.actor?.display_name || `@${item.actor?.username || item.actor_username}`}
+                      </span>
+                    )}
+                    <span>{item.content}</span>
+                  </p>
+                  <span className="text-[10px] font-mono text-zinc-400 block">
+                    {item.time_ago || (item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Şimdi')}
+                  </span>
+                </div>
+
+                {!item.is_read && (
+                  <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0 mt-2 ring-2 ring-blue-500/30 animate-pulse" />
+                )}
+              </div>
+            );
+          })
         )}
       </div>
     </div>
   );
 };
+

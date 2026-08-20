@@ -370,27 +370,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* ======================================================== */}
       {/* 3. MOBILE BOTTOM NAVIGATION BAR (Screens < md)            */}
       {/* ======================================================== */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#09090b]/95 backdrop-blur-xl border-t border-zinc-800/80 px-3 py-2 flex items-center justify-around select-none">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#09090b]/95 backdrop-blur-xl border-t border-zinc-800/80 px-2 py-2 flex items-center justify-around select-none">
         {/* Home */}
         <button
           onClick={() => setActiveTab('feed')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl transition-all cursor-pointer ${
-            activeTab === 'feed' ? 'text-white' : 'text-zinc-400 hover:text-zinc-200'
+          className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl transition-all cursor-pointer ${
+            activeTab === 'feed' ? 'text-white font-semibold' : 'text-zinc-400 hover:text-zinc-200'
           }`}
         >
           <Home className={`w-5 h-5 ${activeTab === 'feed' ? 'stroke-[2.5px] text-white' : 'text-zinc-400'}`} />
-          <span className="text-[10px] font-medium">{language === 'tr' ? 'Akış' : 'Home'}</span>
+          <span className="text-[10px]">{language === 'tr' ? 'Akış' : 'Home'}</span>
         </button>
 
         {/* Explore */}
         <button
           onClick={() => setActiveTab('explore')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl transition-all cursor-pointer ${
-            activeTab === 'explore' ? 'text-white' : 'text-zinc-400 hover:text-zinc-200'
+          className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl transition-all cursor-pointer ${
+            activeTab === 'explore' ? 'text-white font-semibold' : 'text-zinc-400 hover:text-zinc-200'
           }`}
         >
           <Compass className={`w-5 h-5 ${activeTab === 'explore' ? 'stroke-[2.5px] text-white' : 'text-zinc-400'}`} />
-          <span className="text-[10px] font-medium">{language === 'tr' ? 'Keşfet' : 'Explore'}</span>
+          <span className="text-[10px]">{language === 'tr' ? 'Keşfet' : 'Explore'}</span>
         </button>
 
         {/* Center Floating Action Button (New Post) */}
@@ -402,26 +402,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <Plus className="w-5 h-5 text-zinc-950 stroke-[3px]" />
         </button>
 
-        {/* Job Listings */}
+        {/* Messages */}
         <button
-          onClick={() => setActiveTab('jobs')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl transition-all cursor-pointer ${
-            activeTab === 'jobs' ? 'text-white' : 'text-zinc-400 hover:text-zinc-200'
+          onClick={() => setActiveTab('messages')}
+          className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl transition-all relative cursor-pointer ${
+            activeTab === 'messages' ? 'text-white font-semibold' : 'text-zinc-400 hover:text-zinc-200'
           }`}
         >
-          <Briefcase className={`w-5 h-5 ${activeTab === 'jobs' ? 'stroke-[2.5px] text-white' : 'text-zinc-400'}`} />
-          <span className="text-[10px] font-medium">{language === 'tr' ? 'İlanlar' : 'Jobs'}</span>
+          <Mail className={`w-5 h-5 ${activeTab === 'messages' ? 'stroke-[2.5px] text-white' : 'text-zinc-400'}`} />
+          <span className="text-[10px]">{language === 'tr' ? 'Mesajlar' : 'Messages'}</span>
         </button>
 
-        {/* Communities or Profile */}
+        {/* Communities */}
         <button
           onClick={() => setActiveTab('communities')}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl transition-all cursor-pointer ${
-            activeTab === 'communities' ? 'text-white' : 'text-zinc-400 hover:text-zinc-200'
+          className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl transition-all cursor-pointer ${
+            activeTab === 'communities' ? 'text-white font-semibold' : 'text-zinc-400 hover:text-zinc-200'
           }`}
         >
           <Users className={`w-5 h-5 ${activeTab === 'communities' ? 'stroke-[2.5px] text-white' : 'text-zinc-400'}`} />
-          <span className="text-[10px] font-medium">{language === 'tr' ? 'Topluluk' : 'Groups'}</span>
+          <span className="text-[10px]">{language === 'tr' ? 'Topluluk' : 'Groups'}</span>
         </button>
       </nav>
 

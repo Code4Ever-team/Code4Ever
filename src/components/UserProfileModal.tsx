@@ -12,7 +12,8 @@ import {
   Sparkles,
   Users,
   Check,
-  AlertCircle
+  AlertCircle,
+  Mail
 } from 'lucide-react';
 import { UserProfile, Community } from '../types';
 import { UserBadges } from './UserBadges';
@@ -28,6 +29,7 @@ interface UserProfileModalProps {
   language: 'tr' | 'en';
   onToggleJoinCommunity?: (id: string) => void;
   onNavigateToFullProfile?: (user: UserProfile) => void;
+  onStartDirectChat?: (user: UserProfile) => void;
 }
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({
@@ -38,7 +40,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   communities,
   language,
   onToggleJoinCommunity,
-  onNavigateToFullProfile
+  onNavigateToFullProfile,
+  onStartDirectChat
 }) => {
   const [profileData, setProfileData] = useState<UserProfile | null>(null);
   const [communityData, setCommunityData] = useState<Community | null>(null);
@@ -321,26 +324,42 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 </div>
 
                 {currentUser.username?.toLowerCase() !== profileData.username?.toLowerCase() && (
-                  <button
-                    onClick={() => setIsFollowing(!isFollowing)}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md ${
-                      isFollowing
-                        ? 'bg-zinc-800 hover:bg-red-500/20 hover:text-red-400 border border-zinc-700 text-zinc-300'
-                        : 'bg-blue-600 hover:bg-blue-500 text-white'
-                    }`}
-                  >
-                    {isFollowing ? (
-                      <>
-                        <UserCheck className="w-3.5 h-3.5" />
-                        <span>{language === 'tr' ? 'Takip Ediliyor' : 'Following'}</span>
-                      </>
-                    ) : (
-                      <>
-                        <UserPlus className="w-3.5 h-3.5" />
-                        <span>{language === 'tr' ? 'Takip Et' : 'Follow'}</span>
-                      </>
+                  <div className="flex items-center gap-2">
+                    {onStartDirectChat && (
+                      <button
+                        onClick={() => {
+                          onStartDirectChat(profileData);
+                          onClose();
+                        }}
+                        className="px-3.5 py-2 rounded-xl text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700/80 transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
+                        title={language === 'tr' ? 'Mesaj Gönder' : 'Send Message'}
+                      >
+                        <Mail className="w-3.5 h-3.5 text-blue-400" />
+                        <span>{language === 'tr' ? 'Mesaj' : 'Message'}</span>
+                      </button>
                     )}
-                  </button>
+
+                    <button
+                      onClick={() => setIsFollowing(!isFollowing)}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer ${
+                        isFollowing
+                          ? 'bg-zinc-800 hover:bg-red-500/20 hover:text-red-400 border border-zinc-700 text-zinc-300'
+                          : 'bg-blue-600 hover:bg-blue-500 text-white'
+                      }`}
+                    >
+                      {isFollowing ? (
+                        <>
+                          <UserCheck className="w-3.5 h-3.5" />
+                          <span>{language === 'tr' ? 'Takip Ediliyor' : 'Following'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus className="w-3.5 h-3.5" />
+                          <span>{language === 'tr' ? 'Takip Et' : 'Follow'}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 )}
               </div>
 

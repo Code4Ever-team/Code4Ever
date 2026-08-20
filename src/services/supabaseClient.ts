@@ -642,6 +642,27 @@ export async function submitJobApplication(
 }
 
 // -------------------------------------------------------------
+// NOTIFICATIONS PERSISTENCE
+// -------------------------------------------------------------
+
+export function loadStoredNotifications(): NotificationItem[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
+    if (data) {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+export function saveStoredNotifications(notifications: NotificationItem[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
+  } catch {}
+}
+
+// -------------------------------------------------------------
 // USER MANAGEMENT & PROFILES (ADMIN & REALTIME)
 // -------------------------------------------------------------
 

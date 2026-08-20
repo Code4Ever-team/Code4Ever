@@ -27,7 +27,8 @@ import {
   Send,
   Trash2,
   Sparkles,
-  Globe
+  Globe,
+  Mail
 } from 'lucide-react';
 import { validateFileSize, notifyFileSizeExceeded } from '../utils/fileUploadHelper';
 import { validateUsername, sanitizeText, sanitizeUrl, checkUsernameAvailability } from '../utils/securityHelper';
@@ -50,6 +51,7 @@ interface ProfileViewProps {
   onDeletePost?: (id: string) => void;
   onAddComment?: (postId: string, text: string) => void;
   onSelectUser?: (username: string) => void;
+  onStartDirectChat?: (user: UserProfile) => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -66,7 +68,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onBookmarkPost,
   onDeletePost,
   onAddComment,
-  onSelectUser
+  onSelectUser,
+  onStartDirectChat
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<UserProfile>(user);
@@ -256,7 +259,7 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
             />
           </div>
 
-          {isOwnProfile && (
+          {isOwnProfile ? (
             <button
               onClick={() => setIsEditing(!isEditing)}
               className="px-3.5 py-1.5 rounded-xl bg-zinc-800/90 hover:bg-zinc-700 text-white text-xs font-semibold border border-zinc-700/60 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
@@ -268,6 +271,16 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
                   : (language === 'tr' ? 'Profili Düzenle' : 'Edit Profile')}
               </span>
             </button>
+          ) : (
+            onStartDirectChat && (
+              <button
+                onClick={() => onStartDirectChat(formData)}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
+              >
+                <Mail className="w-3.5 h-3.5 text-white" />
+                <span>{language === 'tr' ? 'Mesaj Gönder' : 'Send Message'}</span>
+              </button>
+            )
           )}
         </div>
       </div>

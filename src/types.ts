@@ -247,6 +247,7 @@ export interface NotificationItem {
   time_ago: string;
   is_read: boolean;
   target_id?: string;
+  created_at?: string;
 }
 
 export interface JobApplication {
