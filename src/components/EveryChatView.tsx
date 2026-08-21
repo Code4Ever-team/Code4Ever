@@ -13,6 +13,7 @@ import {
   User
 } from 'lucide-react';
 import { UserProfile } from '../types';
+import { verifyAdminAccess } from '../utils/securityHelper';
 
 interface EveryChatViewProps {
   user: UserProfile;
@@ -27,9 +28,7 @@ interface ChatMessage {
 }
 
 export const EveryChatView: React.FC<EveryChatViewProps> = ({ user, language }) => {
-  const isNylithra =
-    user?.username?.toLowerCase() === 'nylithra' ||
-    user?.display_name?.toLowerCase() === 'nylithra';
+  const isNylithra = verifyAdminAccess(user);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {

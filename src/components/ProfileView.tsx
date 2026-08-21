@@ -31,7 +31,7 @@ import {
   Mail
 } from 'lucide-react';
 import { validateFileSize, notifyFileSizeExceeded } from '../utils/fileUploadHelper';
-import { validateUsername, sanitizeText, sanitizeUrl, checkUsernameAvailability } from '../utils/securityHelper';
+import { validateUsername, sanitizeText, sanitizeUrl, checkUsernameAvailability, verifyAdminAccess } from '../utils/securityHelper';
 import { ShowcaseReposModal } from './ShowcaseReposModal';
 
 interface ProfileViewProps {
@@ -86,13 +86,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const profileUserKey = (user.username || user.id || '').toLowerCase();
   const currentViewerKey = (activeUser.username || activeUser.id || '').toLowerCase();
 
-  const isNylithra =
-    currentViewerKey === 'nylithra' ||
-    currentViewerKey === 'nylithraa' ||
-    activeUser.display_name?.toLowerCase() === 'nylithra' ||
-    activeUser.display_name?.toLowerCase() === 'nylithraa' ||
-    activeUser.role === 'admin' ||
-    activeUser.role === 'founder';
+  const isNylithra = verifyAdminAccess(activeUser);
 
   const isOwnProfile =
     (currentUser && (currentUser.id === user.id || currentUser.username?.toLowerCase() === user.username?.toLowerCase())) ||

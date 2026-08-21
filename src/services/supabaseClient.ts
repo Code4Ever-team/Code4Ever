@@ -301,12 +301,11 @@ export function saveDeletedPostId(postId: string): void {
 
 export function loadStoredPosts(): Post[] {
   const data = localStorage.getItem(STORAGE_KEYS.POSTS);
-  const deletedIds = loadDeletedPostIds();
   if (data) {
     try {
       const parsed: Post[] = JSON.parse(data);
       if (Array.isArray(parsed)) {
-        return parsed.filter((p) => p && p.id && !deletedIds.has(p.id) && !(p as any).is_deleted);
+        return parsed.filter((p) => p && p.id && !(p as any).is_deleted);
       }
     } catch {
       // Fallback
@@ -316,8 +315,7 @@ export function loadStoredPosts(): Post[] {
 }
 
 export function saveStoredPosts(posts: Post[]): void {
-  const deletedIds = loadDeletedPostIds();
-  const clean = (posts || []).filter((p) => p && p.id && !deletedIds.has(p.id) && !(p as any).is_deleted);
+  const clean = (posts || []).filter((p) => p && p.id && !(p as any).is_deleted);
   localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(clean));
 }
 
@@ -333,34 +331,41 @@ export function subscribeToPosts(onUpdate: (posts: Post[]) => void): () => void 
     .from('posts')
     .select('*')
     .order('created_at', { ascending: false })
-    .then(({ data, error }) => {
-      const deletedIds = loadDeletedPostIds();
-      if (!error && data && data.length > 0) {
-        const cleanData = (data as Post[]).filter(
-          (p) => p && p.id && !deletedIds.has(p.id) && !(p as any).is_deleted
-        );
-        saveStoredPosts(cleanData);
-        onUpdate(cleanData);
-      } else {
+    .then(
+      ({ data, error }) => {
+        if (!error && Array.isArray(data)) {
+          const cleanData = (data as Post[]).filter(
+            (p) => p && p.id && !(p as any).is_deleted
+          );
+          saveStoredPosts(cleanData);
+          onUpdate(cleanData);
+        } else {
+          onUpdate(loadStoredPosts());
+        }
+      },
+      () => {
         onUpdate(loadStoredPosts());
       }
-    });
+    );
 
   // Realtime subscription via Supabase Channels
   const channel = client
     .channel('public:posts')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, async () => {
-      const { data } = await client
-        .from('posts')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (data) {
-        const deletedIds = loadDeletedPostIds();
-        const cleanData = (data as Post[]).filter(
-          (p) => p && p.id && !deletedIds.has(p.id) && !(p as any).is_deleted
-        );
-        saveStoredPosts(cleanData);
-        onUpdate(cleanData);
+      try {
+        const { data, error } = await client
+          .from('posts')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!error && Array.isArray(data)) {
+          const cleanData = (data as Post[]).filter(
+            (p) => p && p.id && !(p as any).is_deleted
+          );
+          saveStoredPosts(cleanData);
+          onUpdate(cleanData);
+        }
+      } catch (e) {
+        console.warn('Realtime post refresh error:', e);
       }
     })
     .subscribe();
@@ -393,6 +398,7 @@ export async function createPostInSupabase(post: Post): Promise<void> {
         author: post.author,
         content: sanitizeText(post.content, 4000),
         code_snippet: post.code_snippet || null,
+        code_language: (post as any).code_language || null,
         media_url: post.media_url || null,
         media_type: post.media_type || null,
         project_card: post.project_card || null,
@@ -405,6 +411,7 @@ export async function createPostInSupabase(post: Post): Promise<void> {
         comments: post.comments || [],
         reposts_count: post.reposts_count || 0,
         reposted_by: post.reposted_by || [],
+        is_deleted: false,
         created_at: post.created_at
       });
     } catch (err) {
@@ -428,16 +435,27 @@ export async function updatePostInSupabase(postId: string, updateData: Partial<P
   }
 }
 
-export async function deletePostInSupabase(postId: string): Promise<boolean> {
-  // 1. Mark in permanent tombstone set so page refresh NEVER revives this post
-  saveDeletedPostId(postId);
-
-  // 2. Remove immediately from local storage cache
+export async function deletePostInSupabase(postId: string, requestingUser?: UserProfile): Promise<boolean> {
   const current = loadStoredPosts();
+  const target = current.find((p) => p.id === postId);
+
+  // Strict Authorization Check at Service Layer
+  if (target && requestingUser) {
+    const isAuthor =
+      (target.author?.username || '').toLowerCase() === (requestingUser.username || '').toLowerCase() ||
+      ((target.author as any)?.id && requestingUser.id && (target.author as any).id === requestingUser.id);
+    const isAdmin = requestingUser.isAdmin === true;
+    if (!isAuthor && !isAdmin) {
+      console.error('Security alert: Unauthorized post deletion attempt blocked at Supabase service layer');
+      return false;
+    }
+  }
+
+  // 1. Remove immediately from local storage cache
   const updated = current.filter((p) => p.id !== postId);
   saveStoredPosts(updated);
 
-  // 3. Dispatch broadcast event for instantaneous UI sync across components/tabs
+  // 2. Dispatch broadcast event for instantaneous UI sync across components/tabs
   try {
     window.dispatchEvent(new CustomEvent('c4e_post_deleted', { detail: { postId } }));
   } catch {}
@@ -445,14 +463,12 @@ export async function deletePostInSupabase(postId: string): Promise<boolean> {
   const client = getSupabaseClient();
   if (client) {
     try {
+      // 3. Hard delete from PostgreSQL database
       const { error } = await client.from('posts').delete().eq('id', postId);
       if (error) {
-        console.warn('Supabase post delete warning (will attempt soft-delete update):', error);
-      }
-      // Soft-delete backup to prevent any RLS policy from reviving
-      try {
+        console.warn('Supabase post delete warning (will attempt soft-delete fallback):', error);
         await client.from('posts').update({ is_deleted: true, content: '[DELETED]' } as any).eq('id', postId);
-      } catch {}
+      }
       return true;
     } catch (err) {
       console.warn('Supabase post delete network/table error:', err);
@@ -496,7 +512,7 @@ export function subscribeToCommunities(onUpdate: (communities: Community[]) => v
     .from('communities')
     .select('*')
     .then(({ data, error }) => {
-      if (!error && data && data.length > 0) {
+      if (!error && Array.isArray(data)) {
         saveStoredCommunities(data as Community[]);
         onUpdate(data as Community[]);
       } else {
@@ -1482,11 +1498,12 @@ export function subscribeToGroupsService(
     .select('*')
     .then(
       ({ data, error }) => {
-        const deletedIds = loadDeletedGroupIds();
-        if (!error && data && data.length > 0) {
-          const clean = (data as ChatGroup[]).filter((g) => g && g.id && !deletedIds.has(g.id));
+        if (!error && Array.isArray(data)) {
+          const clean = (data as ChatGroup[]).filter((g) => g && g.id);
           saveStoredGroups(clean);
           onUpdate(clean);
+        } else {
+          onUpdate(loadStoredGroups());
         }
       },
       () => {}

@@ -205,13 +205,18 @@ export function auditSecurityPayload(payload: string): {
 
 /**
  * Strict check for admin authorization.
- * Verifies database-level admin permissions (isAdmin === true or role === 'admin' / 'founder').
+ * Verifies verified admin permissions (isAdmin === true or verified system administrator account).
+ * Prevents privilege escalation by arbitrary role text inputs from unauthorized users.
  */
 export function verifyAdminAccess(user?: { username?: string; role?: string; id?: string; isAdmin?: boolean } | null): boolean {
   if (!user) return false;
   if (user.isAdmin === true) return true;
+  const username = (user.username || '').toLowerCase().trim();
   const role = (user.role || '').toLowerCase().trim();
-  return role === 'admin' || role === 'founder' || role === 'code4ever yetkilisi';
+  if ((username === 'nylithra' || username === 'c4e_admin') && (role === 'admin' || role === 'founder' || role === 'code4ever yetkilisi')) {
+    return true;
+  }
+  return false;
 }
 
 /**

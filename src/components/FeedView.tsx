@@ -2,10 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Post, UserProfile, GitHubRepo, Community } from '../types';
 import { UserBadges } from './UserBadges';
 import { CodeSnippetBlock } from './CodeSnippetBlock';
-import { MessageSquare, Heart, Repeat, Send, Code, Sparkles, Trash2, Bookmark, Share2, Check, GitBranch, ExternalLink, Star, GitFork, Image as ImageIcon, Video, Loader2, Users, Shield, Copy, User, AlertCircle } from 'lucide-react';
+import { MessageSquare, Heart, Repeat, Send, Code, Sparkles, Trash2, Bookmark, Share2, Check, GitBranch, ExternalLink, Star, GitFork, Image as ImageIcon, Video, Loader2, Users, Shield, Copy, User, AlertCircle, Rss, Radio, Globe, RefreshCw } from 'lucide-react';
 import { getGitHubToken } from '../services/supabaseClient';
 import { validateFileSize, notifyFileSizeExceeded } from '../utils/fileUploadHelper';
 import { formatTimeAgo } from '../utils/timeAgo';
+import { verifyAdminAccess } from '../utils/securityHelper';
+import { RssFeedModal } from './RssFeedModal';
 
 interface FeedViewProps {
   posts: Post[];
@@ -87,15 +89,19 @@ export const FeedView: React.FC<FeedViewProps> = ({
   const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const [longPressingPostId, setLongPressingPostId] = useState<string | null>(null);
 
-  const cleanCurrentUsername = user?.username?.toLowerCase() || '';
-  const cleanDisplayName = user?.display_name?.toLowerCase() || '';
-  const isNylithra =
-    cleanCurrentUsername === 'nylithra' ||
-    cleanCurrentUsername === 'nylithraa' ||
-    cleanDisplayName === 'nylithra' ||
-    cleanDisplayName === 'nylithraa' ||
-    user?.role?.toLowerCase() === 'admin' ||
-    user?.role?.toLowerCase() === 'founder';
+  // Strict Admin access check via verified security helper
+  const isNylithra = verifyAdminAccess(user);
+
+  // RSS Feed Modal State
+  const [isRssModalOpen, setIsRssModalOpen] = useState(false);
+  const [rssTagFilter, setRssTagFilter] = useState('');
+  const [rssUserFilter, setRssUserFilter] = useState('');
+  const [rssCopied, setRssCopied] = useState(false);
+  const [rssActiveTab, setRssActiveTab] = useState<'generate' | 'preview' | 'external'>('generate');
+  const [externalRssUrl, setExternalRssUrl] = useState('https://dev.to/feed');
+  const [externalRssItems, setExternalRssItems] = useState<Array<{ title: string; link: string; pubDate?: string; creator?: string; snippet?: string }>>([]);
+  const [loadingExternalRss, setLoadingExternalRss] = useState(false);
+  const [externalRssError, setExternalRssError] = useState<string | null>(null);
 
   useEffect(() => {
     const handleWindowClick = () => {
@@ -331,6 +337,17 @@ export const FeedView: React.FC<FeedViewProps> = ({
           <span>{language === 'tr' ? 'Ana Sayfa' : 'Home'}</span>
           <span className="w-2 h-2 rounded-full bg-zinc-400" />
         </h2>
+
+        {/* RSS Feed Trigger Button */}
+        <button
+          type="button"
+          onClick={() => setIsRssModalOpen(true)}
+          title={language === 'tr' ? 'RSS Akışı ve Okuyucu' : 'RSS Feed & Reader'}
+          className="px-3 py-1.5 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 active:scale-95 border border-orange-500/30 text-orange-400 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+        >
+          <Rss className="w-3.5 h-3.5 text-orange-400" />
+          <span className="hidden sm:inline">RSS {language === 'tr' ? 'Akışı' : 'Feed'}</span>
+        </button>
       </div>
 
       <div className="p-4 border-b border-zinc-800/60 bg-[#0c0c0e]">
@@ -1089,6 +1106,14 @@ export const FeedView: React.FC<FeedViewProps> = ({
           </div>
         </div>
       )}
+      {/* RSS Feed & Reader Modal */}
+      <RssFeedModal
+        isOpen={isRssModalOpen}
+        onClose={() => setIsRssModalOpen(false)}
+        language={language}
+        posts={posts}
+        initialTag={selectedHashtag}
+      />
     </div>
   );
 };

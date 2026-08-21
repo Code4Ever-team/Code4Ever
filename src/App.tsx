@@ -65,7 +65,8 @@ import {
   checkDuplicatePost,
   sanitizeText,
   sanitizeUrl,
-  runSecurityPenetrationTest
+  runSecurityPenetrationTest,
+  verifyAdminAccess
 } from './utils/securityHelper';
 import { Sidebar } from './components/Sidebar';
 import { RightPanel } from './components/RightPanel';
@@ -510,10 +511,29 @@ export default function App() {
   };
 
   const handleDeletePost = (id: string) => {
+    const targetPost = posts.find((p) => p.id === id);
+    if (!targetPost) return;
+
+    // Strict Authorization Verification
+    const isAuthor =
+      (targetPost.author?.username || '').toLowerCase() === (user.username || '').toLowerCase() ||
+      (targetPost.author?.id && user.id && targetPost.author.id === user.id);
+    const isAdmin = verifyAdminAccess(user);
+
+    if (!isAuthor && !isAdmin) {
+      const msg =
+        language === 'tr'
+          ? 'Yetkisiz İşlem: Yalnızca kendi gönderilerinizi veya yöneticiyseniz (isAdmin) silebilirsiniz!'
+          : 'Unauthorized: You can only delete your own posts unless you are an administrator!';
+      setRateLimitToast(msg);
+      setTimeout(() => setRateLimitToast(null), 3000);
+      return;
+    }
+
     const updated = posts.filter((p) => p.id !== id);
     setPosts(updated);
     saveStoredPosts(updated);
-    deletePostInSupabase(id);
+    deletePostInSupabase(id, user);
   };
 
   const checkRateLimit = (): boolean => {
