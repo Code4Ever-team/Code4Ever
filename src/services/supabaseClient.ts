@@ -22,11 +22,13 @@ import { sanitizeText, sanitizeUrl } from '../utils/securityHelper';
 export const STORAGE_KEYS = {
   PROFILE: 'c4e_supabase_user_profile',
   POSTS: 'c4e_supabase_posts',
+  DELETED_POSTS: 'c4e_deleted_post_ids_v2',
   COMMUNITIES: 'c4e_supabase_communities',
   JOB_LISTINGS: 'c4e_supabase_job_listings',
   NOTIFICATIONS: 'c4e_supabase_notifications',
   MESSAGES: 'c4e_supabase_messages',
   GROUPS: 'c4e_supabase_groups',
+  DELETED_GROUPS: 'c4e_deleted_group_ids_v2',
   GROUP_INVITES: 'c4e_supabase_group_invites',
   SUPABASE_CUSTOM_URL: 'c4e_custom_supabase_url',
   SUPABASE_CUSTOM_KEY: 'c4e_custom_supabase_anon_key',
@@ -278,12 +280,34 @@ export async function getOrFormatUserProfile(user: SupabaseUser): Promise<UserPr
 
 export const INITIAL_POSTS: Post[] = [];
 
+export function loadDeletedPostIds(): Set<string> {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.DELETED_POSTS);
+    if (data) {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) return new Set(parsed);
+    }
+  } catch {}
+  return new Set();
+}
+
+export function saveDeletedPostId(postId: string): void {
+  try {
+    const set = loadDeletedPostIds();
+    set.add(postId);
+    localStorage.setItem(STORAGE_KEYS.DELETED_POSTS, JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
 export function loadStoredPosts(): Post[] {
   const data = localStorage.getItem(STORAGE_KEYS.POSTS);
+  const deletedIds = loadDeletedPostIds();
   if (data) {
     try {
       const parsed: Post[] = JSON.parse(data);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((p) => p && p.id && !deletedIds.has(p.id) && !(p as any).is_deleted);
+      }
     } catch {
       // Fallback
     }
@@ -292,7 +316,9 @@ export function loadStoredPosts(): Post[] {
 }
 
 export function saveStoredPosts(posts: Post[]): void {
-  localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(posts));
+  const deletedIds = loadDeletedPostIds();
+  const clean = (posts || []).filter((p) => p && p.id && !deletedIds.has(p.id) && !(p as any).is_deleted);
+  localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(clean));
 }
 
 export function subscribeToPosts(onUpdate: (posts: Post[]) => void): () => void {
@@ -308,9 +334,13 @@ export function subscribeToPosts(onUpdate: (posts: Post[]) => void): () => void 
     .select('*')
     .order('created_at', { ascending: false })
     .then(({ data, error }) => {
+      const deletedIds = loadDeletedPostIds();
       if (!error && data && data.length > 0) {
-        saveStoredPosts(data as Post[]);
-        onUpdate(data as Post[]);
+        const cleanData = (data as Post[]).filter(
+          (p) => p && p.id && !deletedIds.has(p.id) && !(p as any).is_deleted
+        );
+        saveStoredPosts(cleanData);
+        onUpdate(cleanData);
       } else {
         onUpdate(loadStoredPosts());
       }
@@ -325,13 +355,27 @@ export function subscribeToPosts(onUpdate: (posts: Post[]) => void): () => void 
         .select('*')
         .order('created_at', { ascending: false });
       if (data) {
-        saveStoredPosts(data as Post[]);
-        onUpdate(data as Post[]);
+        const deletedIds = loadDeletedPostIds();
+        const cleanData = (data as Post[]).filter(
+          (p) => p && p.id && !deletedIds.has(p.id) && !(p as any).is_deleted
+        );
+        saveStoredPosts(cleanData);
+        onUpdate(cleanData);
       }
     })
     .subscribe();
 
+  // Listen to window post deletion event
+  const handleLocalDeleted = (e: Event) => {
+    const customEvent = e as CustomEvent<{ postId?: string }>;
+    if (customEvent.detail?.postId) {
+      onUpdate(loadStoredPosts());
+    }
+  };
+  window.addEventListener('c4e_post_deleted', handleLocalDeleted);
+
   return () => {
+    window.removeEventListener('c4e_post_deleted', handleLocalDeleted);
     client.removeChannel(channel);
   };
 }
@@ -385,17 +429,30 @@ export async function updatePostInSupabase(postId: string, updateData: Partial<P
 }
 
 export async function deletePostInSupabase(postId: string): Promise<boolean> {
+  // 1. Mark in permanent tombstone set so page refresh NEVER revives this post
+  saveDeletedPostId(postId);
+
+  // 2. Remove immediately from local storage cache
   const current = loadStoredPosts();
   const updated = current.filter((p) => p.id !== postId);
   saveStoredPosts(updated);
+
+  // 3. Dispatch broadcast event for instantaneous UI sync across components/tabs
+  try {
+    window.dispatchEvent(new CustomEvent('c4e_post_deleted', { detail: { postId } }));
+  } catch {}
 
   const client = getSupabaseClient();
   if (client) {
     try {
       const { error } = await client.from('posts').delete().eq('id', postId);
       if (error) {
-        console.warn('Supabase post delete warning:', error);
+        console.warn('Supabase post delete warning (will attempt soft-delete update):', error);
       }
+      // Soft-delete backup to prevent any RLS policy from reviving
+      try {
+        await client.from('posts').update({ is_deleted: true, content: '[DELETED]' } as any).eq('id', postId);
+      } catch {}
       return true;
     } catch (err) {
       console.warn('Supabase post delete network/table error:', err);
@@ -1350,12 +1407,34 @@ export async function markMessagesAsReadService(conversationId: string, readerUs
 // GROUPS ENGINE
 // -------------------------------------------------------------
 
+export function loadDeletedGroupIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.DELETED_GROUPS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return new Set(parsed);
+    }
+  } catch {}
+  return new Set();
+}
+
+export function saveDeletedGroupId(groupId: string): void {
+  try {
+    const set = loadDeletedGroupIds();
+    set.add(groupId);
+    localStorage.setItem(STORAGE_KEYS.DELETED_GROUPS, JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
 export function loadStoredGroups(): ChatGroup[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.GROUPS);
+    const deletedIds = loadDeletedGroupIds();
     if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      const parsed: ChatGroup[] = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((g) => g && g.id && !deletedIds.has(g.id));
+      }
     }
   } catch {}
   return [];
@@ -1363,7 +1442,9 @@ export function loadStoredGroups(): ChatGroup[] {
 
 export function saveStoredGroups(groups: ChatGroup[]): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(groups));
+    const deletedIds = loadDeletedGroupIds();
+    const clean = (groups || []).filter((g) => g && g.id && !deletedIds.has(g.id));
+    localStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(clean));
   } catch {}
 }
 
@@ -1375,14 +1456,25 @@ export function subscribeToGroupsService(
   const local = loadStoredGroups();
   onUpdate(local);
 
+  const handleGroupDeleted = (e: Event) => {
+    const customEvent = e as CustomEvent<{ groupId?: string }>;
+    if (customEvent.detail?.groupId) {
+      onUpdate(loadStoredGroups());
+    }
+  };
+  window.addEventListener('c4e_group_deleted', handleGroupDeleted);
+
   if (!client) {
     const handleStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEYS.GROUPS) {
+      if (e.key === STORAGE_KEYS.GROUPS || e.key === STORAGE_KEYS.DELETED_GROUPS) {
         onUpdate(loadStoredGroups());
       }
     };
     window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('c4e_group_deleted', handleGroupDeleted);
+    };
   }
 
   client
@@ -1390,9 +1482,11 @@ export function subscribeToGroupsService(
     .select('*')
     .then(
       ({ data, error }) => {
+        const deletedIds = loadDeletedGroupIds();
         if (!error && data && data.length > 0) {
-          saveStoredGroups(data as ChatGroup[]);
-          onUpdate(data as ChatGroup[]);
+          const clean = (data as ChatGroup[]).filter((g) => g && g.id && !deletedIds.has(g.id));
+          saveStoredGroups(clean);
+          onUpdate(clean);
         }
       },
       () => {}
@@ -1403,13 +1497,16 @@ export function subscribeToGroupsService(
     .on('postgres_changes', { event: '*', schema: 'public', table: 'groups' }, async () => {
       const { data } = await client.from('groups').select('*');
       if (data) {
-        saveStoredGroups(data as ChatGroup[]);
-        onUpdate(data as ChatGroup[]);
+        const deletedIds = loadDeletedGroupIds();
+        const clean = (data as ChatGroup[]).filter((g) => g && g.id && !deletedIds.has(g.id));
+        saveStoredGroups(clean);
+        onUpdate(clean);
       }
     })
     .subscribe();
 
   return () => {
+    window.removeEventListener('c4e_group_deleted', handleGroupDeleted);
     client.removeChannel(channel);
   };
 }
@@ -1457,6 +1554,66 @@ export async function updateGroupService(groupId: string, updateData: Partial<Ch
       console.warn('Supabase update group error:', err);
     }
   }
+}
+
+export async function deleteGroupService(groupId: string): Promise<void> {
+  // 1. Tombstone tracking
+  saveDeletedGroupId(groupId);
+
+  // 2. Local cache cleanup
+  const current = loadStoredGroups();
+  const updated = current.filter((g) => g.id !== groupId);
+  saveStoredGroups(updated);
+
+  // 3. Remove cached messages
+  try {
+    localStorage.removeItem(`c4e_msgs_${groupId}`);
+  } catch {}
+
+  // 4. Dispatch event for instant UI update
+  try {
+    window.dispatchEvent(new CustomEvent('c4e_group_deleted', { detail: { groupId } }));
+  } catch {}
+
+  // 5. Database deletion
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client.from('groups').delete().eq('id', groupId);
+      await client.from('group_invites').delete().eq('group_id', groupId);
+      await client.from('messages').delete().eq('conversation_id', groupId);
+    } catch (err) {
+      console.warn('Supabase delete group error:', err);
+    }
+  }
+}
+
+export async function leaveGroupService(groupId: string, username: string): Promise<void> {
+  const current = loadStoredGroups();
+  const group = current.find((g) => g.id === groupId);
+  if (!group) return;
+
+  const cleanUser = username.toLowerCase();
+  const updatedMembers = group.members.filter((m) => m.username.toLowerCase() !== cleanUser);
+  const updatedAdmins = group.admins.filter((a) => a.toLowerCase() !== cleanUser);
+
+  if (updatedMembers.length === 0) {
+    // If no members remain, delete the entire group
+    await deleteGroupService(groupId);
+    return;
+  }
+
+  // If the leaving user was the sole admin, elevate the oldest remaining member
+  let finalAdmins = [...updatedAdmins];
+  if (finalAdmins.length === 0 && updatedMembers.length > 0) {
+    finalAdmins.push(updatedMembers[0].username);
+    updatedMembers[0].role = 'admin';
+  }
+
+  await updateGroupService(groupId, {
+    members: updatedMembers,
+    admins: finalAdmins
+  });
 }
 
 // -------------------------------------------------------------

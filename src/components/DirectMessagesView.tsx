@@ -27,7 +27,10 @@ import {
   FileText,
   Copy,
   Eye,
-  ShieldCheck
+  ShieldCheck,
+  Camera,
+  Upload,
+  AlertTriangle
 } from 'lucide-react';
 import {
   UserProfile,
@@ -51,6 +54,8 @@ import {
   subscribeToGroupsService,
   createGroupService,
   updateGroupService,
+  deleteGroupService,
+  leaveGroupService,
   loadStoredGroupInvites,
   subscribeToGroupInvitesService,
   sendGroupInviteService,
@@ -142,6 +147,12 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   );
   const [newGroupDesc, setNewGroupDesc] = useState('');
 
+  // Group Deletion & Leaving State
+  const [groupToDelete, setGroupToDelete] = useState<ChatGroup | null>(null);
+  const [groupToLeave, setGroupToLeave] = useState<ChatGroup | null>(null);
+  const [isDeletingGroup, setIsDeletingGroup] = useState(false);
+  const [isLeavingGroup, setIsLeavingGroup] = useState(false);
+
   // Add Member Form State
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [inviteFeedback, setInviteFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -161,6 +172,8 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const groupAvatarInputRef = useRef<HTMLInputElement | null>(null);
+  const groupEditAvatarInputRef = useRef<HTMLInputElement | null>(null);
 
   // Ensure device master token exists
   useEffect(() => {
@@ -514,6 +527,39 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  // Handle New Group Avatar Local Upload (from device)
+  const handleNewGroupAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert(language === 'tr' ? 'Lütfen bir görsel dosyası seçin.' : 'Please select an image file.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (reader.result) {
+        setNewGroupAvatar(reader.result as string);
+      }
+    };
+    reader.readAsDataURL(file);
+    if (groupAvatarInputRef.current) groupAvatarInputRef.current.value = '';
+  };
+
+  // Handle Edit Existing Group Avatar Local Upload (from device)
+  const handleEditGroupAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedGroup) return;
+    if (!file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const avatarUrl = reader.result as string;
+      await updateGroupService(selectedGroup.id, { avatar_url: avatarUrl });
+      setSelectedGroup((prev) => (prev ? { ...prev, avatar_url: avatarUrl } : null));
+    };
+    reader.readAsDataURL(file);
+    if (groupEditAvatarInputRef.current) groupEditAvatarInputRef.current.value = '';
+  };
+
   // Create New Group
   const handleCreateGroup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -547,6 +593,42 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     setNewGroupName('');
     setNewGroupDesc('');
     handleOpenGroupChat(newGroup);
+  };
+
+  // Group Deletion Confirmation Handler
+  const handleConfirmDeleteGroup = async () => {
+    if (!groupToDelete) return;
+    setIsDeletingGroup(true);
+    const targetId = groupToDelete.id;
+    try {
+      await deleteGroupService(targetId);
+      if (selectedGroup?.id === targetId || selectedConversationId === targetId) {
+        setSelectedGroup(null);
+        setSelectedConversationId(null);
+        setIsGroupInfoOpen(false);
+      }
+    } finally {
+      setIsDeletingGroup(false);
+      setGroupToDelete(null);
+    }
+  };
+
+  // Group Leave Confirmation Handler
+  const handleConfirmLeaveGroup = async () => {
+    if (!groupToLeave) return;
+    setIsLeavingGroup(true);
+    const targetId = groupToLeave.id;
+    try {
+      await leaveGroupService(targetId, user.username);
+      if (selectedGroup?.id === targetId || selectedConversationId === targetId) {
+        setSelectedGroup(null);
+        setSelectedConversationId(null);
+        setIsGroupInfoOpen(false);
+      }
+    } finally {
+      setIsLeavingGroup(false);
+      setGroupToLeave(null);
+    }
   };
 
   // Send Group Invite
@@ -1084,16 +1166,49 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                 <div className="p-4 bg-zinc-950 border-b border-zinc-800/80 space-y-4 animate-in slide-in-from-top duration-200">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
-                      <img
-                        src={selectedGroup.avatar_url}
-                        alt={selectedGroup.name}
-                        className="w-12 h-12 rounded-2xl object-cover ring-2 ring-purple-500/20"
-                      />
+                      <div className="relative group">
+                        <img
+                          src={selectedGroup.avatar_url}
+                          alt={selectedGroup.name}
+                          className="w-14 h-14 rounded-2xl object-cover ring-2 ring-purple-500/20"
+                        />
+                        {/* If Admin or Creator, allow device photo upload */}
+                        {(selectedGroup.admins?.includes(user.username) || selectedGroup.creator_username === user.username) && (
+                          <>
+                            <input
+                              type="file"
+                              ref={groupEditAvatarInputRef}
+                              onChange={handleEditGroupAvatarUpload}
+                              className="hidden"
+                              accept="image/*"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => groupEditAvatarInputRef.current?.click()}
+                              className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 rounded-2xl flex flex-col items-center justify-center text-white transition-opacity cursor-pointer"
+                              title={language === 'tr' ? 'Cihazdan Fotoğraf Değiştir' : 'Change Photo from Device'}
+                            >
+                              <Camera className="w-5 h-5 text-white" />
+                              <span className="text-[9px] font-semibold mt-0.5">{language === 'tr' ? 'Değiştir' : 'Change'}</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
                       <div>
                         <h4 className="text-sm font-bold text-white">{selectedGroup.name}</h4>
                         <p className="text-xs text-zinc-400">
                           {selectedGroup.description || (language === 'tr' ? 'Açıklama yok' : 'No description')}
                         </p>
+                        {(selectedGroup.admins?.includes(user.username) || selectedGroup.creator_username === user.username) && (
+                          <button
+                            type="button"
+                            onClick={() => groupEditAvatarInputRef.current?.click()}
+                            className="mt-1 text-[11px] text-purple-400 hover:text-purple-300 flex items-center gap-1 font-medium transition-colors cursor-pointer"
+                          >
+                            <Camera className="w-3 h-3" />
+                            <span>{language === 'tr' ? 'Cihazdan Fotoğrafı Güncelle' : 'Update Photo from Device'}</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                     <button
@@ -1165,6 +1280,32 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                         );
                       })}
                     </div>
+                  </div>
+
+                  {/* Group Action Buttons (Delete / Leave Group) */}
+                  <div className="pt-2 flex flex-wrap gap-2 border-t border-zinc-800/60">
+                    {/* Delete Group (Creator or Admin) */}
+                    {(selectedGroup.creator_username === user.username ||
+                      selectedGroup.admins?.includes(user.username)) && (
+                      <button
+                        type="button"
+                        onClick={() => setGroupToDelete(selectedGroup)}
+                        className="flex-1 py-2 px-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 hover:text-red-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>{language === 'tr' ? 'Grubu Sil' : 'Delete Group'}</span>
+                      </button>
+                    )}
+
+                    {/* Leave Group (Any member) */}
+                    <button
+                      type="button"
+                      onClick={() => setGroupToLeave(selectedGroup)}
+                      className="flex-1 py-2 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <LogOut className="w-3.5 h-3.5 text-zinc-400" />
+                      <span>{language === 'tr' ? 'Gruptan Ayrıl' : 'Leave Group'}</span>
+                    </button>
                   </div>
                 </div>
               )}
@@ -1638,16 +1779,74 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
               <button
                 type="button"
                 onClick={() => setIsNewGroupModalOpen(false)}
-                className="p-1 rounded-lg text-zinc-400 hover:text-white"
+                className="p-1 rounded-lg text-zinc-400 hover:text-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
+            {/* Hidden Local File Input for Group Photo */}
+            <input
+              type="file"
+              ref={groupAvatarInputRef}
+              onChange={handleNewGroupAvatarUpload}
+              className="hidden"
+              accept="image/*"
+            />
+
+            {/* Group Avatar Selection Area */}
+            <div className="flex flex-col items-center justify-center p-4 bg-zinc-950/60 rounded-2xl border border-zinc-800/80 gap-3">
+              <div className="relative group cursor-pointer" onClick={() => groupAvatarInputRef.current?.click()}>
+                <img
+                  src={newGroupAvatar}
+                  alt="Group Avatar Preview"
+                  className="w-20 h-20 rounded-2xl object-cover ring-2 ring-purple-500/40 shadow-lg group-hover:opacity-80 transition-opacity"
+                />
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 rounded-2xl flex flex-col items-center justify-center text-white transition-opacity">
+                  <Camera className="w-6 h-6" />
+                  <span className="text-[10px] font-semibold mt-1">{language === 'tr' ? 'Değiştir' : 'Change'}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => groupAvatarInputRef.current?.click()}
+                  className="px-3.5 py-1.5 rounded-xl bg-purple-600/15 hover:bg-purple-600/25 border border-purple-500/30 text-purple-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{language === 'tr' ? 'Cihazımdan Fotoğraf Seç' : 'Choose Photo from Device'}</span>
+                </button>
+              </div>
+
+              {/* Preset Icon Selector */}
+              <div className="flex items-center gap-1.5 pt-1">
+                <span className="text-[10px] text-zinc-500 mr-1">{language === 'tr' ? 'Hazır Simgeler:' : 'Presets:'}</span>
+                {[
+                  'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
+                  'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=150&auto=format&fit=crop&q=80',
+                  'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=150&auto=format&fit=crop&q=80',
+                  'https://images.unsplash.com/photo-1518770660439-4636190af475?w=150&auto=format&fit=crop&q=80',
+                  'https://images.unsplash.com/photo-1614680376593-902f749f7ffc?w=150&auto=format&fit=crop&q=80'
+                ].map((presetUrl, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setNewGroupAvatar(presetUrl)}
+                    className={`w-7 h-7 rounded-lg overflow-hidden border transition-all cursor-pointer ${
+                      newGroupAvatar === presetUrl ? 'ring-2 ring-purple-500 border-transparent scale-110' : 'border-zinc-800 opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <img src={presetUrl} alt={`Preset ${idx + 1}`} className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="space-y-3">
               <div>
                 <label className="text-xs text-zinc-400 font-semibold block mb-1">
-                  {language === 'tr' ? 'Grup Adı' : 'Group Name'}
+                  {language === 'tr' ? 'Grup Adı' : 'Group Name'} *
                 </label>
                 <input
                   type="text"
@@ -1656,33 +1855,21 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                   value={newGroupName}
                   onChange={(e) => setNewGroupName(e.target.value)}
                   placeholder={language === 'tr' ? 'Örn: React & AI Geliştiricileri' : 'e.g. React & AI Devs'}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors"
                 />
               </div>
 
               <div>
                 <label className="text-xs text-zinc-400 font-semibold block mb-1">
-                  {language === 'tr' ? 'Grup Görseli (URL)' : 'Group Avatar (URL)'}
-                </label>
-                <input
-                  type="url"
-                  value={newGroupAvatar}
-                  onChange={(e) => setNewGroupAvatar(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-zinc-400 font-semibold block mb-1">
-                  {language === 'tr' ? 'Açıklama' : 'Description'}
+                  {language === 'tr' ? 'Açıklama (İsteğe Bağlı)' : 'Description (Optional)'}
                 </label>
                 <textarea
                   rows={2}
                   maxLength={250}
                   value={newGroupDesc}
                   onChange={(e) => setNewGroupDesc(e.target.value)}
-                  placeholder={language === 'tr' ? 'Grubun amacı...' : 'Group purpose...'}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500"
+                  placeholder={language === 'tr' ? 'Grubun konusu veya kuralları...' : 'Group topic or rules...'}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 transition-colors"
                 />
               </div>
             </div>
@@ -1691,18 +1878,121 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
               <button
                 type="button"
                 onClick={() => setIsNewGroupModalOpen(false)}
-                className="flex-1 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold hover:bg-zinc-700"
+                className="flex-1 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-semibold hover:bg-zinc-700 transition-colors cursor-pointer"
               >
                 {language === 'tr' ? 'İptal' : 'Cancel'}
               </button>
               <button
                 type="submit"
-                className="flex-1 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md"
+                disabled={!newGroupName.trim()}
+                className="flex-1 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-md cursor-pointer"
               >
                 {language === 'tr' ? 'Grubu Oluştur' : 'Create Group'}
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* DELETE GROUP CONFIRMATION MODAL */}
+      {groupToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-zinc-900 border border-red-500/30 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl text-left">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">
+                  {language === 'tr' ? 'Grubu Sil' : 'Delete Group'}
+                </h3>
+                <p className="text-xs text-zinc-400 font-mono">@{groupToDelete.name}</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-300 leading-relaxed">
+              {language === 'tr'
+                ? `"${groupToDelete.name}" grubunu kalıcı olarak silmek istediğinizden emin misiniz? Bu işlem gruptaki tüm mesajları, medyaları ve üyelikleri geri alınamaz şekilde silecektir.`
+                : `Are you sure you want to permanently delete the group "${groupToDelete.name}"? This action will permanently remove all messages, media, and memberships.`}
+            </p>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isDeletingGroup}
+                onClick={() => setGroupToDelete(null)}
+                className="flex-1 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {language === 'tr' ? 'Vazgeç' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingGroup}
+                onClick={handleConfirmDeleteGroup}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingGroup ? (
+                  <span>{language === 'tr' ? 'Siliniyor...' : 'Deleting...'}</span>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>{language === 'tr' ? 'Grubu Kalıcı Olarak Sil' : 'Delete Permanently'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LEAVE GROUP CONFIRMATION MODAL */}
+      {groupToLeave && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl text-left">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+                <LogOut className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">
+                  {language === 'tr' ? 'Gruptan Ayrıl' : 'Leave Group'}
+                </h3>
+                <p className="text-xs text-zinc-400 font-mono">@{groupToLeave.name}</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-300 leading-relaxed">
+              {language === 'tr'
+                ? `"${groupToLeave.name}" grubundan ayrılmak istediğinizden emin misiniz? Tekrar katılabilmek için bir davet almanız gerekecektir.`
+                : `Are you sure you want to leave the group "${groupToLeave.name}"? You will need an invitation to rejoin.`}
+            </p>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isLeavingGroup}
+                onClick={() => setGroupToLeave(null)}
+                className="flex-1 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {language === 'tr' ? 'Vazgeç' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                disabled={isLeavingGroup}
+                onClick={handleConfirmLeaveGroup}
+                className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isLeavingGroup ? (
+                  <span>{language === 'tr' ? 'Ayrılınıyor...' : 'Leaving...'}</span>
+                ) : (
+                  <>
+                    <LogOut className="w-4 h-4" />
+                    <span>{language === 'tr' ? 'Gruptan Ayrıl' : 'Leave Group'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
