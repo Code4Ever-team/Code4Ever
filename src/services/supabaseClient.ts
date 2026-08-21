@@ -384,7 +384,7 @@ export async function updatePostInSupabase(postId: string, updateData: Partial<P
   }
 }
 
-export async function deletePostInSupabase(postId: string): Promise<void> {
+export async function deletePostInSupabase(postId: string): Promise<boolean> {
   const current = loadStoredPosts();
   const updated = current.filter((p) => p.id !== postId);
   saveStoredPosts(updated);
@@ -392,11 +392,17 @@ export async function deletePostInSupabase(postId: string): Promise<void> {
   const client = getSupabaseClient();
   if (client) {
     try {
-      await client.from('posts').delete().eq('id', postId);
+      const { error } = await client.from('posts').delete().eq('id', postId);
+      if (error) {
+        console.warn('Supabase post delete warning:', error);
+      }
+      return true;
     } catch (err) {
-      console.warn('Supabase post delete error:', err);
+      console.warn('Supabase post delete network/table error:', err);
+      return false;
     }
   }
+  return true;
 }
 
 // -------------------------------------------------------------
@@ -1104,8 +1110,9 @@ export function subscribeToConversationMessages(
     );
 
   // Realtime Broadcast Channel & Postgres Changes
+  const channelTopic = `room_msg_${conversationId}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const channel = client
-    .channel(`room_msg_${conversationId}`)
+    .channel(channelTopic)
     .on('broadcast', { event: 'new_msg' }, ({ payload }) => {
       if (payload && (payload as ChatMessage).conversation_id === conversationId) {
         mergeAndEmit([payload as ChatMessage]);
@@ -1148,6 +1155,9 @@ export function subscribeToConversationMessages(
   };
 }
 
+const userIncomingMessageSubscribers = new Map<string, Set<(msg: ChatMessage) => void>>();
+const userIncomingMessageChannels = new Map<string, any>();
+
 /**
  * Global incoming messages listener for active user.
  * Triggered whenever a new message is inserted in Supabase or broadcast that involves the current user,
@@ -1159,6 +1169,12 @@ export function subscribeToUserIncomingMessages(
 ): () => void {
   const cleanUser = (currentUsername || '').toLowerCase().trim();
   if (!cleanUser) return () => {};
+
+  if (!userIncomingMessageSubscribers.has(cleanUser)) {
+    userIncomingMessageSubscribers.set(cleanUser, new Set());
+  }
+  const subscribers = userIncomingMessageSubscribers.get(cleanUser)!;
+  subscribers.add(onIncomingMessage);
 
   const handleIncoming = (newMsg: ChatMessage) => {
     if (!newMsg || newMsg.sender_username?.toLowerCase() === cleanUser) {
@@ -1179,7 +1195,16 @@ export function subscribeToUserIncomingMessages(
       if (!current.some((m) => m.id === newMsg.id)) {
         saveStoredMessages(newMsg.conversation_id, [...current, newMsg]);
       }
-      onIncomingMessage(newMsg);
+      const currentSubs = userIncomingMessageSubscribers.get(cleanUser);
+      if (currentSubs) {
+        currentSubs.forEach((cb) => {
+          try {
+            cb(newMsg);
+          } catch (err) {
+            console.error('Incoming message subscriber error:', err);
+          }
+        });
+      }
     }
   };
 
@@ -1190,33 +1215,40 @@ export function subscribeToUserIncomingMessages(
   window.addEventListener('c4e_message_broadcast', handleCustom);
 
   const client = getSupabaseClient();
-  if (!client) {
-    return () => {
-      window.removeEventListener('c4e_message_broadcast', handleCustom);
-    };
-  }
+  if (client && !userIncomingMessageChannels.has(cleanUser)) {
+    const channelTopic = `global_feed_${cleanUser}_${Date.now()}`;
+    const channel = client
+      .channel(channelTopic)
+      .on('broadcast', { event: 'incoming_msg' }, ({ payload }) => {
+        if (payload) handleIncoming(payload as ChatMessage);
+      })
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages'
+        },
+        (payload) => {
+          if (payload.new) handleIncoming(payload.new as ChatMessage);
+        }
+      )
+      .subscribe();
 
-  const channel = client
-    .channel(`global_user_feed_${cleanUser}`)
-    .on('broadcast', { event: 'incoming_msg' }, ({ payload }) => {
-      if (payload) handleIncoming(payload as ChatMessage);
-    })
-    .on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages'
-      },
-      (payload) => {
-        if (payload.new) handleIncoming(payload.new as ChatMessage);
-      }
-    )
-    .subscribe();
+    userIncomingMessageChannels.set(cleanUser, channel);
+  }
 
   return () => {
     window.removeEventListener('c4e_message_broadcast', handleCustom);
-    client.removeChannel(channel);
+    subscribers.delete(onIncomingMessage);
+    if (subscribers.size === 0) {
+      userIncomingMessageSubscribers.delete(cleanUser);
+      const ch = userIncomingMessageChannels.get(cleanUser);
+      if (ch && client) {
+        client.removeChannel(ch);
+      }
+      userIncomingMessageChannels.delete(cleanUser);
+    }
   };
 }
 
@@ -1233,31 +1265,31 @@ export async function sendMessageService(message: ChatMessage): Promise<void> {
 
   const client = getSupabaseClient();
   if (client) {
-    // 1. Broadcast to specific room channel
-    const roomChannel = client.channel(`room_msg_${message.conversation_id}`);
+    // 1. Broadcast to specific room channel via ephemeral sender channel
+    const roomChannel = client.channel(`send_room_${Date.now()}_${Math.random().toString(36).slice(2)}`);
     roomChannel.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         roomChannel.send({
           type: 'broadcast',
           event: 'new_msg',
           payload: message
-        }).then(() => {
+        }).finally(() => {
           client.removeChannel(roomChannel);
-        }).catch(() => {});
+        });
       }
     });
 
-    // 2. Broadcast globally for background recipient notifications
-    const globalChannel = client.channel('global_user_feed_all');
+    // 2. Broadcast globally for background recipient notifications via ephemeral sender channel
+    const globalChannel = client.channel(`send_global_${Date.now()}_${Math.random().toString(36).slice(2)}`);
     globalChannel.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         globalChannel.send({
           type: 'broadcast',
           event: 'incoming_msg',
           payload: message
-        }).then(() => {
+        }).finally(() => {
           client.removeChannel(globalChannel);
-        }).catch(() => {});
+        });
       }
     });
 

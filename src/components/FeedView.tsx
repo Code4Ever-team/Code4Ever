@@ -72,6 +72,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
   const [commentText, setCommentText] = useState('');
   const [copiedPostId, setCopiedPostId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [postToDelete, setPostToDelete] = useState<Post | null>(null);
 
   // Right-click context menu state (specifically for nylithra / admins / all users)
   const [contextMenu, setContextMenu] = useState<{
@@ -86,9 +87,13 @@ export const FeedView: React.FC<FeedViewProps> = ({
   const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const [longPressingPostId, setLongPressingPostId] = useState<string | null>(null);
 
+  const cleanCurrentUsername = user?.username?.toLowerCase() || '';
+  const cleanDisplayName = user?.display_name?.toLowerCase() || '';
   const isNylithra =
-    user?.username?.toLowerCase() === 'nylithra' ||
-    user?.display_name?.toLowerCase() === 'nylithra' ||
+    cleanCurrentUsername === 'nylithra' ||
+    cleanCurrentUsername === 'nylithraa' ||
+    cleanDisplayName === 'nylithra' ||
+    cleanDisplayName === 'nylithraa' ||
     user?.role?.toLowerCase() === 'admin' ||
     user?.role?.toLowerCase() === 'founder';
 
@@ -672,15 +677,12 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     </div>
                   </div>
 
-                  {(authorProfile.username === user.username || isNylithra) && (
+                  {(authorProfile.username?.toLowerCase() === user.username?.toLowerCase() || isNylithra) && (
                     <button
-                      onClick={() => {
-                        if (window.confirm(language === 'tr' ? 'Bu gönderiyi silmek istediğinize emin misiniz?' : 'Delete this post?')) {
-                          onDeletePost(post.id);
-                        }
-                      }}
-                      title={isNylithra && authorProfile.username !== user.username ? 'Yönetici Olarak Sil' : 'Sil'}
-                      className="text-zinc-600 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
+                      type="button"
+                      onClick={() => setPostToDelete(post)}
+                      title={isNylithra && authorProfile.username?.toLowerCase() !== user.username?.toLowerCase() ? (language === 'tr' ? 'Yönetici Olarak Sil' : 'Delete as Admin') : (language === 'tr' ? 'Sil' : 'Delete')}
+                      className="text-zinc-600 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -996,15 +998,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   type="button"
                   onClick={() => {
                     if (contextMenu.post) {
-                      const confirmMsg = language === 'tr'
-                        ? 'Bu gönderiyi silmek istediğinize emin misiniz?'
-                        : 'Are you sure you want to delete this post?';
-                      if (window.confirm(confirmMsg)) {
-                        onDeletePost(contextMenu.post.id);
-                        setToastMessage(language === 'tr' ? 'Gönderi silindi.' : 'Post deleted.');
-                        setTimeout(() => setToastMessage(null), 2500);
-                        setContextMenu({ visible: false, x: 0, y: 0, post: null });
-                      }
+                      const target = contextMenu.post;
+                      setContextMenu({ visible: false, x: 0, y: 0, post: null });
+                      setPostToDelete(target);
                     }
                   }}
                   className="w-full px-3 py-3 sm:py-2 rounded-xl text-left text-xs font-bold text-red-400 hover:bg-red-500/15 active:bg-red-500/20 transition-colors flex items-center gap-3 border-t border-zinc-800/80 mt-1 cursor-pointer"
@@ -1030,6 +1026,69 @@ export const FeedView: React.FC<FeedViewProps> = ({
           </div>
         );
       })()}
+
+      {/* Custom In-App Delete Confirmation Modal (100% Reliable in all iframes/PWAs) */}
+      {postToDelete && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setPostToDelete(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-[#121215] border border-zinc-800 shadow-2xl p-5 space-y-4 animate-in zoom-in-95"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 flex-shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">
+                  {language === 'tr' ? 'Gönderiyi Sil' : 'Delete Post'}
+                </h3>
+                <p className="text-xs text-zinc-400 font-mono">
+                  @{postToDelete.author?.username}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-300 leading-relaxed">
+              {language === 'tr'
+                ? 'Bu gönderiyi kalıcı olarak silmek istediğinize emin misiniz? Bu işlem geri alınamaz.'
+                : 'Are you sure you want to permanently delete this post? This action cannot be undone.'}
+            </p>
+
+            {postToDelete.content && (
+              <div className="p-2.5 rounded-xl bg-zinc-950/80 border border-zinc-800/80 text-[11px] text-zinc-400 line-clamp-2 italic font-mono">
+                "{postToDelete.content}"
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-zinc-800/80">
+              <button
+                type="button"
+                onClick={() => setPostToDelete(null)}
+                className="px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-semibold text-xs transition-colors cursor-pointer border border-zinc-800"
+              >
+                {language === 'tr' ? 'Vazgeç' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const id = postToDelete.id;
+                  onDeletePost(id);
+                  setPostToDelete(null);
+                  setToastMessage(language === 'tr' ? 'Gönderi silindi.' : 'Post deleted.');
+                  setTimeout(() => setToastMessage(null), 2500);
+                }}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 active:scale-95 text-white font-bold text-xs transition-all shadow-lg shadow-red-600/20 cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{language === 'tr' ? 'Kalıcı Olarak Sil' : 'Delete Permanently'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

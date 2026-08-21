@@ -48,16 +48,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
-  const handleTestNotification = () => {
-    sendNativeNotification({
-      title: 'Code4Ever - Bildirim Sesi 🔔',
-      body: language === 'tr'
-        ? 'WhatsApp tarzı bildirim sesi ve sistem uyarısı başarıyla test edildi!'
-        : 'WhatsApp-style notification chime & system alert tested successfully!',
-      playSound: true
-    });
-  };
-
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
 
@@ -228,14 +218,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <span>{language === 'tr' ? 'Sistem Bildirimlerine İzin Ver' : 'Enable System Notifications'}</span>
                   </button>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={handleTestNotification}
-                    className="w-full py-2.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] cursor-pointer"
-                  >
-                    <Volume2 className="w-4 h-4 text-zinc-300" />
-                    <span>{language === 'tr' ? 'Bildirim Sesini Test Et (WhatsApp Tarzı)' : 'Test Notification Chime'}</span>
-                  </button>
+                  <div className="w-full py-2.5 px-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-semibold text-xs flex items-center justify-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span>{language === 'tr' ? 'Sistem ve Sesli Bildirimler Etkin' : 'System and Sound Notifications Enabled'}</span>
+                  </div>
                 )}
               </div>
             </div>

@@ -80,10 +80,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [copiedPostId, setCopiedPostId] = useState<string | null>(null);
   const [isShowcaseModalOpen, setIsShowcaseModalOpen] = useState(false);
   const [usernameTakenError, setUsernameTakenError] = useState<string | null>(null);
+  const [postToDelete, setPostToDelete] = useState<Post | null>(null);
 
   const activeUser = currentUser || user;
   const profileUserKey = (user.username || user.id || '').toLowerCase();
   const currentViewerKey = (activeUser.username || activeUser.id || '').toLowerCase();
+
+  const isNylithra =
+    currentViewerKey === 'nylithra' ||
+    currentViewerKey === 'nylithraa' ||
+    activeUser.display_name?.toLowerCase() === 'nylithra' ||
+    activeUser.display_name?.toLowerCase() === 'nylithraa' ||
+    activeUser.role === 'admin' ||
+    activeUser.role === 'founder';
 
   const isOwnProfile =
     (currentUser && (currentUser.id === user.id || currentUser.username?.toLowerCase() === user.username?.toLowerCase())) ||
@@ -628,15 +637,12 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
                         </div>
                       </div>
 
-                      {onDeletePost && (authorProfile.username === activeUser.username || activeUser.role === 'admin') && (
+                      {onDeletePost && (authorProfile.username?.toLowerCase() === activeUser.username?.toLowerCase() || isNylithra) && (
                         <button
                           type="button"
-                          onClick={() => {
-                            if (window.confirm(language === 'tr' ? 'Bu gönderiyi silmek istediğinize emin misiniz?' : 'Delete this post?')) {
-                              onDeletePost(post.id);
-                            }
-                          }}
-                          className="text-zinc-600 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
+                          onClick={() => setPostToDelete(post)}
+                          title={isNylithra && authorProfile.username?.toLowerCase() !== activeUser.username?.toLowerCase() ? (language === 'tr' ? 'Yönetici Olarak Sil' : 'Delete as Admin') : (language === 'tr' ? 'Sil' : 'Delete')}
+                          className="text-zinc-600 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1011,6 +1017,67 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
                 className="px-5 py-2.5 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-bold text-xs shadow-md transition-all active:scale-[0.98]"
               >
                 {language === 'tr' ? 'Anladım, Değiştir' : 'Got it, Change'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom In-App Delete Confirmation Modal */}
+      {postToDelete && onDeletePost && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 select-none"
+          onClick={() => setPostToDelete(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-[#121215] border border-zinc-800 shadow-2xl p-5 space-y-4 animate-in zoom-in-95"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 flex-shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">
+                  {language === 'tr' ? 'Gönderiyi Sil' : 'Delete Post'}
+                </h3>
+                <p className="text-xs text-zinc-400 font-mono">
+                  @{postToDelete.author?.username}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-300 leading-relaxed">
+              {language === 'tr'
+                ? 'Bu gönderiyi kalıcı olarak silmek istediğinize emin misiniz? Bu işlem geri alınamaz.'
+                : 'Are you sure you want to permanently delete this post? This action cannot be undone.'}
+            </p>
+
+            {postToDelete.content && (
+              <div className="p-2.5 rounded-xl bg-zinc-950/80 border border-zinc-800/80 text-[11px] text-zinc-400 line-clamp-2 italic font-mono">
+                "{postToDelete.content}"
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-zinc-800/80">
+              <button
+                type="button"
+                onClick={() => setPostToDelete(null)}
+                className="px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-semibold text-xs transition-colors cursor-pointer border border-zinc-800"
+              >
+                {language === 'tr' ? 'Vazgeç' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const id = postToDelete.id;
+                  onDeletePost(id);
+                  setPostToDelete(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 active:scale-95 text-white font-bold text-xs transition-all shadow-lg shadow-red-600/20 cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{language === 'tr' ? 'Kalıcı Olarak Sil' : 'Delete Permanently'}</span>
               </button>
             </div>
           </div>

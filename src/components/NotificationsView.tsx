@@ -149,22 +149,13 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
-            {permission !== 'granted' ? (
+            {permission !== 'granted' && (
               <button
                 onClick={handleEnableNotifications}
                 className="w-full sm:w-auto px-4 py-2 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-bold text-xs transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Bell className="w-3.5 h-3.5 text-zinc-950 fill-zinc-950" />
                 <span>{language === 'tr' ? 'Bildirimleri Aç' : 'Enable Notifications'}</span>
-              </button>
-            ) : (
-              <button
-                onClick={handleTestSoundAndNotification}
-                disabled={isTesting}
-                className="w-full sm:w-auto px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white font-bold text-xs transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Volume2 className="w-3.5 h-3.5 text-zinc-300" />
-                <span>{language === 'tr' ? 'Sesi & Bildirimi Test Et' : 'Test Sound & Alert'}</span>
               </button>
             )}
           </div>
