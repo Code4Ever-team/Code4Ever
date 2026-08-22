@@ -444,40 +444,104 @@ export function subscribeToPosts(onUpdate: (posts: Post[]) => void): () => void 
   };
 }
 
+export const ALLOWED_POST_COLUMNS = new Set([
+  'id',
+  'author',
+  'content',
+  'category',
+  'category_name',
+  'code_snippet',
+  'code_language',
+  'media_url',
+  'media_type',
+  'project_card',
+  'community_id',
+  'community_name',
+  'community_handle',
+  'likes_count',
+  'liked_by',
+  'comments_count',
+  'comments',
+  'reposts_count',
+  'reposted_by',
+  'bookmarked_by',
+  'is_pinned',
+  'is_deleted',
+  'created_at'
+]);
+
 export async function createPostInSupabase(post: Post): Promise<void> {
   const current = loadStoredPosts();
   const updated = [post, ...current.filter((p) => p.id !== post.id)];
   saveStoredPosts(updated);
 
+  const snippetCode =
+    typeof post.code_snippet === 'object'
+      ? post.code_snippet?.code
+      : typeof post.code_snippet === 'string'
+      ? post.code_snippet
+      : null;
+  const snippetLang =
+    typeof post.code_snippet === 'object'
+      ? post.code_snippet?.language
+      : (post as any).code_language || null;
+
+  const payload: Record<string, any> = {
+    id: post.id,
+    author: post.author,
+    content: sanitizeText(post.content, 5000),
+    category: post.category || 'general',
+    category_name: post.category_name || 'Genel & Sohbet',
+    code_snippet: snippetCode || null,
+    code_language: snippetLang || null,
+    media_url: post.media_url || null,
+    media_type: post.media_type || null,
+    project_card: post.project_card || null,
+    community_id: post.community_id || null,
+    community_name: post.community_name || null,
+    community_handle: post.community_handle || null,
+    likes_count: Number(post.likes_count) || 0,
+    liked_by: post.liked_by || [],
+    comments_count: Number(post.comments_count) || 0,
+    comments: post.comments || [],
+    reposts_count: Number(post.reposts_count) || 0,
+    reposted_by: post.reposted_by || [],
+    bookmarked_by: post.bookmarked_by || [],
+    is_pinned: Boolean((post as any).is_pinned),
+    is_deleted: false,
+    created_at: post.created_at || new Date().toISOString()
+  };
+
   const client = getSupabaseClient();
+  const config = getSupabaseConfig();
+
+  // 1. Direct Supabase Client Upsert
   if (client) {
     try {
-      await client.from('posts').upsert({
-        id: post.id,
-        author: post.author,
-        content: sanitizeText(post.content, 5000),
-        category: post.category || 'general',
-        category_name: post.category_name || 'Genel & Sohbet',
-        code_snippet: post.code_snippet || null,
-        code_language: (post as any).code_language || null,
-        media_url: post.media_url || null,
-        media_type: post.media_type || null,
-        project_card: post.project_card || null,
-        community_id: post.community_id || null,
-        community_name: post.community_name || null,
-        community_handle: post.community_handle || null,
-        likes_count: post.likes_count || 0,
-        liked_by: post.liked_by || [],
-        comments_count: post.comments_count || 0,
-        comments: post.comments || [],
-        reposts_count: post.reposts_count || 0,
-        reposted_by: post.reposted_by || [],
-        is_deleted: false,
-        created_at: post.created_at
-      });
+      const { error } = await client.from('posts').upsert(payload);
+      if (error) {
+        console.warn('Supabase post upsert error:', error.message || error);
+      }
     } catch (err) {
-      console.warn('Supabase post creation error:', err);
+      console.warn('Supabase post creation exception:', err);
     }
+  }
+
+  // 2. HTTP REST Fallback (Ensures persistence even if client RLS or token context differs)
+  if (config.url && config.anonKey) {
+    try {
+      const cleanUrl = config.url.replace(/\/+$/, '');
+      fetch(`${cleanUrl}/rest/v1/posts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          Prefer: 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify(payload)
+      }).catch((e) => console.warn('Supabase REST post insert warning:', e));
+    } catch {}
   }
 }
 
@@ -486,13 +550,54 @@ export async function updatePostInSupabase(postId: string, updateData: Partial<P
   const updated = current.map((p) => (p.id === postId ? { ...p, ...updateData } : p));
   saveStoredPosts(updated);
 
+  // Sanitize updateData - strip client-only properties like is_liked, is_reposted, is_bookmarked, time_ago
+  const sanitizedUpdate: Record<string, any> = {};
+  for (const [key, val] of Object.entries(updateData)) {
+    if (ALLOWED_POST_COLUMNS.has(key)) {
+      if (key === 'code_snippet') {
+        sanitizedUpdate.code_snippet =
+          typeof val === 'object' ? (val as any)?.code : typeof val === 'string' ? val : null;
+        if (typeof val === 'object' && (val as any)?.language) {
+          sanitizedUpdate.code_language = (val as any).language;
+        }
+      } else {
+        sanitizedUpdate[key] = val;
+      }
+    }
+  }
+
+  if (Object.keys(sanitizedUpdate).length === 0) return;
+
   const client = getSupabaseClient();
+  const config = getSupabaseConfig();
+
+  // 1. Direct Supabase Client Update
   if (client) {
     try {
-      await client.from('posts').update(updateData).eq('id', postId);
+      const { error } = await client.from('posts').update(sanitizedUpdate).eq('id', postId);
+      if (error) {
+        console.warn('Supabase post update error:', error.message || error);
+      }
     } catch (err) {
-      console.warn('Supabase post update error:', err);
+      console.warn('Supabase post update exception:', err);
     }
+  }
+
+  // 2. HTTP REST Fallback
+  if (config.url && config.anonKey) {
+    try {
+      const cleanUrl = config.url.replace(/\/+$/, '');
+      fetch(`${cleanUrl}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          Prefer: 'return=minimal'
+        },
+        body: JSON.stringify(sanitizedUpdate)
+      }).catch((e) => console.warn('Supabase REST post update warning:', e));
+    } catch {}
   }
 }
 
@@ -727,18 +832,59 @@ export function subscribeToCommunities(onUpdate: (communities: Community[]) => v
   };
 }
 
+export const ALLOWED_COMMUNITY_COLUMNS = new Set([
+  'id',
+  'name',
+  'handle',
+  'avatar_url',
+  'banner_url',
+  'description',
+  'members_count',
+  'created_by',
+  'creator_username',
+  'api_key',
+  'created_at',
+  'updated_at'
+]);
+
 export async function createCommunityInSupabase(comm: Community): Promise<void> {
   const current = loadStoredCommunities();
   const updated = [comm, ...current.filter((c) => c.id !== comm.id)];
   saveStoredCommunities(updated);
 
+  const payload: Record<string, any> = {};
+  for (const [key, val] of Object.entries(comm)) {
+    if (ALLOWED_COMMUNITY_COLUMNS.has(key)) {
+      payload[key] = val;
+    }
+  }
+
   const client = getSupabaseClient();
+  const config = getSupabaseConfig();
+
   if (client) {
     try {
-      await client.from('communities').upsert(comm);
+      const { error } = await client.from('communities').upsert(payload);
+      if (error) console.warn('Supabase community create error:', error.message || error);
     } catch (err) {
-      console.warn('Supabase community create error:', err);
+      console.warn('Supabase community create exception:', err);
     }
+  }
+
+  if (config.url && config.anonKey) {
+    try {
+      const cleanUrl = config.url.replace(/\/+$/, '');
+      fetch(`${cleanUrl}/rest/v1/communities`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          Prefer: 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify(payload)
+      }).catch(() => {});
+    } catch {}
   }
 }
 
@@ -747,13 +893,41 @@ export async function updateCommunityInSupabase(commId: string, updateData: Part
   const updated = current.map((c) => (c.id === commId ? { ...c, ...updateData } : c));
   saveStoredCommunities(updated);
 
+  const payload: Record<string, any> = {
+    updated_at: new Date().toISOString()
+  };
+  for (const [key, val] of Object.entries(updateData)) {
+    if (ALLOWED_COMMUNITY_COLUMNS.has(key)) {
+      payload[key] = val;
+    }
+  }
+
   const client = getSupabaseClient();
+  const config = getSupabaseConfig();
+
   if (client) {
     try {
-      await client.from('communities').update(updateData).eq('id', commId);
+      const { error } = await client.from('communities').update(payload).eq('id', commId);
+      if (error) console.warn('Supabase community update error:', error.message || error);
     } catch (err) {
-      console.warn('Supabase community update error:', err);
+      console.warn('Supabase community update exception:', err);
     }
+  }
+
+  if (config.url && config.anonKey) {
+    try {
+      const cleanUrl = config.url.replace(/\/+$/, '');
+      fetch(`${cleanUrl}/rest/v1/communities?id=eq.${encodeURIComponent(commId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          Prefer: 'return=minimal'
+        },
+        body: JSON.stringify(payload)
+      }).catch(() => {});
+    } catch {}
   }
 }
 
@@ -763,12 +937,29 @@ export async function deleteCommunityFromSupabase(commId: string): Promise<void>
   saveStoredCommunities(updated);
 
   const client = getSupabaseClient();
+  const config = getSupabaseConfig();
+
   if (client) {
     try {
-      await client.from('communities').delete().eq('id', commId);
+      const { error } = await client.from('communities').delete().eq('id', commId);
+      if (error) console.warn('Supabase community delete error:', error.message || error);
     } catch (err) {
-      console.warn('Supabase community delete error:', err);
+      console.warn('Supabase community delete exception:', err);
     }
+  }
+
+  if (config.url && config.anonKey) {
+    try {
+      const cleanUrl = config.url.replace(/\/+$/, '');
+      fetch(`${cleanUrl}/rest/v1/communities?id=eq.${encodeURIComponent(commId)}`, {
+        method: 'DELETE',
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          Prefer: 'return=minimal'
+        }
+      }).catch(() => {});
+    } catch {}
   }
 }
 
@@ -991,30 +1182,110 @@ export function subscribeToAllUsers(onUpdate: (users: UserProfile[]) => void): (
   };
 }
 
+export const ALLOWED_PROFILE_COLUMNS = new Set([
+  'id',
+  'username',
+  'display_name',
+  'avatar_url',
+  'banner_url',
+  'bio',
+  'role',
+  'verified',
+  'email',
+  'theme_color',
+  'accent_color',
+  'joined_communities',
+  'custom_fields',
+  'is_admin',
+  'saved_post_ids',
+  'created_at',
+  'updated_at'
+]);
+
 export async function updateUserProfileInSupabase(userId: string, updateData: Partial<UserProfile>): Promise<void> {
   const local = loadStoredProfile();
-  if (local && local.id === userId) {
+  if (local && (local.id === userId || local.username === (updateData as any).username)) {
     saveStoredProfile({ ...local, ...updateData });
   }
 
+  // Map frontend fields to PostgreSQL table column names
+  const sanitizedUpdate: Record<string, any> = {
+    updated_at: new Date().toISOString()
+  };
+
+  if ('isAdmin' in updateData) {
+    sanitizedUpdate.is_admin = Boolean(updateData.isAdmin);
+  }
+  if ('savedPostIds' in updateData) {
+    sanitizedUpdate.saved_post_ids = updateData.savedPostIds || [];
+  }
+
+  for (const [key, val] of Object.entries(updateData)) {
+    if (ALLOWED_PROFILE_COLUMNS.has(key)) {
+      sanitizedUpdate[key] = val;
+    }
+  }
+
   const client = getSupabaseClient();
+  const config = getSupabaseConfig();
+
+  // 1. Direct Supabase Client Update
   if (client) {
     try {
-      await client.from('profiles').update(updateData).eq('id', userId);
+      const { error } = await client.from('profiles').update(sanitizedUpdate).eq('id', userId);
+      if (error) {
+        console.warn('Supabase user profile update error:', error.message || error);
+      }
     } catch (err) {
-      console.warn('Supabase user profile update error:', err);
+      console.warn('Supabase user profile update exception:', err);
     }
+  }
+
+  // 2. HTTP REST Fallback
+  if (config.url && config.anonKey) {
+    try {
+      const cleanUrl = config.url.replace(/\/+$/, '');
+      fetch(`${cleanUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          Prefer: 'return=minimal'
+        },
+        body: JSON.stringify(sanitizedUpdate)
+      }).catch((e) => console.warn('Supabase REST profile update warning:', e));
+    } catch {}
   }
 }
 
 export async function deleteUserFromSupabase(userId: string): Promise<void> {
   const client = getSupabaseClient();
+  const config = getSupabaseConfig();
+
   if (client) {
     try {
-      await client.from('profiles').delete().eq('id', userId);
+      const { error } = await client.from('profiles').delete().eq('id', userId);
+      if (error) {
+        console.warn('Supabase user delete error:', error.message || error);
+      }
     } catch (err) {
-      console.warn('Supabase user delete error:', err);
+      console.warn('Supabase user delete exception:', err);
     }
+  }
+
+  if (config.url && config.anonKey) {
+    try {
+      const cleanUrl = config.url.replace(/\/+$/, '');
+      fetch(`${cleanUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
+        method: 'DELETE',
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          Prefer: 'return=minimal'
+        }
+      }).catch(() => {});
+    } catch {}
   }
 }
 

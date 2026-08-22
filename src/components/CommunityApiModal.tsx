@@ -177,16 +177,16 @@ print(res.status_code, res.json())`;
         {/* Header */}
         <div className="p-5 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/60">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-950/40 border border-blue-800/40 flex items-center justify-center">
-              <Code2 className="w-5 h-5 text-blue-400" />
+            <div className="w-10 h-10 rounded-xl bg-amber-950/40 border border-amber-800/40 flex items-center justify-center">
+              <Code2 className="w-5 h-5 text-amber-400" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-white">
                   {language === 'tr' ? 'Topluluk HTTP Paylaşım API' : 'Community HTTP Publishing API'}
                 </h3>
-                <span className="px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-[10px] text-blue-400 font-mono font-bold">
-                  REST v1
+                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-[10px] text-amber-300 font-mono font-bold uppercase tracking-wider">
+                  BETA (KAPALI)
                 </span>
               </div>
               <p className="text-xs text-zinc-400 font-mono mt-0.5">
@@ -201,6 +201,21 @@ print(res.status_code, res.json())`;
           >
             <X className="w-5 h-5" />
           </button>
+        </div>
+
+        {/* Closed Beta Warning Alert */}
+        <div className="mx-5 mt-4 p-3 rounded-xl bg-amber-950/30 border border-amber-700/40 text-amber-300 flex items-start gap-2.5 text-xs">
+          <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <span className="font-bold">
+              {language === 'tr' ? 'Topluluk API Kapalı Beta Aşamasındadır' : 'Community API is in Closed Beta'}
+            </span>
+            <p className="text-amber-300/80 leading-relaxed">
+              {language === 'tr'
+                ? 'Bu bölüm şu an geliştirici dokümantasyonu ve mimari önizleme amacıyla sunulmaktadır. Canlı HTTP istekleri ve harici paylaşımlar şu anda geçici olarak kapalıdır.'
+                : 'This section is currently available as a developer preview and documentation. Live HTTP publishing is temporarily disabled in Closed Beta.'}
+            </p>
+          </div>
         </div>
 
         {/* Tab Navigation */}
@@ -332,12 +347,12 @@ print(res.status_code, res.json())`;
           {/* TAB 2: PLAYGROUND (LIVE HTTP TESTER) */}
           {activeTab === 'playground' && (
             <form onSubmit={handleSendTestRequest} className="space-y-4">
-              <div className="p-3 rounded-xl bg-blue-950/20 border border-blue-800/40 text-xs text-blue-300 leading-relaxed flex items-start gap-2">
-                <Sparkles className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+              <div className="p-3 rounded-xl bg-amber-950/20 border border-amber-800/40 text-xs text-amber-300 leading-relaxed flex items-start gap-2">
+                <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
                 <span>
                   {language === 'tr'
-                    ? 'Bu alandan göndereceğiniz HTTP isteği anında topluluk akışında ve Supabase veritabanında yayınlanır.'
-                    : 'The HTTP request sent here will immediately be published to the community feed and Supabase database.'}
+                    ? 'Topluluk HTTP API şu anda Kapalı Beta modundadır. Canlı paylaşım ve webhook tetikleyicileri yakında genel kullanıma açılacaktır.'
+                    : 'Community HTTP API is currently in Closed Beta. Live publishing and webhook triggers will be enabled soon.'}
                 </span>
               </div>
 
@@ -349,8 +364,8 @@ print(res.status_code, res.json())`;
                   type="text"
                   value={testContent}
                   onChange={(e) => setTestContent(e.target.value)}
-                  required
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+                  disabled
+                  className="w-full bg-zinc-950/60 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-400 placeholder-zinc-600 cursor-not-allowed"
                 />
               </div>
 
@@ -362,7 +377,8 @@ print(res.status_code, res.json())`;
                   <select
                     value={testLanguage}
                     onChange={(e) => setTestLanguage(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                    disabled
+                    className="w-full bg-zinc-950/60 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-400 cursor-not-allowed"
                   >
                     <option value="typescript">TypeScript</option>
                     <option value="javascript">JavaScript</option>
@@ -385,7 +401,8 @@ print(res.status_code, res.json())`;
                     type="text"
                     value={testAuthorName}
                     onChange={(e) => setTestAuthorName(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+                    disabled
+                    className="w-full bg-zinc-950/60 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-400 cursor-not-allowed"
                   />
                 </div>
               </div>
@@ -398,50 +415,22 @@ print(res.status_code, res.json())`;
                   value={testCode}
                   onChange={(e) => setTestCode(e.target.value)}
                   rows={6}
-                  required
+                  disabled
                   placeholder="// Kodunuzu buraya yapıştırın..."
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-xs font-mono text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-blue-500 resize-none leading-relaxed"
+                  className="w-full bg-zinc-950/60 border border-zinc-800 rounded-xl p-3 text-xs font-mono text-zinc-400 cursor-not-allowed resize-none leading-relaxed"
                 />
               </div>
 
-              {testResult && (
-                <div
-                  className={`p-3 rounded-xl border flex items-start gap-2.5 text-xs ${
-                    testResult.success
-                      ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
-                      : 'bg-red-950/30 border-red-500/40 text-red-300'
-                  }`}
-                >
-                  {testResult.success ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                  )}
-                  <div>
-                    <span className="font-bold">{testResult.message}</span>
-                    {testResult.post && (
-                      <span className="block text-[11px] font-mono text-zinc-400 mt-1">
-                        Post ID: {testResult.post.id}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-
               <button
-                type="submit"
-                disabled={isSending}
-                className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg active:scale-98 disabled:opacity-50 cursor-pointer"
+                type="button"
+                disabled={true}
+                className="w-full py-2.5 rounded-xl bg-zinc-800/80 border border-zinc-700/50 text-zinc-400 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-not-allowed opacity-75"
               >
-                {isSending ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
+                <AlertCircle className="w-4 h-4 text-amber-400" />
                 <span>
-                  {isSending
-                    ? (language === 'tr' ? 'HTTP İsteği Gönderiliyor...' : 'Sending HTTP Request...')
-                    : (language === 'tr' ? 'HTTP Request ile Kodu Toplulukta Paylaş' : 'Publish Code via HTTP Request')}
+                  {language === 'tr'
+                    ? 'Beta Aşamasında - Canlı İstekler Geçici Olarak Kapalı'
+                    : 'Closed Beta - Live Requests Temporarily Disabled'}
                 </span>
               </button>
             </form>

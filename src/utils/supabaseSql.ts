@@ -4,7 +4,7 @@ export const SUPABASE_SETUP_SQL = `-- ==========================================
 
 -- 1. Profiles Table (Kullanıcı Profilleri)
 CREATE TABLE IF NOT EXISTS public.profiles (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id TEXT PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
   display_name TEXT NOT NULL,
   avatar_url TEXT,
@@ -44,10 +44,37 @@ CREATE TABLE IF NOT EXISTS public.posts (
   comments JSONB DEFAULT '[]'::jsonb,
   reposts_count INTEGER DEFAULT 0,
   reposted_by JSONB DEFAULT '[]'::jsonb,
+  bookmarked_by JSONB DEFAULT '[]'::jsonb,
   is_pinned BOOLEAN DEFAULT false,
   is_deleted BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Migration scripts for existing tables
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='posts' AND column_name='bookmarked_by') THEN
+    ALTER TABLE public.posts ADD COLUMN bookmarked_by JSONB DEFAULT '[]'::jsonb;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='posts' AND column_name='reposted_by') THEN
+    ALTER TABLE public.posts ADD COLUMN reposted_by JSONB DEFAULT '[]'::jsonb;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='posts' AND column_name='reposts_count') THEN
+    ALTER TABLE public.posts ADD COLUMN reposts_count INTEGER DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='posts' AND column_name='code_language') THEN
+    ALTER TABLE public.posts ADD COLUMN code_language TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='posts' AND column_name='category_name') THEN
+    ALTER TABLE public.posts ADD COLUMN category_name TEXT DEFAULT 'Genel & Sohbet';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='posts' AND column_name='community_handle') THEN
+    ALTER TABLE public.posts ADD COLUMN community_handle TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='posts' AND column_name='is_deleted') THEN
+    ALTER TABLE public.posts ADD COLUMN is_deleted BOOLEAN DEFAULT false;
+  END IF;
+END $$;
 
 -- 3. Communities Table (Topluluklar & API Entegrasyonu)
 CREATE TABLE IF NOT EXISTS public.communities (
