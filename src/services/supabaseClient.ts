@@ -324,52 +324,104 @@ export function saveStoredPosts(posts: Post[]): void {
   localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(clean));
 }
 
+export async function syncDeletedPostsFromServer(): Promise<Set<string>> {
+  const localSet = loadDeletedPostIds();
+  try {
+    const res = await fetch('/api/posts/deleted');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.deleted_ids)) {
+        data.deleted_ids.forEach((id: string) => {
+          if (id) {
+            localSet.add(id);
+            saveDeletedPostId(id);
+          }
+        });
+      }
+    }
+  } catch {}
+  return localSet;
+}
+
 export function subscribeToPosts(onUpdate: (posts: Post[]) => void): () => void {
   const client = getSupabaseClient();
+  const config = getSupabaseConfig();
+
+  const refreshAndFilter = async (rawPosts: Post[]) => {
+    const deletedIds = await syncDeletedPostsFromServer();
+    const clean = (rawPosts || []).filter(
+      (p) => p && p.id && !(p as any).is_deleted && (p as any).content !== '[DELETED]' && !deletedIds.has(p.id)
+    );
+    saveStoredPosts(clean);
+    onUpdate(clean);
+  };
+
+  // 1. Initial Load from Local Cache
+  const initialLocal = loadStoredPosts();
+  onUpdate(initialLocal);
+
+  // 2. Fetch latest from Server / Supabase
+  syncDeletedPostsFromServer().then(() => {
+    if (client) {
+      client
+        .from('posts')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .then(
+          ({ data, error }) => {
+            if (!error && Array.isArray(data)) {
+              refreshAndFilter(data as Post[]);
+            } else {
+              refreshAndFilter(loadStoredPosts());
+            }
+          },
+          () => {
+            refreshAndFilter(loadStoredPosts());
+          }
+        );
+    } else {
+      refreshAndFilter(loadStoredPosts());
+    }
+  });
+
   if (!client) {
-    onUpdate(loadStoredPosts());
     return () => {};
   }
 
-  // Fetch initial posts from Supabase PostgreSQL
-  client
-    .from('posts')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .then(
-      ({ data, error }) => {
-        const deletedIds = loadDeletedPostIds();
-        if (!error && Array.isArray(data)) {
-          const cleanData = (data as Post[]).filter(
-            (p) => p && p.id && !(p as any).is_deleted && !deletedIds.has(p.id)
-          );
-          saveStoredPosts(cleanData);
-          onUpdate(cleanData);
-        } else {
-          onUpdate(loadStoredPosts());
-        }
-      },
-      () => {
-        onUpdate(loadStoredPosts());
-      }
-    );
-
-  // Realtime subscription via Supabase Channels
+  // 3. Realtime subscription via Supabase Channels
   const channel = client
     .channel('public:posts')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, async () => {
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, async (payload: any) => {
       try {
+        if (payload?.eventType === 'DELETE') {
+          const deletedId = payload.old?.id;
+          if (deletedId) {
+            saveDeletedPostId(deletedId);
+            const current = loadStoredPosts().filter((p) => p.id !== deletedId);
+            saveStoredPosts(current);
+            onUpdate(current);
+            return;
+          }
+        }
+
+        if (payload?.eventType === 'UPDATE' && (payload.new?.is_deleted || payload.new?.content === '[DELETED]')) {
+          const deletedId = payload.new?.id;
+          if (deletedId) {
+            saveDeletedPostId(deletedId);
+            const current = loadStoredPosts().filter((p) => p.id !== deletedId);
+            saveStoredPosts(current);
+            onUpdate(current);
+            return;
+          }
+        }
+
         const { data, error } = await client
           .from('posts')
           .select('*')
           .order('created_at', { ascending: false });
-        const deletedIds = loadDeletedPostIds();
+
         if (!error && Array.isArray(data)) {
-          const cleanData = (data as Post[]).filter(
-            (p) => p && p.id && !(p as any).is_deleted && !deletedIds.has(p.id)
-          );
-          saveStoredPosts(cleanData);
-          onUpdate(cleanData);
+          refreshAndFilter(data as Post[]);
         }
       } catch (e) {
         console.warn('Realtime post refresh error:', e);
@@ -403,7 +455,7 @@ export async function createPostInSupabase(post: Post): Promise<void> {
       await client.from('posts').upsert({
         id: post.id,
         author: post.author,
-        content: sanitizeText(post.content, 4000),
+        content: sanitizeText(post.content, 5000),
         category: post.category || 'general',
         category_name: post.category_name || 'Genel & Sohbet',
         code_snippet: post.code_snippet || null,
@@ -472,21 +524,60 @@ export async function deletePostInSupabase(postId: string, requestingUser?: User
     window.dispatchEvent(new CustomEvent('c4e_post_deleted', { detail: { postId } }));
   } catch {}
 
+  const config = getSupabaseConfig();
   const client = getSupabaseClient();
+
+  // 4. Server-Side Synchronized Delete Relay (Broadcasts to all devices & deletes in backend)
+  try {
+    fetch('/api/posts/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        postId,
+        customSupabaseUrl: config.url,
+        customSupabaseAnonKey: config.anonKey
+      })
+    }).catch(() => {});
+  } catch {}
+
+  // 5. Direct Supabase Client Delete
   if (client) {
     try {
-      // 4. Hard delete from PostgreSQL database
       const { error } = await client.from('posts').delete().eq('id', postId);
       if (error) {
         // Fallback soft-delete in case DELETE policy or constraint fails
         await client.from('posts').update({ is_deleted: true, content: '[DELETED]' } as any).eq('id', postId);
       }
-      return true;
     } catch (err) {
-      console.warn('Supabase post delete network/table error (deleted locally):', err);
-      return true;
+      console.warn('Supabase post delete network error:', err);
     }
   }
+
+  // 6. Direct REST DELETE & PATCH fallback to Supabase HTTP API
+  if (config.url && config.anonKey) {
+    try {
+      const cleanUrl = config.url.replace(/\/+$/, '');
+      fetch(`${cleanUrl}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}`, {
+        method: 'DELETE',
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          Prefer: 'return=representation'
+        }
+      }).catch(() => {});
+
+      fetch(`${cleanUrl}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`
+        },
+        body: JSON.stringify({ is_deleted: true, content: '[DELETED]' })
+      }).catch(() => {});
+    } catch {}
+  }
+
   return true;
 }
 

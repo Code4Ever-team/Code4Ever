@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS public.posts (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. Communities Table (Topluluklar)
+-- 3. Communities Table (Topluluklar & API Entegrasyonu)
 CREATE TABLE IF NOT EXISTS public.communities (
   id TEXT PRIMARY KEY,
   name VARCHAR(60) NOT NULL,
@@ -60,9 +60,17 @@ CREATE TABLE IF NOT EXISTS public.communities (
   members_count INTEGER DEFAULT 0,
   created_by TEXT,
   creator_username TEXT,
+  api_key TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='communities' AND column_name='api_key') THEN
+    ALTER TABLE public.communities ADD COLUMN api_key TEXT;
+  END IF;
+END $$;
 
 -- 4. Job Listings Table (İş & Ekip İlanları)
 CREATE TABLE IF NOT EXISTS public.job_listings (
@@ -156,8 +164,34 @@ CREATE TABLE IF NOT EXISTS public.group_invites (
 );
 
 -- ================================================================
--- ROW LEVEL SECURITY (RLS) POLICIES - FULL CRUD ENABLED
+-- ROW LEVEL SECURITY (RLS) & FULL PERMISSIONS FOR ALL ROLES
 -- ================================================================
+
+-- 1. Explicit Schema and Table Grants for Anon & Authenticated roles
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL ROUTINES IN SCHEMA public TO anon, authenticated, service_role;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ROUTINES TO anon, authenticated, service_role;
+
+-- 2. Enable Full Replica Identity for Realtime Delete/Update tracking
+ALTER TABLE public.posts REPLICA IDENTITY FULL;
+ALTER TABLE public.messages REPLICA IDENTITY FULL;
+ALTER TABLE public.job_listings REPLICA IDENTITY FULL;
+ALTER TABLE public.communities REPLICA IDENTITY FULL;
+
+-- 3. Enable Realtime Publications
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.posts, public.messages, public.job_listings, public.communities, public.notifications;
+  EXCEPTION WHEN OTHERS THEN
+    -- If already added or publication doesn't exist, continue safely
+  END;
+END $$;
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
@@ -169,7 +203,7 @@ ALTER TABLE public.groups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.group_invites ENABLE ROW LEVEL SECURITY;
 
--- Full Access Policies for Public Client Apps
+-- Full Access Policies for Public Client Apps (SELECT, INSERT, UPDATE, DELETE)
 DO $$
 BEGIN
   -- Profiles
@@ -212,6 +246,7 @@ END $$;
 -- Performance Indexes
 CREATE INDEX IF NOT EXISTS idx_posts_created_at ON public.posts(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_category ON public.posts(category);
+CREATE INDEX IF NOT EXISTS idx_posts_is_deleted ON public.posts(is_deleted);
 CREATE INDEX IF NOT EXISTS idx_job_listings_created_at ON public.job_listings(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_profiles_username ON public.profiles(username);
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON public.messages(conversation_id, created_at ASC);

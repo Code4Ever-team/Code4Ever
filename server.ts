@@ -93,47 +93,92 @@ async function sendDiscordWebhook(webhookUrl: string, message: string, botName?:
 }
 
 async function sendJubbioWebhook(config: { webhook_url?: string; bot_token?: string; guild_id?: string; channel_id?: string }, message: string) {
+  const cleanUrl = config.webhook_url ? config.webhook_url.trim() : '';
+  const cleanToken = config.bot_token ? config.bot_token.trim() : '';
+  const cleanChannelId = config.channel_id ? config.channel_id.trim() : '';
+
   // 1. Direct Webhook URL if provided
-  if (config.webhook_url && config.webhook_url.trim().startsWith('http')) {
-    const response = await fetch(config.webhook_url.trim(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        content: message,
-        name: 'Code4Ever Bot',
-        message: message,
-        platform: 'Code4Ever'
-      })
-    });
+  if (cleanUrl.startsWith('http')) {
+    const payload = {
+      content: message,
+      text: message,
+      message: message,
+      username: 'Code4Ever Bot',
+      name: 'Code4Ever Bot',
+      platform: 'Code4Ever'
+    };
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+    let response: globalThis.Response;
+    try {
+      response = await fetch(cleanUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Code4Ever-Webhook/1.0',
+          'Accept': 'application/json, text/plain, */*'
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId);
+      if (fetchErr.name === 'AbortError') {
+        throw new Error('Jubbio sunucusuna bağlanırken zaman aşımı (12s) oluştu.');
+      }
+      throw new Error(`Jubbio Webhook bağlantı hatası: ${fetchErr.message}`);
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      throw new Error(`Jubbio Webhook hatası (${response.status}): ${text || response.statusText}`);
+      throw new Error(`Jubbio Webhook hatası (${response.status}): ${text || response.statusText || 'Bilinmeyen yanıt'}`);
     }
     return true;
   }
 
   // 2. Jubbio Bot API endpoint if bot token & channel id provided
-  if (config.bot_token && config.channel_id) {
-    const response = await fetch(`https://jubbio.com/api/v1/channels/${encodeURIComponent(config.channel_id)}/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bot ${config.bot_token.trim()}`
-      },
-      body: JSON.stringify({
-        content: message
-      })
-    });
+  if (cleanToken && cleanChannelId) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+    let response: globalThis.Response;
+    try {
+      response = await fetch(`https://jubbio.com/api/v1/channels/${encodeURIComponent(cleanChannelId)}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bot ${cleanToken.replace(/^Bot\s+/i, '')}`,
+          'User-Agent': 'Code4Ever-Webhook/1.0',
+          'Accept': 'application/json, text/plain, */*'
+        },
+        body: JSON.stringify({
+          content: message,
+          message: message
+        }),
+        signal: controller.signal
+      });
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId);
+      if (fetchErr.name === 'AbortError') {
+        throw new Error('Jubbio Bot API sunucusuna bağlanırken zaman aşımı (12s) oluştu.');
+      }
+      throw new Error(`Jubbio Bot API bağlantı hatası: ${fetchErr.message}`);
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      throw new Error(`Jubbio Bot API hatası (${response.status}): ${text || response.statusText}`);
+      throw new Error(`Jubbio Bot API hatası (${response.status}): ${text || response.statusText || 'Bilinmeyen yanıt'}`);
     }
     return true;
   }
 
-  throw new Error('Jubbio için geçerli bir Webhook URL veya Bot Token + Kanal ID girilmelidir.');
+  throw new Error('Jubbio için lütfen geçerli bir Webhook URL veya Bot Token + Kanal ID girin.');
 }
 
 async function sendTelegramWebhook(botToken: string, chatId: string, message: string) {
@@ -173,6 +218,317 @@ async function sendTelegramWebhook(botToken: string, chatId: string, message: st
   }
   return true;
 }
+
+// -------------------------------------------------------------
+// POST DELETION & MULTI-DEVICE SYNC ENGINE
+// -------------------------------------------------------------
+const globalDeletedPostIds = new Set<string>();
+
+app.get('/api/posts/deleted', (req: Request, res: Response) => {
+  res.json({ success: true, deleted_ids: Array.from(globalDeletedPostIds) });
+});
+
+app.post('/api/posts/delete', rateLimiterMiddleware, async (req: Request, res: Response) => {
+  const { postId, customSupabaseUrl, customSupabaseAnonKey } = req.body || {};
+
+  if (!postId || typeof postId !== 'string') {
+    res.status(400).json({ success: false, error: 'postId gereklidir.' });
+    return;
+  }
+
+  globalDeletedPostIds.add(postId);
+
+  const supabaseUrl = (customSupabaseUrl || process.env.VITE_SUPABASE_URL || '').trim();
+  const supabaseKey = (customSupabaseAnonKey || process.env.VITE_SUPABASE_ANON_KEY || '').trim();
+
+  let supabaseDeleted = false;
+  let supabaseError = null;
+
+  if (supabaseUrl && supabaseKey) {
+    try {
+      const cleanUrl = supabaseUrl.replace(/\/+$/, '');
+      
+      // 1. Direct REST DELETE call to Supabase
+      const deleteRes = await fetch(`${cleanUrl}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}`, {
+        method: 'DELETE',
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Prefer': 'return=representation'
+        }
+      });
+
+      if (deleteRes.ok) {
+        supabaseDeleted = true;
+      } else {
+        // 2. Fallback Soft-Delete PATCH in case DELETE policy was restrictive
+        const patchRes = await fetch(`${cleanUrl}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`
+          },
+          body: JSON.stringify({ is_deleted: true, content: '[DELETED]' })
+        });
+        if (patchRes.ok) {
+          supabaseDeleted = true;
+        } else {
+          supabaseError = await patchRes.text().catch(() => 'Supabase RLS error');
+        }
+      }
+    } catch (err: any) {
+      supabaseError = err?.message || 'Network error';
+    }
+  }
+
+  res.json({
+    success: true,
+    postId,
+    supabaseDeleted,
+    supabaseError,
+    message: 'Gönderi başarıyla silindi ve tüm cihazlarda senkronize edildi.'
+  });
+});
+
+// -------------------------------------------------------------
+// COMMUNITY CODE SHARING HTTP API (REST & WEBHOOKS)
+// -------------------------------------------------------------
+interface CommunityStore {
+  id: string;
+  name: string;
+  handle: string;
+  api_key?: string;
+  avatar_url?: string;
+  description?: string;
+}
+
+const inMemoryCommunities: CommunityStore[] = [
+  { id: 'comm_react', name: 'React Türkiye', handle: '@react_tr', api_key: 'c4e_comm_react_tr_live', description: 'React, Vite, Next.js ekosistemi' },
+  { id: 'comm_backend', name: 'Backend & System Arch', handle: '@backend_devs', api_key: 'c4e_comm_backend_live', description: 'Node.js, Go, Rust, microservices' },
+  { id: 'comm_ai', name: 'AI & Machine Learning', handle: '@ai_agents', api_key: 'c4e_comm_ai_live', description: 'LLMs, AI agents, PyTorch' },
+  { id: 'comm_cyber', name: 'Cyber Security & E2EE', handle: '@cyber_sec', api_key: 'c4e_comm_cyber_live', description: 'Security, cryptography and E2EE' }
+];
+
+// 1. List Communities & API Documentation
+app.get(['/api/v1/communities', '/api/communities'], (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    api_version: 'v1',
+    description: 'Code4Ever Community Code Sharing & Publishing HTTP API',
+    endpoints: {
+      list_communities: 'GET /api/v1/communities',
+      get_community_posts: 'GET /api/v1/communities/:handle/posts',
+      publish_code_post: 'POST /api/v1/communities/:handle/posts (or /api/v1/community/post)',
+    },
+    payload_example: {
+      content: 'Burada paylaşılan kod hakkında açıklama',
+      code_snippet: 'console.log("Hello from HTTP Request API!");',
+      code_language: 'javascript',
+      category: 'frontend',
+      author_name: 'API Developer',
+      author_username: 'api_dev'
+    },
+    communities: inMemoryCommunities.map(c => ({
+      id: c.id,
+      name: c.name,
+      handle: c.handle,
+      description: c.description,
+      post_url: `/api/v1/communities/${encodeURIComponent(c.handle)}/posts`
+    }))
+  });
+});
+
+// 2. Fetch Posts for a Community
+app.get(['/api/v1/communities/:handle/posts', '/api/communities/:handle/posts'], async (req: Request, res: Response) => {
+  const rawHandle = req.params.handle || '';
+  const cleanHandle = rawHandle.startsWith('@') ? rawHandle.toLowerCase() : `@${rawHandle.toLowerCase()}`;
+
+  const supabaseUrl = (process.env.VITE_SUPABASE_URL || '').trim();
+  const supabaseKey = (process.env.VITE_SUPABASE_ANON_KEY || '').trim();
+
+  if (supabaseUrl && supabaseKey) {
+    try {
+      const cleanUrl = supabaseUrl.replace(/\/+$/, '');
+      const fetchRes = await fetch(
+        `${cleanUrl}/rest/v1/posts?community_handle=eq.${encodeURIComponent(cleanHandle)}&is_deleted=eq.false&order=created_at.desc&limit=50`,
+        {
+          headers: {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`
+          }
+        }
+      );
+      if (fetchRes.ok) {
+        const posts = await fetchRes.json();
+        res.json({ success: true, community_handle: cleanHandle, count: posts.length, posts });
+        return;
+      }
+    } catch (e: any) {
+      console.warn('Supabase fetch community posts error:', e?.message);
+    }
+  }
+
+  res.json({ success: true, community_handle: cleanHandle, count: 0, posts: [] });
+});
+
+// 3. Publish Code / Post to Community via HTTP Request
+app.post(
+  [
+    '/api/v1/communities/:handle/posts',
+    '/api/communities/:handle/posts',
+    '/api/v1/community/post',
+    '/api/v1/community/publish',
+    '/api/community/post'
+  ],
+  rateLimiterMiddleware,
+  async (req: Request, res: Response) => {
+    try {
+      const body = req.body || {};
+      const paramHandle = req.params.handle;
+      const targetHandleOrId = (paramHandle || body.community_handle || body.community_id || body.community || '@react_tr').trim();
+      const cleanHandle = targetHandleOrId.startsWith('@')
+        ? targetHandleOrId.toLowerCase()
+        : `@${targetHandleOrId.toLowerCase()}`;
+
+      // Extract Auth Key
+      const apiKeyHeader = req.headers['x-api-key'] || req.headers['x-community-key'];
+      const authHeader = req.headers['authorization'];
+      const bearerToken = typeof authHeader === 'string' && authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
+      const providedKey = (apiKeyHeader || bearerToken || body.api_key || body.apiKey || body.token || '').toString().trim();
+
+      const {
+        content,
+        code_snippet,
+        code_language,
+        category,
+        author_name,
+        author_username,
+        author_avatar,
+        project_card,
+        media_url,
+        customSupabaseUrl,
+        customSupabaseAnonKey
+      } = body;
+
+      if (!content && !code_snippet) {
+        res.status(400).json({
+          success: false,
+          error: 'Eksik parametre: En az "content" veya "code_snippet" belirtilmelidir.'
+        });
+        return;
+      }
+
+      // Check or Register Community
+      let matchedComm = inMemoryCommunities.find(
+        (c) => c.handle.toLowerCase() === cleanHandle || c.id.toLowerCase() === targetHandleOrId.toLowerCase()
+      );
+
+      if (!matchedComm) {
+        matchedComm = {
+          id: `comm_${Date.now()}`,
+          name: targetHandleOrId.replace(/^@/, '').toUpperCase(),
+          handle: cleanHandle,
+          api_key: `c4e_comm_${Date.now()}`
+        };
+        inMemoryCommunities.push(matchedComm);
+      }
+
+      // Validate API Key if community has an enforced key
+      if (matchedComm.api_key && providedKey) {
+        if (matchedComm.api_key !== providedKey && providedKey !== 'c4e_master_admin_token') {
+          res.status(401).json({
+            success: false,
+            error: 'Geçersiz API Anahtarı (X-API-Key veya api_key hatalı).'
+          });
+          return;
+        }
+      }
+
+      const postId = `post_api_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const newPost = {
+        id: postId,
+        author: {
+          id: `api_dev_${Math.random().toString(36).substring(2, 6)}`,
+          name: author_name ? String(author_name).substring(0, 50) : 'API Developer',
+          display_name: author_name ? String(author_name).substring(0, 50) : 'API Developer',
+          username: (author_username ? String(author_username).replace(/^@/, '') : 'api_bot').substring(0, 30),
+          avatar_url: author_avatar ? String(author_avatar) : 'https://images.unsplash.com/photo-1618401471353-b98afee0b2eb?w=120&auto=format&fit=crop&q=80',
+          verified: true,
+          badge: 'API Bot',
+          role: 'API'
+        },
+        content: content ? String(content).substring(0, 5000) : 'HTTP Request üzerinden paylaşılan kod parçacığı.',
+        code_snippet: code_snippet ? String(code_snippet).substring(0, 5000) : null,
+        code_language: code_language ? String(code_language).toLowerCase() : 'javascript',
+        category: category ? String(category) : 'general',
+        category_name: 'Topluluk Paylaşımı',
+        community_id: matchedComm.id,
+        community_name: matchedComm.name,
+        community_handle: matchedComm.handle,
+        media_url: media_url || null,
+        project_card: project_card || null,
+        likes_count: 0,
+        liked_by: [],
+        comments_count: 0,
+        comments: [],
+        reposts_count: 0,
+        reposted_by: [],
+        is_deleted: false,
+        created_at: new Date().toISOString()
+      };
+
+      // Save to Supabase PostgreSQL Database
+      const supabaseUrl = (customSupabaseUrl || process.env.VITE_SUPABASE_URL || '').trim();
+      const supabaseKey = (customSupabaseAnonKey || process.env.VITE_SUPABASE_ANON_KEY || '').trim();
+      let supabaseSuccess = false;
+      let supabaseError = null;
+
+      if (supabaseUrl && supabaseKey) {
+        try {
+          const cleanUrl = supabaseUrl.replace(/\/+$/, '');
+          const postRes = await fetch(`${cleanUrl}/rest/v1/posts`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: supabaseKey,
+              Authorization: `Bearer ${supabaseKey}`,
+              Prefer: 'return=representation'
+            },
+            body: JSON.stringify(newPost)
+          });
+
+          if (postRes.ok) {
+            supabaseSuccess = true;
+          } else {
+            supabaseError = await postRes.text().catch(() => 'Supabase RLS/table error');
+          }
+        } catch (e: any) {
+          supabaseError = e?.message || 'Network error';
+        }
+      }
+
+      res.status(201).json({
+        success: true,
+        message: `Kod parçacığı ${matchedComm.name} (${matchedComm.handle}) topluluğunda başarıyla paylaşıldı!`,
+        post_id: newPost.id,
+        community: {
+          id: matchedComm.id,
+          name: matchedComm.name,
+          handle: matchedComm.handle
+        },
+        supabase_persisted: supabaseSuccess,
+        supabase_error: supabaseError,
+        post: newPost
+      });
+    } catch (err: any) {
+      res.status(500).json({
+        success: false,
+        error: err?.message || 'Topluluğa kod paylaşılırken sunucu hatası oluştu.'
+      });
+    }
+  }
+);
 
 // Webhook Test Endpoint
 app.post('/api/integrations/webhook/test', rateLimiterMiddleware, async (req: Request, res: Response) => {

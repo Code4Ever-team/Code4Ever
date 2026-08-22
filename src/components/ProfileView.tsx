@@ -685,63 +685,100 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
                     )}
 
                     {/* Action Bar */}
-                    <div className="flex items-center gap-6 pt-1 text-xs text-zinc-500 font-mono">
-                      {onLikePost && (
+                    <div className="flex items-center justify-between pt-2.5 mt-1 border-t border-zinc-800/40 text-xs text-zinc-400">
+                      <div className="flex items-center gap-1 sm:gap-2">
+                        {onLikePost && (
+                          <button
+                            type="button"
+                            onClick={() => onLikePost(post.id)}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+                              isLiked
+                                ? 'text-red-500 bg-red-500/10 font-bold'
+                                : 'text-zinc-400 hover:text-red-400 hover:bg-zinc-800/40'
+                            }`}
+                            title={language === 'tr' ? 'Beğen' : 'Like'}
+                          >
+                            <Heart className={`w-4 h-4 ${isLiked ? 'fill-red-500 stroke-red-500' : ''}`} />
+                            <span className="font-mono text-xs">{likesCount}</span>
+                          </button>
+                        )}
+
+                        {onRepostPost && (
+                          <button
+                            type="button"
+                            onClick={() => onRepostPost(post.id)}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+                              isReposted
+                                ? 'text-emerald-400 bg-emerald-500/10 font-bold'
+                                : 'text-zinc-400 hover:text-emerald-400 hover:bg-zinc-800/40'
+                            }`}
+                            title={language === 'tr' ? 'Yeniden Paylaş' : 'Repost'}
+                          >
+                            <Repeat className="w-4 h-4" />
+                            <span className="font-mono text-xs">{repostsCount}</span>
+                          </button>
+                        )}
+
                         <button
                           type="button"
-                          onClick={() => onLikePost(post.id)}
-                          className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
-                            isLiked ? 'text-red-400' : 'hover:text-red-400'
+                          onClick={() => setActiveCommentPostId(activeCommentPostId === post.id ? null : post.id)}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+                            activeCommentPostId === post.id
+                              ? 'text-blue-400 bg-blue-500/10 font-semibold'
+                              : 'text-zinc-400 hover:text-blue-400 hover:bg-zinc-800/40'
                           }`}
+                          title={language === 'tr' ? 'Yorumlar' : 'Comments'}
                         >
-                          <Heart className={`w-3.5 h-3.5 ${isLiked ? 'fill-current text-red-400' : ''}`} />
-                          <span>{likesCount}</span>
+                          <MessageSquare className="w-4 h-4" />
+                          <span className="font-mono text-xs">{commentsCount}</span>
                         </button>
-                      )}
+                      </div>
 
-                      {onRepostPost && (
+                      <div className="flex items-center gap-1">
+                        {onBookmarkPost && (
+                          <button
+                            type="button"
+                            onClick={() => onBookmarkPost(post.id)}
+                            className={`p-1.5 rounded-xl transition-all inline-flex items-center justify-center cursor-pointer ${
+                              isBookmarked
+                                ? 'text-amber-400 bg-amber-500/10'
+                                : 'text-zinc-400 hover:text-amber-400 hover:bg-zinc-800/40'
+                            }`}
+                            title={
+                              isBookmarked
+                                ? language === 'tr'
+                                  ? 'Kaydedildi'
+                                  : 'Bookmarked'
+                                : language === 'tr'
+                                ? 'Kaydet'
+                                : 'Save'
+                            }
+                          >
+                            <Bookmark className={`w-4 h-4 ${isBookmarked ? 'fill-amber-400' : ''}`} />
+                          </button>
+                        )}
+
                         <button
                           type="button"
-                          onClick={() => onRepostPost(post.id)}
-                          className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
-                            isReposted ? 'text-emerald-400' : 'hover:text-emerald-400'
+                          onClick={() => handleShare(post)}
+                          className={`p-1.5 rounded-xl transition-all inline-flex items-center justify-center cursor-pointer ${
+                            copiedPostId === post.id
+                              ? 'text-emerald-400 bg-emerald-500/10'
+                              : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
                           }`}
+                          title={
+                            copiedPostId === post.id
+                              ? language === 'tr'
+                                ? 'Bağlantı Kopyalandı'
+                                : 'Link Copied'
+                              : language === 'tr'
+                              ? 'Paylaş'
+                              : 'Share'
+                          }
                         >
-                          <Repeat className={`w-3.5 h-3.5 ${isReposted ? 'stroke-[2.5px] text-emerald-400' : ''}`} />
-                          <span>{repostsCount}</span>
+                          {copiedPostId === post.id ? <Check className="w-4 h-4 text-emerald-400" /> : <Share2 className="w-4 h-4" />}
                         </button>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => setActiveCommentPostId(activeCommentPostId === post.id ? null : post.id)}
-                        className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
-                          activeCommentPostId === post.id ? 'text-blue-400 font-semibold' : 'hover:text-blue-400'
-                        }`}
-                      >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        <span>{commentsCount}</span>
-                      </button>
-
-                      {onBookmarkPost && (
-                        <button
-                          type="button"
-                          onClick={() => onBookmarkPost(post.id)}
-                          className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
-                            isBookmarked ? 'text-amber-400' : 'hover:text-amber-400'
-                          }`}
-                        >
-                          <Bookmark className={`w-3.5 h-3.5 ${isBookmarked ? 'fill-current text-amber-400' : ''}`} />
-                        </button>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => handleShare(post)}
-                        className="flex items-center gap-1.5 hover:text-white transition-colors cursor-pointer"
-                      >
-                        {copiedPostId === post.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
-                      </button>
+                      </div>
                     </div>
 
                     {/* Comments Drawer */}

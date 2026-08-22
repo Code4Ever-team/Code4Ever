@@ -373,6 +373,7 @@ export interface Community {
   is_joined: boolean;
   created_by?: string;
   creator_username?: string;
+  api_key?: string;
   created_at?: string;
   updated_at?: string;
 }

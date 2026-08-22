@@ -122,7 +122,14 @@ export async function testWebhook(
       })
     });
 
-    const data = await res.json();
+    const rawText = await res.text();
+    let data: any = {};
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      data = { error: rawText || `HTTP ${res.status}: ${res.statusText}` };
+    }
+
     if (!res.ok || !data.success) {
       return {
         success: false,

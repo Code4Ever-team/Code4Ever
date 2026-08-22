@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Users, Plus, Check, UserPlus, AlertTriangle, Settings, Shield, Crown } from 'lucide-react';
+import { Users, Plus, Check, UserPlus, AlertTriangle, Settings, Shield, Crown, Code2, Terminal } from 'lucide-react';
 import { Community, UserProfile } from '../types';
 import { verifyAdminAccess } from '../utils/securityHelper';
 import { CommunitySettingsModal } from './CommunitySettingsModal';
+import { CommunityApiModal } from './CommunityApiModal';
 
 interface CommunitiesViewProps {
   communities: Community[];
@@ -27,6 +28,7 @@ export const CommunitiesView: React.FC<CommunitiesViewProps> = ({
 }) => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingCommunity, setEditingCommunity] = useState<Community | null>(null);
+  const [apiCommunity, setApiCommunity] = useState<Community | null>(null);
   const [name, setName] = useState('');
   const [handle, setHandle] = useState('');
   const [description, setDescription] = useState('');
@@ -153,6 +155,16 @@ export const CommunitiesView: React.FC<CommunitiesViewProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setApiCommunity(comm)}
+                      className="p-2 rounded-xl bg-blue-950/30 text-blue-400 hover:text-blue-300 hover:bg-blue-900/40 border border-blue-800/40 transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-mono"
+                      title={language === 'tr' ? 'Topluluk HTTP API & Kod Paylaşımı' : 'Community HTTP API & Code Publishing'}
+                    >
+                      <Terminal className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline font-bold">API</span>
+                    </button>
+
                     {hasManagePerm && (
                       <button
                         type="button"
@@ -191,6 +203,17 @@ export const CommunitiesView: React.FC<CommunitiesViewProps> = ({
           </div>
         )}
       </div>
+
+      {/* Community API Modal */}
+      {apiCommunity && (
+        <CommunityApiModal
+          isOpen={!!apiCommunity}
+          community={apiCommunity}
+          currentUser={user}
+          language={language}
+          onClose={() => setApiCommunity(null)}
+        />
+      )}
 
       {/* Community Settings Modal */}
       {editingCommunity && (

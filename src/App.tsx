@@ -510,7 +510,7 @@ export default function App() {
     }
   };
 
-  const handleDeletePost = (id: string) => {
+  const handleDeletePost = async (id: string) => {
     const targetPost = posts.find((p) => p.id === id);
     if (!targetPost) return;
 
@@ -533,7 +533,11 @@ export default function App() {
     const updated = posts.filter((p) => p.id !== id);
     setPosts(updated);
     saveStoredPosts(updated);
-    deletePostInSupabase(id, user);
+    try {
+      await deletePostInSupabase(id, user);
+    } catch (e) {
+      console.warn('Supabase post delete sync warning:', e);
+    }
   };
 
   const checkRateLimit = (): boolean => {

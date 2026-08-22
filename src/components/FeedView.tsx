@@ -919,8 +919,8 @@ export const FeedView: React.FC<FeedViewProps> = ({
                 )}
 
                 {/* Post Action Buttons */}
-                <div className="flex items-center justify-between pt-2 border-t border-zinc-800/40 text-xs text-zinc-400">
-                  <div className="flex items-center gap-5">
+                <div className="flex items-center justify-between pt-2.5 mt-1 border-t border-zinc-800/40 text-xs text-zinc-400">
+                  <div className="flex items-center gap-1 sm:gap-2">
                     {/* Comment */}
                     <button
                       type="button"
@@ -929,47 +929,67 @@ export const FeedView: React.FC<FeedViewProps> = ({
                           activeCommentPostId === post.id ? null : post.id
                         )
                       }
-                      className={`flex items-center gap-1.5 hover:text-blue-400 transition-colors cursor-pointer ${
-                        activeCommentPostId === post.id ? 'text-blue-400' : ''
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+                        activeCommentPostId === post.id
+                          ? 'text-blue-400 bg-blue-500/10 font-semibold'
+                          : 'text-zinc-400 hover:text-blue-400 hover:bg-zinc-800/40'
                       }`}
+                      title={language === 'tr' ? 'Yorumlar' : 'Comments'}
                     >
                       <MessageSquare className="w-4 h-4" />
-                      <span className="font-mono text-[11px]">{commentsCount}</span>
+                      <span className="font-mono text-xs">{commentsCount}</span>
                     </button>
 
                     {/* Repost */}
                     <button
                       type="button"
                       onClick={() => onRepostPost(post.id)}
-                      className={`flex items-center gap-1.5 hover:text-emerald-400 transition-colors cursor-pointer ${
-                        isReposted ? 'text-emerald-400 font-bold' : ''
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+                        isReposted
+                          ? 'text-emerald-400 bg-emerald-500/10 font-bold'
+                          : 'text-zinc-400 hover:text-emerald-400 hover:bg-zinc-800/40'
                       }`}
+                      title={language === 'tr' ? 'Yeniden Paylaş' : 'Repost'}
                     >
                       <Repeat className="w-4 h-4" />
-                      <span className="font-mono text-[11px]">{repostsCount}</span>
+                      <span className="font-mono text-xs">{repostsCount}</span>
                     </button>
 
                     {/* Like */}
                     <button
                       type="button"
                       onClick={() => onLikePost(post.id)}
-                      className={`flex items-center gap-1.5 hover:text-red-400 transition-colors cursor-pointer ${
-                        isLiked ? 'text-red-500 font-bold' : ''
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+                        isLiked
+                          ? 'text-red-500 bg-red-500/10 font-bold'
+                          : 'text-zinc-400 hover:text-red-400 hover:bg-zinc-800/40'
                       }`}
+                      title={language === 'tr' ? 'Beğen' : 'Like'}
                     >
-                      <Heart className={`w-4 h-4 ${isLiked ? 'fill-red-500' : ''}`} />
-                      <span className="font-mono text-[11px]">{likesCount}</span>
+                      <Heart className={`w-4 h-4 ${isLiked ? 'fill-red-500 stroke-red-500' : ''}`} />
+                      <span className="font-mono text-xs">{likesCount}</span>
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1">
                     {/* Bookmark */}
                     <button
                       type="button"
                       onClick={() => onBookmarkPost(post.id)}
-                      className={`hover:text-amber-400 transition-colors p-1 rounded-lg cursor-pointer ${
-                        isBookmarked ? 'text-amber-400' : 'text-zinc-500'
+                      className={`p-1.5 rounded-xl transition-all inline-flex items-center justify-center cursor-pointer ${
+                        isBookmarked
+                          ? 'text-amber-400 bg-amber-500/10'
+                          : 'text-zinc-400 hover:text-amber-400 hover:bg-zinc-800/40'
                       }`}
+                      title={
+                        isBookmarked
+                          ? language === 'tr'
+                            ? 'Kaydedildi'
+                            : 'Bookmarked'
+                          : language === 'tr'
+                          ? 'Kaydet'
+                          : 'Save'
+                      }
                     >
                       <Bookmark className={`w-4 h-4 ${isBookmarked ? 'fill-amber-400' : ''}`} />
                     </button>
@@ -978,7 +998,20 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     <button
                       type="button"
                       onClick={() => handleShare(post)}
-                      className="hover:text-white transition-colors p-1 rounded-lg text-zinc-500 cursor-pointer"
+                      className={`p-1.5 rounded-xl transition-all inline-flex items-center justify-center cursor-pointer ${
+                        copiedPostId === post.id
+                          ? 'text-emerald-400 bg-emerald-500/10'
+                          : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+                      }`}
+                      title={
+                        copiedPostId === post.id
+                          ? language === 'tr'
+                            ? 'Bağlantı Kopyalandı'
+                            : 'Link Copied'
+                          : language === 'tr'
+                          ? 'Paylaş'
+                          : 'Share'
+                      }
                     >
                       {copiedPostId === post.id ? (
                         <Check className="w-4 h-4 text-emerald-400" />
