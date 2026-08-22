@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { X, Code, Send, Image as ImageIcon, Video, Trash2, Loader2, Users } from 'lucide-react';
-import { UserProfile, Community } from '../types';
+import { X, Code, Send, Image as ImageIcon, Video, Trash2, Loader2, Users, Tag } from 'lucide-react';
+import { UserProfile, Community, POST_CATEGORIES } from '../types';
 import { validateFileSize, notifyFileSizeExceeded } from '../utils/fileUploadHelper';
 
 interface NewPostModalProps {
@@ -17,7 +17,9 @@ interface NewPostModalProps {
     mediaType?: 'image' | 'video',
     communityId?: string,
     communityName?: string,
-    communityHandle?: string
+    communityHandle?: string,
+    category?: string,
+    categoryName?: string
   ) => Promise<boolean> | boolean | void;
 }
 
@@ -30,6 +32,7 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
   onCreatePost
 }) => {
   const [content, setContent] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('general');
   const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(null);
   const [showCode, setShowCode] = useState(false);
   const [codeTitle, setCodeTitle] = useState('');
@@ -42,7 +45,7 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const MAX_CONTENT_LENGTH = 200;
-  const MAX_CODE_LENGTH = 2000;
+  const MAX_CODE_LENGTH = 5000;
 
   const isContentOver = content.length > MAX_CONTENT_LENGTH;
   const isCodeOver = showCode && codeSnippet.length > MAX_CODE_LENGTH;
@@ -97,6 +100,7 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
     }
 
     const selectedComm = communities.find((c) => c.id === selectedCommunityId);
+    const catObj = POST_CATEGORIES.find((c) => c.id === selectedCategory);
 
     try {
       const res = await onCreatePost(
@@ -107,7 +111,9 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
         mediaType || undefined,
         selectedComm?.id,
         selectedComm?.name,
-        selectedComm?.handle
+        selectedComm?.handle,
+        selectedCategory,
+        catObj ? (language === 'tr' ? catObj.name_tr : catObj.name_en) : 'Genel & Sohbet'
       );
 
       if (res !== false) {
@@ -148,26 +154,48 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Target Community Selection */}
-          <div className="flex items-center justify-between bg-zinc-950/80 border border-zinc-800 rounded-xl px-3 py-2 text-xs">
-            <span className="text-zinc-400 font-mono text-[11px] flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5 text-zinc-300" />
-              <span>{language === 'tr' ? 'Paylaşım Alanı:' : 'Posting Scope:'}</span>
-            </span>
-            <select
-              value={selectedCommunityId || ''}
-              onChange={(e) => setSelectedCommunityId(e.target.value || null)}
-              className="bg-zinc-900 border border-zinc-700/80 text-zinc-200 text-xs rounded-lg px-2.5 py-1 focus:outline-none font-mono cursor-pointer"
-            >
-              <option value="">🌐 {language === 'tr' ? 'Herkese Açık (Genel Feed)' : 'Public Feed'}</option>
-              {communities
-                .filter((c) => c.is_joined)
-                .map((comm) => (
-                  <option key={comm.id} value={comm.id}>
-                    👥 {comm.name} ({comm.handle})
+          {/* Target Category & Community Selection */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {/* Category Selector */}
+            <div className="flex items-center justify-between bg-zinc-950/80 border border-zinc-800 rounded-xl px-3 py-2 text-xs">
+              <span className="text-zinc-400 font-mono text-[11px] flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5 text-blue-400" />
+                <span>{language === 'tr' ? 'Kategori:' : 'Category:'}</span>
+              </span>
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="bg-zinc-900 border border-zinc-700/80 text-zinc-200 text-xs rounded-lg px-2 py-1 focus:outline-none font-mono cursor-pointer max-w-[130px]"
+              >
+                {POST_CATEGORIES.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.icon} {language === 'tr' ? cat.name_tr : cat.name_en}
                   </option>
                 ))}
-            </select>
+              </select>
+            </div>
+
+            {/* Target Community Selection */}
+            <div className="flex items-center justify-between bg-zinc-950/80 border border-zinc-800 rounded-xl px-3 py-2 text-xs">
+              <span className="text-zinc-400 font-mono text-[11px] flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-purple-400" />
+                <span>{language === 'tr' ? 'Alan:' : 'Scope:'}</span>
+              </span>
+              <select
+                value={selectedCommunityId || ''}
+                onChange={(e) => setSelectedCommunityId(e.target.value || null)}
+                className="bg-zinc-900 border border-zinc-700/80 text-zinc-200 text-xs rounded-lg px-2 py-1 focus:outline-none font-mono cursor-pointer max-w-[130px]"
+              >
+                <option value="">🌐 {language === 'tr' ? 'Genel Feed' : 'Public Feed'}</option>
+                {communities
+                  .filter((c) => c.is_joined)
+                  .map((comm) => (
+                    <option key={comm.id} value={comm.id}>
+                      👥 {comm.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
           </div>
 
           <div className="relative">
@@ -263,13 +291,13 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
                     className={`text-[10px] font-mono px-2 py-0.5 rounded-md transition-all shadow-sm ${
                       codeSnippet.length > MAX_CODE_LENGTH
                         ? 'bg-red-500/20 text-red-400 border border-red-500/50 font-bold animate-pulse'
-                        : codeSnippet.length >= 1500
+                        : codeSnippet.length >= 4000
                         ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 font-semibold'
                         : 'bg-zinc-900/80 text-zinc-400 border border-zinc-800'
                     }`}
                     title={
                       codeSnippet.length > MAX_CODE_LENGTH
-                        ? (language === 'tr' ? 'Kod sınırı aşıldı! Maksimum 2000 karakter.' : 'Code limit exceeded! Max 2000 chars.')
+                        ? (language === 'tr' ? 'Kod sınırı aşıldı! Maksimum 5000 karakter.' : 'Code limit exceeded! Max 5000 chars.')
                         : undefined
                     }
                   >

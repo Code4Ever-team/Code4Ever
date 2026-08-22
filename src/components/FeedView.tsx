@@ -1,13 +1,37 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Post, UserProfile, GitHubRepo, Community } from '../types';
+import { Post, UserProfile, GitHubRepo, Community, POST_CATEGORIES, PostCategory } from '../types';
 import { UserBadges } from './UserBadges';
 import { CodeSnippetBlock } from './CodeSnippetBlock';
-import { MessageSquare, Heart, Repeat, Send, Code, Sparkles, Trash2, Bookmark, Share2, Check, GitBranch, ExternalLink, Star, GitFork, Image as ImageIcon, Video, Loader2, Users, Shield, Copy, User, AlertCircle, Rss, Radio, Globe, RefreshCw } from 'lucide-react';
+import {
+  MessageSquare,
+  Heart,
+  Repeat,
+  Send,
+  Code,
+  Sparkles,
+  Trash2,
+  Bookmark,
+  Share2,
+  Check,
+  GitBranch,
+  ExternalLink,
+  Star,
+  GitFork,
+  Image as ImageIcon,
+  Video,
+  Loader2,
+  Users,
+  Shield,
+  Copy,
+  User,
+  AlertCircle,
+  Tag,
+  Filter
+} from 'lucide-react';
 import { getGitHubToken } from '../services/supabaseClient';
 import { validateFileSize, notifyFileSizeExceeded } from '../utils/fileUploadHelper';
 import { formatTimeAgo } from '../utils/timeAgo';
 import { verifyAdminAccess } from '../utils/securityHelper';
-import { RssFeedModal } from './RssFeedModal';
 
 interface FeedViewProps {
   posts: Post[];
@@ -30,7 +54,9 @@ interface FeedViewProps {
     mediaType?: 'image' | 'video',
     communityId?: string,
     communityName?: string,
-    communityHandle?: string
+    communityHandle?: string,
+    category?: string,
+    categoryName?: string
   ) => Promise<boolean> | boolean | void;
   onAddComment: (postId: string, commentText: string) => void;
   onSelectUser: (username: string) => void;
@@ -54,7 +80,10 @@ export const FeedView: React.FC<FeedViewProps> = ({
   onSelectUser
 }) => {
   const [content, setContent] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('general');
+  const [feedCategoryFilter, setFeedCategoryFilter] = useState<string>('all');
   const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(null);
+
   const [showCodeAttach, setShowCodeAttach] = useState(false);
   const [codeTitle, setCodeTitle] = useState('');
   const [codeLang, setCodeLang] = useState('TypeScript');
@@ -76,7 +105,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [postToDelete, setPostToDelete] = useState<Post | null>(null);
 
-  // Right-click context menu state (specifically for nylithra / admins / all users)
+  // Right-click / long-press context menu state
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
     x: number;
@@ -84,24 +113,11 @@ export const FeedView: React.FC<FeedViewProps> = ({
     post: Post | null;
   }>({ visible: false, x: 0, y: 0, post: null });
 
-  // 2-second touch and hold (long-press) on mobile for post context menu
   const touchTimerRef = useRef<NodeJS.Timeout | null>(null);
   const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const [longPressingPostId, setLongPressingPostId] = useState<string | null>(null);
 
-  // Strict Admin access check via verified security helper
   const isNylithra = verifyAdminAccess(user);
-
-  // RSS Feed Modal State
-  const [isRssModalOpen, setIsRssModalOpen] = useState(false);
-  const [rssTagFilter, setRssTagFilter] = useState('');
-  const [rssUserFilter, setRssUserFilter] = useState('');
-  const [rssCopied, setRssCopied] = useState(false);
-  const [rssActiveTab, setRssActiveTab] = useState<'generate' | 'preview' | 'external'>('generate');
-  const [externalRssUrl, setExternalRssUrl] = useState('https://dev.to/feed');
-  const [externalRssItems, setExternalRssItems] = useState<Array<{ title: string; link: string; pubDate?: string; creator?: string; snippet?: string }>>([]);
-  const [loadingExternalRss, setLoadingExternalRss] = useState(false);
-  const [externalRssError, setExternalRssError] = useState<string | null>(null);
 
   useEffect(() => {
     const handleWindowClick = () => {
@@ -149,7 +165,6 @@ export const FeedView: React.FC<FeedViewProps> = ({
       clearTimeout(touchTimerRef.current);
     }
 
-    // 2 seconds held without significant movement activates context menu
     touchTimerRef.current = setTimeout(() => {
       if (touchStartPosRef.current) {
         if (typeof navigator !== 'undefined' && navigator.vibrate) {
@@ -175,7 +190,6 @@ export const FeedView: React.FC<FeedViewProps> = ({
     const touch = e.touches[0];
     const dx = Math.abs(touch.clientX - touchStartPosRef.current.x);
     const dy = Math.abs(touch.clientY - touchStartPosRef.current.y);
-    // If finger moves more than 10px, cancel long-press (user is scrolling)
     if (dx > 10 || dy > 10) {
       if (touchTimerRef.current) {
         clearTimeout(touchTimerRef.current);
@@ -199,7 +213,6 @@ export const FeedView: React.FC<FeedViewProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate size (15MB for normal users, 250MB for Spark supporters)
     const validation = validateFileSize(file, user);
     if (!validation.isValid) {
       notifyFileSizeExceeded(validation);
@@ -250,7 +263,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
   }, [showRepoAttach]);
 
   const MAX_CONTENT_LENGTH = 200;
-  const MAX_CODE_LENGTH = 2000;
+  const MAX_CODE_LENGTH = 5000;
 
   const isContentOver = content.length > MAX_CONTENT_LENGTH;
   const isCodeOver = showCodeAttach && codeSnippet.length > MAX_CODE_LENGTH;
@@ -276,6 +289,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
     }
 
     const selectedComm = communities.find((c) => c.id === selectedCommunityId);
+    const catObj = POST_CATEGORIES.find((c) => c.id === selectedCategory);
 
     try {
       const res = await onCreatePost(
@@ -286,7 +300,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
         mediaType || undefined,
         selectedComm?.id,
         selectedComm?.name,
-        selectedComm?.handle
+        selectedComm?.handle,
+        selectedCategory,
+        catObj ? (language === 'tr' ? catObj.name_tr : catObj.name_en) : 'Genel & Sohbet'
       );
 
       if (res !== false) {
@@ -323,6 +339,23 @@ export const FeedView: React.FC<FeedViewProps> = ({
     }, 2500);
   };
 
+  // Filter posts by category and hashtag
+  const filteredPosts = posts.filter((post) => {
+    if (selectedHashtag) {
+      const tag = selectedHashtag.toLowerCase();
+      const contentHas = (post.content || '').toLowerCase().includes(tag);
+      const snippetHas = (post.code_snippet?.code || '').toLowerCase().includes(tag);
+      if (!contentHas && !snippetHas) return false;
+    }
+
+    if (feedCategoryFilter !== 'all') {
+      const postCat = post.category || 'general';
+      if (postCat !== feedCategoryFilter) return false;
+    }
+
+    return true;
+  });
+
   return (
     <div className="flex-1 min-w-0 w-full border-r border-zinc-800/60 min-h-screen pb-16 bg-[#09090b] relative">
       {toastMessage && (
@@ -332,24 +365,59 @@ export const FeedView: React.FC<FeedViewProps> = ({
         </div>
       )}
 
+      {/* Sticky Header */}
       <div className="sticky top-0 z-20 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800/40 px-5 py-3.5 flex items-center justify-between">
         <h2 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
-          <span>{language === 'tr' ? 'Ana Sayfa' : 'Home'}</span>
+          <span>{language === 'tr' ? 'Akış & Gönderiler' : 'Feed & Posts'}</span>
           <span className="w-2 h-2 rounded-full bg-zinc-400" />
         </h2>
 
-        {/* RSS Feed Trigger Button */}
-        <button
-          type="button"
-          onClick={() => setIsRssModalOpen(true)}
-          title={language === 'tr' ? 'RSS Akışı ve Okuyucu' : 'RSS Feed & Reader'}
-          className="px-3 py-1.5 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 active:scale-95 border border-orange-500/30 text-orange-400 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
-        >
-          <Rss className="w-3.5 h-3.5 text-orange-400" />
-          <span className="hidden sm:inline">RSS {language === 'tr' ? 'Akışı' : 'Feed'}</span>
-        </button>
+        {selectedHashtag && (
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-mono">
+            <span>{selectedHashtag}</span>
+            <button onClick={onClearHashtag} className="hover:text-white font-bold ml-1 cursor-pointer">
+              ✕
+            </button>
+          </div>
+        )}
       </div>
 
+      {/* Category Pills Filter Bar */}
+      <div className="px-4 py-2.5 bg-[#0a0a0c] border-b border-zinc-800/60 overflow-x-auto no-scrollbar flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setFeedCategoryFilter('all')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+            feedCategoryFilter === 'all'
+              ? 'bg-zinc-100 text-zinc-950 shadow-md font-extrabold'
+              : 'bg-zinc-900/80 text-zinc-400 hover:text-white hover:bg-zinc-800 border border-zinc-800/80'
+          }`}
+        >
+          <span>🌟</span>
+          <span>{language === 'tr' ? 'Tüm Akış' : 'All Posts'}</span>
+        </button>
+
+        {POST_CATEGORIES.map((cat) => {
+          const isActive = feedCategoryFilter === cat.id;
+          return (
+            <button
+              key={cat.id}
+              type="button"
+              onClick={() => setFeedCategoryFilter(cat.id)}
+              className={`px-3 py-1.5 rounded-xl text-xs whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer font-medium ${
+                isActive
+                  ? 'bg-zinc-100 text-zinc-950 font-bold shadow-md'
+                  : 'bg-zinc-900/80 text-zinc-400 hover:text-white hover:bg-zinc-800 border border-zinc-800/80'
+              }`}
+            >
+              <span>{cat.icon}</span>
+              <span>{language === 'tr' ? cat.name_tr : cat.name_en}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Post Composer */}
       <div className="p-4 border-b border-zinc-800/60 bg-[#0c0c0e]">
         <form onSubmit={handlePostSubmit} className="space-y-3">
           <div className="flex gap-3">
@@ -359,41 +427,67 @@ export const FeedView: React.FC<FeedViewProps> = ({
               className="w-10 h-10 rounded-full object-cover ring-2 ring-zinc-800 flex-shrink-0 cursor-pointer"
               onClick={() => onSelectUser(user.username)}
             />
-            <div className="flex-1 space-y-2">
-              {/* Target Community Selection for Inline Feed Post */}
-              {communities && communities.filter((c) => c.is_joined).length > 0 && (
-                <div className="flex items-center gap-2 pb-1">
+            <div className="flex-1 space-y-2.5">
+              {/* Category & Community Target Selector Bar */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Category Picker */}
+                <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-1">
+                  <Tag className="w-3.5 h-3.5 text-blue-400" />
+                  <span className="text-[11px] text-zinc-400 font-medium">
+                    {language === 'tr' ? 'Kategori:' : 'Category:'}
+                  </span>
                   <select
-                    value={selectedCommunityId || ''}
-                    onChange={(e) => setSelectedCommunityId(e.target.value || null)}
-                    className="bg-zinc-900 border border-zinc-800 text-zinc-300 text-[11px] rounded-lg px-2.5 py-1 focus:outline-none font-mono cursor-pointer"
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    className="bg-transparent text-white text-xs font-bold focus:outline-none cursor-pointer"
                   >
-                    <option value="">🌐 {language === 'tr' ? 'Herkese Açık (Genel Feed)' : 'Public Feed'}</option>
-                    {communities
-                      .filter((c) => c.is_joined)
-                      .map((comm) => (
-                        <option key={comm.id} value={comm.id}>
-                          👥 {comm.name} ({comm.handle})
-                        </option>
-                      ))}
+                    {POST_CATEGORIES.map((cat) => (
+                      <option key={cat.id} value={cat.id} className="bg-zinc-900 text-white">
+                        {cat.icon} {language === 'tr' ? cat.name_tr : cat.name_en}
+                      </option>
+                    ))}
                   </select>
                 </div>
-              )}
 
+                {/* Community Picker (If joined) */}
+                {communities && communities.filter((c) => c.is_joined).length > 0 && (
+                  <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-1">
+                    <Users className="w-3.5 h-3.5 text-purple-400" />
+                    <select
+                      value={selectedCommunityId || ''}
+                      onChange={(e) => setSelectedCommunityId(e.target.value || null)}
+                      className="bg-transparent text-zinc-300 text-xs focus:outline-none cursor-pointer"
+                    >
+                      <option value="" className="bg-zinc-900 text-zinc-400">
+                        {language === 'tr' ? '🌐 Genel Akış' : '🌐 General Feed'}
+                      </option>
+                      {communities
+                        .filter((c) => c.is_joined)
+                        .map((comm) => (
+                          <option key={comm.id} value={comm.id} className="bg-zinc-900 text-white">
+                            👥 {comm.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Textarea Input */}
               <div className="relative">
                 <textarea
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
                   placeholder={
                     language === 'tr'
-                      ? 'Ne düşünüyorsun? Proje veya kod parçacığı paylaş...'
-                      : 'What are you working on? Share a project or snippet...'
+                      ? 'Ne düşünüyorsun? Proje, soru veya kod parçacığı paylaş...'
+                      : 'What are you working on? Share a project, question or snippet...'
                   }
                   rows={3}
                   className="w-full bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none resize-none pb-7"
                 />
 
-                {/* Right bottom character counter for Feed Text Box */}
+                {/* Character Counter */}
                 <div className="absolute right-1 bottom-1">
                   <span
                     className={`text-[10px] font-mono px-2 py-0.5 rounded-md transition-all shadow-sm ${
@@ -403,17 +497,13 @@ export const FeedView: React.FC<FeedViewProps> = ({
                         ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 font-semibold'
                         : 'bg-zinc-900/80 text-zinc-400 border border-zinc-800'
                     }`}
-                    title={
-                      content.length > MAX_CONTENT_LENGTH
-                        ? (language === 'tr' ? 'Karakter sınırı aşıldı! Maksimum 200 karakter.' : 'Character limit exceeded! Max 200 chars.')
-                        : undefined
-                    }
                   >
                     {content.length}/{MAX_CONTENT_LENGTH}
                   </span>
                 </div>
               </div>
 
+              {/* Media Preview */}
               {mediaUrl && (
                 <div className="relative rounded-2xl overflow-hidden border border-zinc-800 bg-black max-h-56">
                   {mediaType === 'video' ? (
@@ -434,6 +524,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                 </div>
               )}
 
+              {/* Code Snippet Input Box */}
               {showCodeAttach && (
                 <div className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl space-y-2 relative">
                   <div className="flex gap-2">
@@ -468,19 +559,18 @@ export const FeedView: React.FC<FeedViewProps> = ({
                       rows={4}
                       className="w-full bg-zinc-900/90 border border-zinc-800 rounded-lg p-2.5 text-xs text-emerald-400 font-mono focus:outline-none resize-none pb-7"
                     />
-                    {/* Code snippet counter on right bottom */}
                     <div className="absolute right-2 bottom-2">
                       <span
                         className={`text-[10px] font-mono px-2 py-0.5 rounded-md transition-all shadow-sm ${
                           codeSnippet.length > MAX_CODE_LENGTH
                             ? 'bg-red-500/20 text-red-400 border border-red-500/50 font-bold animate-pulse'
-                            : codeSnippet.length >= 1500
+                            : codeSnippet.length >= 4000
                             ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 font-semibold'
                             : 'bg-zinc-900/80 text-zinc-400 border border-zinc-800'
                         }`}
                         title={
                           codeSnippet.length > MAX_CODE_LENGTH
-                            ? (language === 'tr' ? 'Kod sınırı aşıldı! Maksimum 2000 karakter.' : 'Code limit exceeded! Max 2000 chars.')
+                            ? (language === 'tr' ? 'Kod sınırı aşıldı! Maksimum 5000 karakter.' : 'Code limit exceeded! Max 5000 chars.')
                             : undefined
                         }
                       >
@@ -491,6 +581,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                 </div>
               )}
 
+              {/* Repo Selector Box */}
               {showRepoAttach && (
                 <div className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl space-y-2">
                   <span className="text-xs font-bold text-white block">
@@ -531,6 +622,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                 </div>
               )}
 
+              {/* Bottom Buttons Bar */}
               <div className="flex items-center justify-between pt-2 border-t border-zinc-800/40">
                 <div className="flex items-center gap-2">
                   <input
@@ -600,8 +692,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
         </form>
       </div>
 
+      {/* Post List */}
       <div className="divide-y divide-zinc-800/40">
-        {posts.length === 0 ? (
+        {filteredPosts.length === 0 ? (
           <div className="p-12 text-center space-y-3">
             <div className="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-zinc-300">
               <Sparkles className="w-6 h-6 text-white" />
@@ -611,33 +704,52 @@ export const FeedView: React.FC<FeedViewProps> = ({
             </h3>
             <p className="text-xs text-zinc-500 max-w-sm mx-auto">
               {language === 'tr'
-                ? 'İlk gönderiyi paylaşan siz olun!'
-                : 'Be the first to share a post!'}
+                ? 'Bu kategoride veya akışta henüz bir gönderi bulunmuyor.'
+                : 'No posts found in this category or feed.'}
             </p>
           </div>
         ) : (
-          posts.map((post) => {
-            const authorProfile = (user && (post.author.id === user.id || post.author.username?.toLowerCase() === user.username?.toLowerCase()))
-              ? { ...post.author, ...user }
-              : (allUsers.find(u => (u.id && u.id === post.author.id) || (u.username && u.username.toLowerCase() === post.author.username?.toLowerCase())) || post.author);
+          filteredPosts.map((post) => {
+            const authorProfile =
+              user &&
+              (post.author.id === user.id ||
+                post.author.username?.toLowerCase() === user.username?.toLowerCase())
+                ? { ...post.author, ...user }
+                : allUsers.find(
+                    (u) =>
+                      (u.id && u.id === post.author.id) ||
+                      (u.username &&
+                        u.username.toLowerCase() === post.author.username?.toLowerCase())
+                  ) || post.author;
 
             const userKey = (user.username || user.id || '').toLowerCase();
             const isLiked = Boolean(
-              (post.liked_by && post.liked_by.map(k => k.toLowerCase()).includes(userKey)) ||
-              post.is_liked
+              (post.liked_by && post.liked_by.map((k) => k.toLowerCase()).includes(userKey)) ||
+                post.is_liked
             );
             const isReposted = Boolean(
-              (post.reposted_by && post.reposted_by.map(k => k.toLowerCase()).includes(userKey)) ||
-              post.is_reposted
+              (post.reposted_by && post.reposted_by.map((k) => k.toLowerCase()).includes(userKey)) ||
+                post.is_reposted
             );
             const isBookmarked = Boolean(
-              (post.bookmarked_by && post.bookmarked_by.map(k => k.toLowerCase()).includes(userKey)) ||
-              post.is_bookmarked ||
-              user.saved_post_ids?.includes(post.id)
+              (post.bookmarked_by && post.bookmarked_by.map((k) => k.toLowerCase()).includes(userKey)) ||
+                post.is_bookmarked ||
+                user.saved_post_ids?.includes(post.id)
             );
-            const likesCount = (post.liked_by && post.liked_by.length > 0) ? post.liked_by.length : (post.likes_count || 0);
-            const repostsCount = (post.reposted_by && post.reposted_by.length > 0) ? post.reposted_by.length : (post.reposts_count || 0);
-            const commentsCount = (post.comments && post.comments.length > 0) ? post.comments.length : (post.comments_count || 0);
+            const likesCount =
+              post.liked_by && post.liked_by.length > 0 ? post.liked_by.length : post.likes_count || 0;
+            const repostsCount =
+              post.reposted_by && post.reposted_by.length > 0
+                ? post.reposted_by.length
+                : post.reposts_count || 0;
+            const commentsCount =
+              post.comments && post.comments.length > 0 ? post.comments.length : post.comments_count || 0;
+
+            const isPostAuthor =
+              (authorProfile.username || '').toLowerCase() === (user.username || '').toLowerCase();
+            const canDelete = isPostAuthor || isNylithra;
+
+            const postCategoryObj = POST_CATEGORIES.find((c) => c.id === post.category);
 
             return (
               <article
@@ -651,6 +763,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   isNylithra ? 'cursor-context-menu' : ''
                 } ${longPressingPostId === post.id ? 'bg-zinc-900/50 scale-[0.995] transition-transform' : ''}`}
               >
+                {/* Header */}
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <img
@@ -675,9 +788,34 @@ export const FeedView: React.FC<FeedViewProps> = ({
                           @{authorProfile.username}
                         </span>
                         <span className="text-xs text-zinc-600">·</span>
-                        <span className="text-[11px] text-zinc-500 font-mono" title={post.created_at ? new Date(post.created_at).toLocaleString() : ''}>
+                        <span
+                          className="text-[11px] text-zinc-500 font-mono"
+                          title={post.created_at ? new Date(post.created_at).toLocaleString() : ''}
+                        >
                           {formatTimeAgo(post.created_at || post.time_ago, language)}
                         </span>
+
+                        {/* Category Badge */}
+                        {post.category && (
+                          <>
+                            <span className="text-xs text-zinc-600">·</span>
+                            <button
+                              type="button"
+                              onClick={() => setFeedCategoryFilter(post.category!)}
+                              className="px-2 py-0.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-mono flex items-center gap-1 cursor-pointer hover:bg-blue-500/20 transition-colors"
+                            >
+                              <span>{postCategoryObj?.icon || '🏷️'}</span>
+                              <span>
+                                {postCategoryObj
+                                  ? language === 'tr'
+                                    ? postCategoryObj.name_tr
+                                    : postCategoryObj.name_en
+                                  : post.category_name || post.category}
+                              </span>
+                            </button>
+                          </>
+                        )}
+
                         {post.community_name && (
                           <>
                             <span className="text-xs text-zinc-600">·</span>
@@ -694,11 +832,19 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     </div>
                   </div>
 
-                  {(authorProfile.username?.toLowerCase() === user.username?.toLowerCase() || isNylithra) && (
+                  {canDelete && (
                     <button
                       type="button"
                       onClick={() => setPostToDelete(post)}
-                      title={isNylithra && authorProfile.username?.toLowerCase() !== user.username?.toLowerCase() ? (language === 'tr' ? 'Yönetici Olarak Sil' : 'Delete as Admin') : (language === 'tr' ? 'Sil' : 'Delete')}
+                      title={
+                        isNylithra && !isPostAuthor
+                          ? language === 'tr'
+                            ? 'Yönetici Olarak Sil'
+                            : 'Delete as Admin'
+                          : language === 'tr'
+                          ? 'Sil'
+                          : 'Delete'
+                      }
                       className="text-zinc-600 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -706,256 +852,237 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   )}
                 </div>
 
-              {post.content && <p className="text-xs text-zinc-200 leading-relaxed">{post.content}</p>}
+                {/* Content */}
+                {post.content && <p className="text-xs text-zinc-200 leading-relaxed">{post.content}</p>}
 
-              {post.media_url && (
-                <div className="rounded-2xl overflow-hidden border border-zinc-800 bg-black max-h-[480px] flex items-center justify-center">
-                  {post.media_type === 'video' || post.media_url.startsWith('data:video') ? (
-                    <video
-                      src={post.media_url}
-                      controls
-                      playsInline
-                      className="w-full max-h-[480px] object-contain rounded-2xl"
-                    />
-                  ) : (
-                    <img
-                      src={post.media_url}
-                      alt="Post attachment"
-                      className="w-full max-h-[480px] object-cover rounded-2xl"
-                    />
-                  )}
-                </div>
-              )}
-
-              {post.project_card && (
-                <div className="p-3 bg-[#0c0c0e] border border-blue-900/40 rounded-xl space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-xs text-white flex items-center gap-1.5">
-                      <GitBranch className="w-3.5 h-3.5 text-blue-400" />
-                      <span>{post.project_card.title}</span>
-                    </span>
-                    <a
-                      href={`https://github.com/${post.author.username}/${post.project_card.title}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="p-1 text-zinc-400 hover:text-white"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
+                {/* Media */}
+                {post.media_url && (
+                  <div className="rounded-2xl overflow-hidden border border-zinc-800 bg-black max-h-[480px] flex items-center justify-center">
+                    {post.media_type === 'video' || post.media_url.startsWith('data:video') ? (
+                      <video
+                        src={post.media_url}
+                        controls
+                        playsInline
+                        className="w-full max-h-[480px] object-contain rounded-2xl"
+                      />
+                    ) : (
+                      <img
+                        src={post.media_url}
+                        alt="Post attachment"
+                        className="w-full max-h-[480px] object-cover rounded-2xl"
+                      />
+                    )}
                   </div>
-                  {post.project_card.description && (
-                    <p className="text-xs text-zinc-400">{post.project_card.description}</p>
-                  )}
-                  <div className="flex items-center gap-4 text-[10px] font-mono text-zinc-500 pt-1">
-                    <span className="text-blue-400">{post.project_card.language}</span>
-                    <span className="flex items-center gap-1"><Star className="w-3 h-3 text-amber-400" /> {post.project_card.stars}</span>
-                    <span className="flex items-center gap-1"><GitFork className="w-3 h-3" /> {post.project_card.forks}</span>
-                  </div>
-                </div>
-              )}
+                )}
 
-              {post.code_snippet && (
-                <CodeSnippetBlock snippet={post.code_snippet} language={language} />
-              )}
-
-              <div className="flex items-center gap-6 pt-1 text-xs text-zinc-500 font-mono">
-                <button
-                  type="button"
-                  onClick={() => onLikePost(post.id)}
-                  className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
-                    isLiked ? 'text-red-400' : 'hover:text-red-400'
-                  }`}
-                  title={isLiked ? (language === 'tr' ? 'Beğeniyi Kaldır' : 'Unlike') : (language === 'tr' ? 'Beğen' : 'Like')}
-                >
-                  <Heart className={`w-3.5 h-3.5 ${isLiked ? 'fill-current text-red-400' : ''}`} />
-                  <span>{likesCount}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => onRepostPost(post.id)}
-                  className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
-                    isReposted ? 'text-emerald-400' : 'hover:text-emerald-400'
-                  }`}
-                  title={isReposted ? (language === 'tr' ? 'Repostu Kaldır' : 'Undo Repost') : (language === 'tr' ? 'Repostla' : 'Repost')}
-                >
-                  <Repeat className={`w-3.5 h-3.5 ${isReposted ? 'stroke-[2.5px] text-emerald-400' : ''}`} />
-                  <span>{repostsCount}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveCommentPostId(activeCommentPostId === post.id ? null : post.id)}
-                  className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
-                    activeCommentPostId === post.id ? 'text-zinc-200 font-semibold' : 'hover:text-zinc-200'
-                  }`}
-                  title={language === 'tr' ? 'Yorumları Gör ve Yanıtla' : 'Comments'}
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  <span>{commentsCount}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => onBookmarkPost(post.id)}
-                  className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
-                    isBookmarked ? 'text-amber-400' : 'hover:text-amber-400'
-                  }`}
-                  title={isBookmarked ? (language === 'tr' ? 'Yer İşaretlerinden Kaldır' : 'Remove Bookmark') : (language === 'tr' ? 'Yer İşaretlerine Kaydet' : 'Bookmark')}
-                >
-                  <Bookmark className={`w-3.5 h-3.5 ${isBookmarked ? 'fill-current text-amber-400' : ''}`} />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleShare(post)}
-                  className="flex items-center gap-1.5 hover:text-white transition-colors cursor-pointer"
-                  title={language === 'tr' ? 'Bağlantıyı Kopyala' : 'Copy Link'}
-                >
-                  {copiedPostId === post.id ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  ) : (
-                    <Share2 className="w-3.5 h-3.5" />
-                  )}
-                </button>
-              </div>
-
-              {activeCommentPostId === post.id && (
-                <div className="p-3.5 bg-zinc-950/90 border border-zinc-800/80 rounded-2xl space-y-3 mt-2 animate-in fade-in-50 duration-200">
-                  <div className="flex items-center justify-between border-b border-zinc-800/60 pb-2">
-                    <span className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
-                      <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
-                      <span>{language === 'tr' ? 'Yorumlar' : 'Comments'}</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-zinc-800 text-zinc-400 font-mono">
-                        {commentsCount}
+                {/* Project Card */}
+                {post.project_card && (
+                  <div className="p-3 bg-[#0c0c0e] border border-blue-900/40 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-white flex items-center gap-1.5">
+                        <GitBranch className="w-3.5 h-3.5 text-blue-400" />
+                        <span>{post.project_card.title}</span>
                       </span>
-                    </span>
+                      <a
+                        href={`https://github.com/${post.author.username}/${post.project_card.title}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-1 text-zinc-400 hover:text-white"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                    {post.project_card.description && (
+                      <p className="text-xs text-zinc-400">{post.project_card.description}</p>
+                    )}
+                    <div className="flex items-center gap-4 text-[10px] font-mono text-zinc-500 pt-1">
+                      <span className="text-blue-400">{post.project_card.language}</span>
+                      <span className="flex items-center gap-1">
+                        <Star className="w-3 h-3 text-amber-400" />
+                        <span>{post.project_card.stars}</span>
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <GitFork className="w-3 h-3 text-zinc-400" />
+                        <span>{post.project_card.forks}</span>
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Code Snippet */}
+                {post.code_snippet && (
+                  <CodeSnippetBlock
+                    snippet={post.code_snippet}
+                    language={language}
+                    postAuthor={post.author.username}
+                  />
+                )}
+
+                {/* Post Action Buttons */}
+                <div className="flex items-center justify-between pt-2 border-t border-zinc-800/40 text-xs text-zinc-400">
+                  <div className="flex items-center gap-5">
+                    {/* Comment */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setActiveCommentPostId(
+                          activeCommentPostId === post.id ? null : post.id
+                        )
+                      }
+                      className={`flex items-center gap-1.5 hover:text-blue-400 transition-colors cursor-pointer ${
+                        activeCommentPostId === post.id ? 'text-blue-400' : ''
+                      }`}
+                    >
+                      <MessageSquare className="w-4 h-4" />
+                      <span className="font-mono text-[11px]">{commentsCount}</span>
+                    </button>
+
+                    {/* Repost */}
+                    <button
+                      type="button"
+                      onClick={() => onRepostPost(post.id)}
+                      className={`flex items-center gap-1.5 hover:text-emerald-400 transition-colors cursor-pointer ${
+                        isReposted ? 'text-emerald-400 font-bold' : ''
+                      }`}
+                    >
+                      <Repeat className="w-4 h-4" />
+                      <span className="font-mono text-[11px]">{repostsCount}</span>
+                    </button>
+
+                    {/* Like */}
+                    <button
+                      type="button"
+                      onClick={() => onLikePost(post.id)}
+                      className={`flex items-center gap-1.5 hover:text-red-400 transition-colors cursor-pointer ${
+                        isLiked ? 'text-red-500 font-bold' : ''
+                      }`}
+                    >
+                      <Heart className={`w-4 h-4 ${isLiked ? 'fill-red-500' : ''}`} />
+                      <span className="font-mono text-[11px]">{likesCount}</span>
+                    </button>
                   </div>
 
-                  {/* Comments List */}
-                  {post.comments && post.comments.length > 0 ? (
-                    <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
-                      {post.comments.map((comment) => {
-                        const commentAuthor = allUsers.find(
-                          (u) =>
-                            (u.username && u.username.toLowerCase() === comment.author?.username?.toLowerCase()) ||
-                            (u.id && (comment.author as any)?.id === u.id)
-                        ) || comment.author;
+                  <div className="flex items-center gap-3">
+                    {/* Bookmark */}
+                    <button
+                      type="button"
+                      onClick={() => onBookmarkPost(post.id)}
+                      className={`hover:text-amber-400 transition-colors p-1 rounded-lg cursor-pointer ${
+                        isBookmarked ? 'text-amber-400' : 'text-zinc-500'
+                      }`}
+                    >
+                      <Bookmark className={`w-4 h-4 ${isBookmarked ? 'fill-amber-400' : ''}`} />
+                    </button>
 
-                        return (
+                    {/* Share */}
+                    <button
+                      type="button"
+                      onClick={() => handleShare(post)}
+                      className="hover:text-white transition-colors p-1 rounded-lg text-zinc-500 cursor-pointer"
+                    >
+                      {copiedPostId === post.id ? (
+                        <Check className="w-4 h-4 text-emerald-400" />
+                      ) : (
+                        <Share2 className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Comment Section Dropdown */}
+                {activeCommentPostId === post.id && (
+                  <div className="pt-3 border-t border-zinc-800/40 space-y-3">
+                    <form
+                      onSubmit={(e) => handleCommentSubmit(post.id, e)}
+                      className="flex gap-2"
+                    >
+                      <input
+                        type="text"
+                        value={commentText}
+                        onChange={(e) => setCommentText(e.target.value)}
+                        placeholder={
+                          language === 'tr'
+                            ? 'Fikrini veya cevabını yaz...'
+                            : 'Write your thoughts or reply...'
+                        }
+                        className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+                      />
+                      <button
+                        type="submit"
+                        className="px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>{language === 'tr' ? 'Yanıtla' : 'Reply'}</span>
+                      </button>
+                    </form>
+
+                    {post.comments && post.comments.length > 0 && (
+                      <div className="space-y-2 pt-1">
+                        {post.comments.map((comment) => (
                           <div
                             key={comment.id}
-                            className="p-2.5 rounded-xl bg-zinc-900/60 border border-zinc-800/50 space-y-1 hover:border-zinc-700/60 transition-colors"
+                            className="p-2.5 rounded-xl bg-zinc-950/80 border border-zinc-800/80 text-xs space-y-1"
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
-                                <img
-                                  src={commentAuthor.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
-                                  alt={commentAuthor.display_name}
-                                  className="w-5 h-5 rounded-full object-cover ring-1 ring-zinc-800 cursor-pointer"
-                                  onClick={() => onSelectUser(commentAuthor.username)}
-                                />
                                 <span
-                                  onClick={() => onSelectUser(commentAuthor.username)}
-                                  className="text-xs font-bold text-zinc-200 hover:text-blue-400 cursor-pointer transition-colors"
+                                  onClick={() => onSelectUser(comment.author.username)}
+                                  className="font-bold text-white hover:underline cursor-pointer"
                                 >
-                                  {commentAuthor.display_name}
+                                  {comment.author.display_name}
                                 </span>
-                                <UserBadges user={commentAuthor} singleHighestWeightOnly={true} />
-                                <span
-                                  onClick={() => onSelectUser(commentAuthor.username)}
-                                  className="text-[10px] text-zinc-500 font-mono hover:underline cursor-pointer"
-                                >
-                                  @{commentAuthor.username}
+                                <span className="text-zinc-500 font-mono text-[10px]">
+                                  @{comment.author.username}
                                 </span>
                               </div>
-                              <span className="text-[10px] text-zinc-500 font-mono" title={comment.created_at ? new Date(comment.created_at).toLocaleString() : ''}>
-                                {formatTimeAgo(comment.created_at, language)}
+                              <span className="text-zinc-600 font-mono text-[10px]">
+                                {formatTimeAgo(comment.created_at || 'Az önce', language)}
                               </span>
                             </div>
-                            <p className="text-xs text-zinc-300 pl-7 leading-relaxed font-sans select-text">
-                              {comment.content}
-                            </p>
+                            <p className="text-zinc-300 leading-relaxed">{comment.content}</p>
                           </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="py-3 text-center text-zinc-500 text-xs font-mono">
-                      {language === 'tr' ? 'Henüz yorum yapılmamış. İlk yorumu sen yap!' : 'No comments yet. Be the first to reply!'}
-                    </div>
-                  )}
-
-                  {/* Add Comment Input */}
-                  <form onSubmit={(e) => handleCommentSubmit(post.id, e)} className="flex gap-2 pt-1 border-t border-zinc-800/60">
-                    <input
-                      type="text"
-                      value={commentText}
-                      onChange={(e) => setCommentText(e.target.value)}
-                      placeholder={language === 'tr' ? 'Düşüncelerini paylaş...' : 'Write a comment...'}
-                      className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-colors"
-                    />
-                    <button
-                      type="submit"
-                      disabled={!commentText.trim()}
-                      className="px-4 py-2 rounded-xl bg-zinc-100 hover:bg-white disabled:opacity-40 disabled:pointer-events-none text-zinc-950 text-xs font-bold transition-all shadow-md flex items-center gap-1.5 active:scale-95 cursor-pointer"
-                    >
-                      <Send className="w-3 h-3 text-zinc-950" />
-                      <span>{language === 'tr' ? 'Yanıtla' : 'Reply'}</span>
-                    </button>
-                  </form>
-                </div>
-              )}
-            </article>
-          );
-        })
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </article>
+            );
+          })
         )}
       </div>
 
-      {/* Context Menu (Desktop Right-Click + Mobile 2-Second Hold) */}
+      {/* Right-Click / Long-Press Context Menu */}
       {contextMenu.visible && contextMenu.post && (() => {
         const isPostAuthor =
-          (contextMenu.post.author.username?.toLowerCase() === user.username?.toLowerCase()) ||
-          (Boolean(user.id) && contextMenu.post.author.id === user.id);
+          (contextMenu.post.author?.username || '').toLowerCase() === (user.username || '').toLowerCase();
         const canDelete = isPostAuthor || isNylithra;
 
         return (
           <div
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex sm:block items-end sm:items-stretch justify-center select-none p-0 sm:p-0"
-            onClick={() => setContextMenu({ visible: false, x: 0, y: 0, post: null })}
+            className="fixed z-50 animate-in fade-in zoom-in-95 duration-100"
+            style={{
+              left: `${contextMenu.x}px`,
+              top: `${contextMenu.y}px`
+            }}
+            onClick={(e) => e.stopPropagation()}
           >
-            <div
-              style={
-                typeof window !== 'undefined' && window.innerWidth >= 640
-                  ? { top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }
-                  : undefined
-              }
-              className="w-full sm:w-auto sm:fixed z-50 sm:min-w-[240px] rounded-t-3xl sm:rounded-2xl bg-[#121215]/98 border border-zinc-700/80 shadow-2xl backdrop-blur-xl p-4 sm:p-1.5 space-y-1.5 sm:space-y-1 animate-in slide-in-from-bottom-5 sm:zoom-in-95 select-none max-w-lg mx-auto sm:mx-0 pb-8 sm:pb-1.5"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Mobile handle indicator */}
-              <div className="w-10 h-1 bg-zinc-700 rounded-full mx-auto mb-2 sm:hidden" />
-
-              <div className="px-3 py-2 sm:py-1.5 border-b border-zinc-800/80 flex items-center justify-between text-xs sm:text-[11px] font-mono text-zinc-400">
-                <span className="flex items-center gap-1.5 font-bold text-zinc-300">
+            <div className="w-60 bg-[#121215]/95 backdrop-blur-xl border border-zinc-700/80 rounded-2xl shadow-2xl p-1.5 space-y-1">
+              <div className="px-3 py-2 border-b border-zinc-800/60 flex items-center justify-between">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
                   {isNylithra ? (
                     <>
-                      <Shield className="w-3.5 h-3.5 sm:w-3 sm:h-3 text-amber-400" />
-                      <span className="text-amber-400">Yönetici Menüsü</span>
-                    </>
-                  ) : isPostAuthor ? (
-                    <>
-                      <User className="w-3.5 h-3.5 sm:w-3 sm:h-3 text-blue-400" />
-                      <span>Gönderiniz</span>
+                      <Shield className="w-3.5 h-3.5 text-red-400" />
+                      <span className="text-red-400">Admin Menüsü</span>
                     </>
                   ) : (
                     <>
-                      <Code className="w-3.5 h-3.5 sm:w-3 sm:h-3 text-zinc-400" />
+                      <Code className="w-3.5 h-3.5 text-zinc-400" />
                       <span>Gönderi Seçenekleri</span>
                     </>
                   )}
                 </span>
-                <span className="text-[11px] sm:text-[10px] text-zinc-500 font-mono">@{contextMenu.post.author.username}</span>
+                <span className="text-[10px] text-zinc-500 font-mono">@{contextMenu.post.author.username}</span>
               </div>
 
               {/* Profile Button */}
@@ -967,9 +1094,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     setContextMenu({ visible: false, x: 0, y: 0, post: null });
                   }
                 }}
-                className="w-full px-3 py-3 sm:py-2 rounded-xl text-left text-xs font-semibold text-zinc-200 hover:bg-zinc-800/80 active:bg-zinc-800 transition-colors flex items-center gap-3 cursor-pointer"
+                className="w-full px-3 py-2 rounded-xl text-left text-xs font-semibold text-zinc-200 hover:bg-zinc-800/80 transition-colors flex items-center gap-2.5 cursor-pointer"
               >
-                <User className="w-4 h-4 text-blue-400" />
+                <User className="w-3.5 h-3.5 text-blue-400" />
                 <span>{language === 'tr' ? 'Yazar Profilini Aç' : 'View Author Profile'}</span>
               </button>
 
@@ -982,9 +1109,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     setContextMenu({ visible: false, x: 0, y: 0, post: null });
                   }
                 }}
-                className="w-full px-3 py-3 sm:py-2 rounded-xl text-left text-xs font-semibold text-zinc-300 hover:bg-zinc-800/80 active:bg-zinc-800 transition-colors flex items-center gap-3 cursor-pointer"
+                className="w-full px-3 py-2 rounded-xl text-left text-xs font-semibold text-zinc-300 hover:bg-zinc-800/80 transition-colors flex items-center gap-2.5 cursor-pointer"
               >
-                <Copy className="w-4 h-4 text-zinc-400" />
+                <Copy className="w-3.5 h-3.5 text-zinc-400" />
                 <span>{language === 'tr' ? 'Bağlantıyı Kopyala' : 'Copy Post Link'}</span>
               </button>
 
@@ -999,17 +1126,21 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     setContextMenu({ visible: false, x: 0, y: 0, post: null });
                   }
                 }}
-                className="w-full px-3 py-3 sm:py-2 rounded-xl text-left text-xs font-semibold text-zinc-300 hover:bg-zinc-800/80 active:bg-zinc-800 transition-colors flex items-center gap-3 cursor-pointer"
+                className="w-full px-3 py-2 rounded-xl text-left text-xs font-semibold text-zinc-300 hover:bg-zinc-800/80 transition-colors flex items-center gap-2.5 cursor-pointer"
               >
-                <Bookmark className="w-4 h-4 text-amber-400" />
+                <Bookmark className="w-3.5 h-3.5 text-amber-400" />
                 <span>
                   {user.saved_post_ids?.includes(contextMenu.post.id)
-                    ? (language === 'tr' ? 'Yer İşaretlerinden Kaldır' : 'Remove Bookmark')
-                    : (language === 'tr' ? 'Yer İşaretlerine Ekle' : 'Save to Bookmarks')}
+                    ? language === 'tr'
+                      ? 'Yer İşaretlerinden Kaldır'
+                      : 'Remove Bookmark'
+                    : language === 'tr'
+                    ? 'Yer İşaretlerine Ekle'
+                    : 'Save to Bookmarks'}
                 </span>
               </button>
 
-              {/* Delete Button (Only for Author or Admin/Nylithra) */}
+              {/* Delete Button */}
               {canDelete && (
                 <button
                   type="button"
@@ -1020,31 +1151,26 @@ export const FeedView: React.FC<FeedViewProps> = ({
                       setPostToDelete(target);
                     }
                   }}
-                  className="w-full px-3 py-3 sm:py-2 rounded-xl text-left text-xs font-bold text-red-400 hover:bg-red-500/15 active:bg-red-500/20 transition-colors flex items-center gap-3 border-t border-zinc-800/80 mt-1 cursor-pointer"
+                  className="w-full px-3 py-2 rounded-xl text-left text-xs font-bold text-red-400 hover:bg-red-500/15 transition-colors flex items-center gap-2.5 border-t border-zinc-800/80 mt-1 cursor-pointer"
                 >
-                  <Trash2 className="w-4 h-4 text-red-400" />
+                  <Trash2 className="w-3.5 h-3.5 text-red-400" />
                   <span>
                     {isNylithra && !isPostAuthor
-                      ? (language === 'tr' ? 'Bu Gönderiyi Sil (Yönetici)' : 'Delete Post (Admin)')
-                      : (language === 'tr' ? 'Bu Gönderiyi Sil' : 'Delete Post')}
+                      ? language === 'tr'
+                        ? 'Bu Gönderiyi Sil (Yönetici)'
+                        : 'Delete Post (Admin)'
+                      : language === 'tr'
+                      ? 'Bu Gönderiyi Sil'
+                      : 'Delete Post'}
                   </span>
                 </button>
               )}
-
-              {/* Mobile Cancel Button */}
-              <button
-                type="button"
-                onClick={() => setContextMenu({ visible: false, x: 0, y: 0, post: null })}
-                className="w-full sm:hidden mt-2 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs font-semibold text-zinc-400 hover:text-white transition-colors"
-              >
-                {language === 'tr' ? 'Kapat' : 'Close'}
-              </button>
             </div>
           </div>
         );
       })()}
 
-      {/* Custom In-App Delete Confirmation Modal (100% Reliable in all iframes/PWAs) */}
+      {/* Delete Confirmation Modal */}
       {postToDelete && (
         <div
           className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
@@ -1062,9 +1188,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                 <h3 className="text-sm font-bold text-white">
                   {language === 'tr' ? 'Gönderiyi Sil' : 'Delete Post'}
                 </h3>
-                <p className="text-xs text-zinc-400 font-mono">
-                  @{postToDelete.author?.username}
-                </p>
+                <p className="text-xs text-zinc-400 font-mono">@{postToDelete.author?.username}</p>
               </div>
             </div>
 
@@ -1106,14 +1230,6 @@ export const FeedView: React.FC<FeedViewProps> = ({
           </div>
         </div>
       )}
-      {/* RSS Feed & Reader Modal */}
-      <RssFeedModal
-        isOpen={isRssModalOpen}
-        onClose={() => setIsRssModalOpen(false)}
-        language={language}
-        posts={posts}
-        initialTag={selectedHashtag}
-      />
     </div>
   );
 };

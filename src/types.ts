@@ -65,6 +65,7 @@ export interface UserProfile {
   allow_group_invites?: boolean; // Privacy setting: allow group invites
   is_online?: boolean;
   last_seen_at?: string;
+  integrations?: WebhookIntegrationSettings;
 }
 
 export interface GroupMember {
@@ -209,6 +210,8 @@ export interface Post {
   community_id?: string;
   community_name?: string;
   community_handle?: string;
+  category?: string; // e.g. 'general', 'frontend', 'backend', 'ai_ml', 'security', 'mobile', 'devops', 'gamedev', 'qa', 'showcase'
+  category_name?: string;
   comments?: PostComment[];
   comments_count: number;
   reposts_count: number;
@@ -383,3 +386,60 @@ export interface LicenseValidationResult {
   signature: string;
   error?: string;
 }
+
+export interface PostCategory {
+  id: string;
+  name_tr: string;
+  name_en: string;
+  icon: string;
+  color: string;
+  description_tr?: string;
+  description_en?: string;
+}
+
+export const POST_CATEGORIES: PostCategory[] = [
+  { id: 'general', name_tr: 'Genel & Sohbet', name_en: 'General & Chat', icon: 'Globe', color: '#64748b', description_tr: 'Genel geliştirici sohbetleri ve paylaşımlar', description_en: 'General developer discussions' },
+  { id: 'frontend', name_tr: 'Frontend & UI', name_en: 'Frontend & UI', icon: 'Layout', color: '#38bdf8', description_tr: 'React, Vue, Tailwind, CSS ve modern arayüzler', description_en: 'React, Vue, Tailwind, CSS and modern UI' },
+  { id: 'backend', name_tr: 'Backend & API', name_en: 'Backend & API', icon: 'Server', color: '#10b981', description_tr: 'Node.js, Go, Python, PostgreSQL, mikroservisler', description_en: 'Node.js, Go, Python, PostgreSQL, microservices' },
+  { id: 'ai_ml', name_tr: 'Yapay Zeka & ML', name_en: 'AI & Machine Learning', icon: 'Brain', color: '#a855f7', description_tr: 'LLM, Gemini, PyTorch, model geliştirme', description_en: 'LLMs, Gemini, PyTorch, AI agents' },
+  { id: 'security', name_tr: 'Siber Güvenlik', name_en: 'Cyber Security', icon: 'ShieldCheck', color: '#ef4444', description_tr: 'E2EE, sızma testleri, kriptografi, güvenli kodlama', description_en: 'E2EE, pentesting, cryptography, secure code' },
+  { id: 'mobile', name_tr: 'Mobil Geliştirme', name_en: 'Mobile Dev', icon: 'Smartphone', color: '#f59e0b', description_tr: 'React Native, Flutter, Swift, Kotlin', description_en: 'React Native, Flutter, Swift, Kotlin' },
+  { id: 'devops', name_tr: 'DevOps & Cloud', name_en: 'DevOps & Cloud', icon: 'Cloud', color: '#06b6d4', description_tr: 'Docker, Kubernetes, CI/CD, AWS, Cloud Run', description_en: 'Docker, Kubernetes, CI/CD, AWS, Cloud Run' },
+  { id: 'gamedev', name_tr: 'Oyun Geliştirme', name_en: 'Game Dev', icon: 'Gamepad2', color: '#ec4899', description_tr: 'Unity, Unreal, Godot, WebGL, Shader', description_en: 'Unity, Unreal, Godot, WebGL, Shader' },
+  { id: 'qa', name_tr: 'Soru & Cevap', name_en: 'Q&A / Help', icon: 'HelpCircle', color: '#eab308', description_tr: 'Hata çözümleri, teknik sorular ve yardımlaşma', description_en: 'Bug fixes, technical questions and help' },
+  { id: 'showcase', name_tr: 'Proje Vitrini', name_en: 'Project Showcase', icon: 'Sparkles', color: '#6366f1', description_tr: 'Geliştirdiğiniz projeleri ve demoları tanıtın', description_en: 'Showcase your projects, builds and demos' }
+];
+
+export interface WebhookIntegrationSettings {
+  discord: {
+    enabled: boolean;
+    webhook_url: string;
+    bot_name?: string;
+    avatar_url?: string;
+  };
+  jubbio: {
+    enabled: boolean;
+    webhook_url: string;
+    bot_token?: string;
+    guild_id?: string;
+    channel_id?: string;
+  };
+  telegram: {
+    enabled: boolean;
+    bot_token: string;
+    chat_id: string;
+  };
+  message_template: string;
+}
+
+export const DEFAULT_WEBHOOK_TEMPLATE = `📢 **Yeni Ekip / İş İlanı Başvurusu!**
+
+📋 **İlan Adı:** {joblist}
+👥 **Kontenjan:** {quota}
+👤 **Başvuran:** {username}
+
+💬 **Başvuru Açıklaması / Deneyim:**
+> {des}
+
+🔗 İncelemek ve yanıtlamak için Code4Ever platformunu ziyaret edin: https://app.lanux.online/`;
+

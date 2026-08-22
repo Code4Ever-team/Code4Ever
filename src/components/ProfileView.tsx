@@ -948,20 +948,7 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
               {language === 'tr' ? 'Değişiklikleri Kaydet' : 'Save Changes'}
             </button>
           </form>
-        ) : (
-          <div className="bg-[#0c0c0e] border border-zinc-800/40 rounded-xl p-4 space-y-2">
-            <h3 className="text-xs font-bold text-white flex items-center gap-2">
-              <Shield className="w-4 h-4 text-zinc-300" />
-              <span>{language === 'tr' ? 'Hesap Doğrulama' : 'Account Verification'}</span>
-            </h3>
-            <div className="space-y-1.5 text-xs font-mono text-zinc-400">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>GitHub OAuth Linked</span>
-              </div>
-            </div>
-          </div>
-        )}
+        ) : null}
       </div>
 
       {/* Showcase / Pinned Repos Modal */}

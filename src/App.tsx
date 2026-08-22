@@ -572,7 +572,9 @@ export default function App() {
     mediaType?: 'image' | 'video',
     communityId?: string,
     communityName?: string,
-    communityHandle?: string
+    communityHandle?: string,
+    category?: string,
+    categoryName?: string
   ): Promise<boolean> => {
     if (!checkPostRateLimit()) return false;
 
@@ -607,6 +609,8 @@ export default function App() {
       },
       time_ago: 'Az önce',
       content: sanitizedContent,
+      category: category || 'general',
+      category_name: categoryName || 'Genel & Sohbet',
       media_url: sanitizedMediaUrl,
       media_type: mediaType,
       code_snippet: sanitizedSnippet,

@@ -1,10 +1,32 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { User, Globe, LogOut, CheckCircle2, Shield, Save, Sparkles, ChevronRight, ArrowLeft, Upload, AtSign, Smartphone, Download, BellRing, Volume2, Bell, Users, Lock, Key, Eye, EyeOff } from 'lucide-react';
-import { saveCustomSupabaseCredentials } from '../services/supabaseClient';
+import {
+  User,
+  Globe,
+  LogOut,
+  CheckCircle2,
+  Shield,
+  Save,
+  Sparkles,
+  ChevronRight,
+  ArrowLeft,
+  Upload,
+  Smartphone,
+  BellRing,
+  Bell,
+  Users,
+  Bot,
+  Layers,
+  Check
+} from 'lucide-react';
 import { validateFileSize, notifyFileSizeExceeded } from '../utils/fileUploadHelper';
 import { isPWARunningStandalone } from '../utils/pwaHelper';
-import { getNotificationPermission, requestNotificationPermission, sendNativeNotification, playNotificationSound } from '../utils/notificationSound';
+import {
+  getNotificationPermission,
+  requestNotificationPermission,
+  sendNativeNotification
+} from '../utils/notificationSound';
+import { IntegrationsSettings } from './IntegrationsSettings';
 
 interface SettingsViewProps {
   user: UserProfile;
@@ -15,6 +37,8 @@ interface SettingsViewProps {
   onOpenInstallPWA?: () => void;
 }
 
+type SettingsSection = 'overview' | 'profile' | 'integrations' | 'notifications' | 'privacy' | 'preferences';
+
 export const SettingsView: React.FC<SettingsViewProps> = ({
   user,
   language,
@@ -23,7 +47,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onLogout,
   onOpenInstallPWA
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'main' | 'profile'>('main');
+  const [activeSection, setActiveSection] = useState<SettingsSection>('overview');
   const [formData, setFormData] = useState<UserProfile>(user);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
@@ -32,7 +56,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   useEffect(() => {
     setIsStandalone(isPWARunningStandalone());
     setNotifPermission(getNotificationPermission());
-  }, []);
+    setFormData(user);
+  }, [user]);
 
   const handleRequestNotif = async () => {
     const res = await requestNotificationPermission();
@@ -40,9 +65,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     if (res === 'granted') {
       sendNativeNotification({
         title: 'Code4Ever Bildirimleri Aktif! 🔔',
-        body: language === 'tr'
-          ? 'Telefonunuza ve bilgisayarınıza gelen bildirimler artık sesli olarak iletilecektir.'
-          : 'Notifications on your phone and PC are now active with sound.',
+        body:
+          language === 'tr'
+            ? 'Telefonunuza ve bilgisayarınıza gelen bildirimler artık anlık olarak iletilecektir.'
+            : 'Notifications on your phone and PC are now active.',
         playSound: true
       });
     }
@@ -91,10 +117,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanUsername = formData.username
-      .replace(/^@/, '')
-      .toLowerCase()
-      .replace(/[^a-z0-9_]/g, '') || user.username;
+    const cleanUsername =
+      formData.username
+        .replace(/^@/, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9_]/g, '') || user.username;
 
     const updatedProfile = {
       ...formData,
@@ -106,234 +133,180 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setTimeout(() => setSavedSuccess(false), 2000);
   };
 
+  const sectionTitles: Record<SettingsSection, string> = {
+    overview: language === 'tr' ? 'Ayarlar' : 'Settings',
+    profile: language === 'tr' ? 'Profil Bilgilerini Düzenle' : 'Edit Profile Information',
+    integrations: language === 'tr' ? 'Webhook & Entegrasyonlar' : 'Webhook & Integrations',
+    notifications: language === 'tr' ? 'Bildirimler & Ses' : 'Notifications & Sound',
+    privacy: language === 'tr' ? 'Grup & Gizlilik Ayarları' : 'Group & Privacy Settings',
+    preferences: language === 'tr' ? 'Dil & Tercihler' : 'Language & Preferences'
+  };
+
   return (
     <div className="flex-1 min-w-0 w-full border-r border-zinc-800/60 min-h-screen pb-16 bg-[#09090b]">
+      {/* Sticky Header */}
       <div className="sticky top-0 z-20 backdrop-blur-xl bg-[#09090b]/90 border-b border-zinc-800/40 px-5 py-3.5 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {activeSubTab === 'profile' && (
+          {activeSection !== 'overview' && (
             <button
-              onClick={() => setActiveSubTab('main')}
-              className="p-1 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white"
+              onClick={() => setActiveSection('overview')}
+              className="p-1 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white transition-colors cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
           )}
-          <h2 className="text-lg font-bold text-white tracking-tight">
-            {activeSubTab === 'profile'
-              ? (language === 'tr' ? 'Profil Bilgilerini Düzenle' : 'Edit Profile Details')
-              : (language === 'tr' ? 'Ayarlar' : 'Settings')}
+          <h2 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+            <span>{sectionTitles[activeSection]}</span>
+            <span className="w-2 h-2 rounded-full bg-zinc-400" />
           </h2>
         </div>
       </div>
 
-      <div className="p-6 w-full space-y-6">
-        {activeSubTab === 'main' ? (
-          <>
-            <div className="bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-4 space-y-3">
-              <button
-                onClick={() => setActiveSubTab('profile')}
-                className="w-full flex items-center justify-between p-3 rounded-xl bg-zinc-950/80 hover:bg-zinc-900 border border-zinc-800/60 transition-all text-left"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-blue-950/80 text-blue-400 border border-blue-900/40">
-                    <User className="w-4 h-4" />
+      <div className="p-6 w-full max-w-4xl mx-auto space-y-6">
+        {activeSection === 'overview' && (
+          <div className="space-y-4">
+            {/* Quick Profile Overview Card */}
+            <div className="p-5 rounded-2xl bg-gradient-to-r from-zinc-900 to-zinc-950 border border-zinc-800/80 flex items-center justify-between">
+              <div className="flex items-center gap-3.5">
+                <img
+                  src={user.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
+                  alt={user.display_name}
+                  className="w-12 h-12 rounded-full object-cover ring-2 ring-zinc-700"
+                />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-white text-sm">{user.display_name}</span>
+                    {user.isAdmin && (
+                      <span className="px-2 py-0.5 rounded-md bg-red-500/10 border border-red-500/30 text-red-400 font-mono text-[10px] font-bold">
+                        ADMIN
+                      </span>
+                    )}
                   </div>
-                  <div>
-                    <span className="text-xs font-bold text-white block">
-                      {language === 'tr' ? 'Profil Bilgilerini Düzenle' : 'Edit Profile Information'}
-                    </span>
-                    <span className="text-[11px] text-zinc-500 font-mono block">
-                      {language === 'tr' ? 'Ad, fotoğraf, banner ve biyografi ayarları' : 'Name, avatar, banner, and bio settings'}
-                    </span>
-                  </div>
+                  <span className="text-xs text-zinc-400 font-mono">@{user.username}</span>
                 </div>
-                <ChevronRight className="w-4 h-4 text-zinc-500" />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActiveSection('profile')}
+                className="px-3.5 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs font-bold text-white transition-all cursor-pointer"
+              >
+                {language === 'tr' ? 'Profili Düzenle' : 'Edit Profile'}
               </button>
             </div>
 
-            {/* PWA Mobile App Card (Mobile Only) */}
-            {isStandalone ? (
-              <div className="md:hidden bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-2">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800/40 pb-3">
-                  <Smartphone className="w-4 h-4 text-emerald-400" />
-                  <span>{language === 'tr' ? 'Mobil Uygulama (PWA)' : 'Mobile App (PWA)'}</span>
-                </h3>
-                <div className="flex items-center gap-2 text-xs font-mono text-emerald-400">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{language === 'tr' ? 'Uygulama Yüklü & Standalone Modunda Çalışıyor' : 'App Installed & Running in Standalone Mode'}</span>
-                </div>
-              </div>
-            ) : onOpenInstallPWA ? (
-              <div className="md:hidden bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-3">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800/40 pb-3">
-                  <Smartphone className="w-4 h-4 text-zinc-300" />
-                  <span>{language === 'tr' ? 'Mobil Uygulama (PWA)' : 'Mobile App (PWA)'}</span>
-                </h3>
-
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  {language === 'tr'
-                    ? 'Code4Ever uygulamasını telefonunuza doğrudan indirin. Hızlı açılış, tam ekran deneyimi ve çevrimdışı önbellek desteği sağlar.'
-                    : 'Install Code4Ever directly to your smartphone. Enjoy fast startup, full-screen experience and offline cache.'}
-                </p>
-
-                <button
-                  onClick={onOpenInstallPWA}
-                  className="w-full py-3 px-4 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-md cursor-pointer"
-                >
-                  <Smartphone className="w-4 h-4 text-zinc-950 stroke-[2.5px]" />
-                  <span>{language === 'tr' ? 'Telefona Nasıl İndirilir? (Rehber)' : 'How to Install on Phone (Guide)'}</span>
-                </button>
-              </div>
-            ) : null}
-
-            {/* Notification & Sound Settings Card */}
-            <div className="bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-4">
-              <div className="flex items-center justify-between border-b border-zinc-800/40 pb-3">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <BellRing className="w-4 h-4 text-zinc-300" />
-                  <span>{language === 'tr' ? 'Bildirimler & Ses (Masaüstü & Mobil)' : 'Notifications & Sound (Desktop & Mobile)'}</span>
-                </h3>
-                {notifPermission === 'granted' && (
-                  <span className="text-[11px] font-mono text-emerald-400 font-semibold flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>{language === 'tr' ? 'İzin Verildi' : 'Granted'}</span>
-                  </span>
-                )}
-              </div>
-
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                {language === 'tr'
-                  ? 'Uygulama arka plandayken veya telefonunuz kilitliyken bile WhatsApp tarzı bildirim sesi ve masaüstü/telefon bildirimleri alırsınız.'
-                  : 'Receive WhatsApp-style notification chimes and system notifications on your phone and PC when the app is in the background.'}
-              </p>
-
-              <div className="flex flex-col sm:flex-row items-center gap-2.5">
-                {notifPermission !== 'granted' ? (
-                  <button
-                    type="button"
-                    onClick={handleRequestNotif}
-                    className="w-full py-2.5 px-4 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-md cursor-pointer"
-                  >
-                    <Bell className="w-4 h-4 text-zinc-950 fill-zinc-950" />
-                    <span>{language === 'tr' ? 'Sistem Bildirimlerine İzin Ver' : 'Enable System Notifications'}</span>
-                  </button>
-                ) : (
-                  <div className="w-full py-2.5 px-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-semibold text-xs flex items-center justify-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    <span>{language === 'tr' ? 'Sistem ve Sesli Bildirimler Etkin' : 'System and Sound Notifications Enabled'}</span>
+            {/* Navigation Grid / List */}
+            <div className="grid grid-cols-1 gap-2.5">
+              {/* 1. Integrations */}
+              <button
+                type="button"
+                onClick={() => setActiveSection('integrations')}
+                className="w-full flex items-center justify-between p-4 rounded-2xl bg-[#0c0c0e] hover:bg-zinc-900/60 border border-zinc-800/80 transition-all text-left group cursor-pointer"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="p-2.5 rounded-xl bg-blue-950/60 text-blue-400 border border-blue-900/40 group-hover:scale-105 transition-transform">
+                    <Bot className="w-5 h-5" />
                   </div>
-                )}
-              </div>
-            </div>
-
-            <div className="bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800/40 pb-3">
-                <Globe className="w-4 h-4 text-zinc-300" />
-                <span>{language === 'tr' ? 'Dil Tercihi' : 'Language Preference'}</span>
-              </h3>
-
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => onChangeLanguage('tr')}
-                  className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${
-                    language === 'tr'
-                      ? 'bg-zinc-800 border-zinc-600 text-white font-bold'
-                      : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  <span>Türkçe (TR)</span>
-                  {language === 'tr' && <Sparkles className="w-3.5 h-3.5 text-zinc-300" />}
-                </button>
-
-                <button
-                  onClick={() => onChangeLanguage('en')}
-                  className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${
-                    language === 'en'
-                      ? 'bg-zinc-800 border-zinc-600 text-white font-bold'
-                      : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  <span>English (US)</span>
-                  {language === 'en' && <Sparkles className="w-3.5 h-3.5 text-zinc-300" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Group Privacy Settings */}
-            <div className="bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800/40 pb-3">
-                <Users className="w-4 h-4 text-purple-400" />
-                <span>{language === 'tr' ? 'Grup Davetleri & Gizlilik' : 'Group Invites & Privacy'}</span>
-              </h3>
-
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                {language === 'tr'
-                  ? 'Diğer geliştiricilerin sizi gruplara eklemesini veya davet göndermesini buradan kontrol edebilirsiniz.'
-                  : 'Control whether other developers can invite or add you to chat groups.'}
-              </p>
-
-              <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-950 border border-zinc-800/80">
-                <div className="space-y-0.5">
-                  <p className="text-xs font-bold text-white">
-                    {language === 'tr' ? 'Grup Davetlerine İzin Ver' : 'Allow Group Invites'}
-                  </p>
-                  <p className="text-[11px] text-zinc-500 font-mono">
-                    {formData.allow_group_invites !== false
-                      ? language === 'tr'
-                        ? 'Herkes grup daveti gönderebilir'
-                        : 'Anyone can invite you'
-                      : language === 'tr'
-                      ? 'Hiç kimse gruba ekleyemez (Korumalı)'
-                      : 'No one can invite you (Protected)'}
-                  </p>
+                  <div>
+                    <span className="text-xs font-bold text-white block group-hover:text-blue-400 transition-colors">
+                      {language === 'tr' ? 'Ekip İlanı Webhook & Entegrasyonlar' : 'Job Listing Webhook & Integrations'}
+                    </span>
+                    <span className="text-[11px] text-zinc-400 font-mono block">
+                      {language === 'tr'
+                        ? 'Discord, Jubbio ve Telegram bot bildirimleri, şablon ayarları'
+                        : 'Discord, Jubbio and Telegram bot dispatchers & templates'}
+                    </span>
+                  </div>
                 </div>
+                <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    const newVal = formData.allow_group_invites === false ? true : false;
-                    const updated = { ...formData, allow_group_invites: newVal };
-                    setFormData(updated);
-                    onUpdateProfile(updated);
-                  }}
-                  className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
-                    formData.allow_group_invites !== false ? 'bg-purple-600' : 'bg-zinc-800'
-                  }`}
-                >
-                  <span
-                    className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
-                      formData.allow_group_invites !== false ? 'left-7' : 'left-1'
-                    }`}
-                  />
-                </button>
-              </div>
+              {/* 2. Notifications & Sound */}
+              <button
+                type="button"
+                onClick={() => setActiveSection('notifications')}
+                className="w-full flex items-center justify-between p-4 rounded-2xl bg-[#0c0c0e] hover:bg-zinc-900/60 border border-zinc-800/80 transition-all text-left group cursor-pointer"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="p-2.5 rounded-xl bg-amber-950/60 text-amber-400 border border-amber-900/40 group-hover:scale-105 transition-transform">
+                    <BellRing className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-white block group-hover:text-amber-400 transition-colors">
+                      {language === 'tr' ? 'Bildirimler & Ses' : 'Notifications & Audio'}
+                    </span>
+                    <span className="text-[11px] text-zinc-400 font-mono block">
+                      {language === 'tr'
+                        ? 'Masaüstü ve mobil bildirim izinleri, ses efektleri'
+                        : 'Desktop/mobile push notification permissions and chime'}
+                    </span>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
+              </button>
+
+              {/* 4. Privacy & Group Invites */}
+              <button
+                type="button"
+                onClick={() => setActiveSection('privacy')}
+                className="w-full flex items-center justify-between p-4 rounded-2xl bg-[#0c0c0e] hover:bg-zinc-900/60 border border-zinc-800/80 transition-all text-left group cursor-pointer"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="p-2.5 rounded-xl bg-purple-950/60 text-purple-400 border border-purple-900/40 group-hover:scale-105 transition-transform">
+                    <Users className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-white block group-hover:text-purple-400 transition-colors">
+                      {language === 'tr' ? 'Grup Davetleri & Gizlilik' : 'Group Invites & Privacy'}
+                    </span>
+                    <span className="text-[11px] text-zinc-400 font-mono block">
+                      {language === 'tr' ? 'Grup daveti alma izinleri ve gizlilik kontrolleri' : 'Group invite permissions and privacy filters'}
+                    </span>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
+              </button>
+
+              {/* 5. Language & Preferences */}
+              <button
+                type="button"
+                onClick={() => setActiveSection('preferences')}
+                className="w-full flex items-center justify-between p-4 rounded-2xl bg-[#0c0c0e] hover:bg-zinc-900/60 border border-zinc-800/80 transition-all text-left group cursor-pointer"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="p-2.5 rounded-xl bg-cyan-950/60 text-cyan-400 border border-cyan-900/40 group-hover:scale-105 transition-transform">
+                    <Globe className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-white block group-hover:text-cyan-400 transition-colors">
+                      {language === 'tr' ? 'Dil Seçimi (TR / EN)' : 'Language (TR / EN)'}
+                    </span>
+                    <span className="text-[11px] text-zinc-400 font-mono block">
+                      {language === 'tr' ? 'Arayüz dili ayarları' : 'Interface language preferences'}
+                    </span>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
+              </button>
             </div>
 
-            <div className="bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800/40 pb-3">
-                <Shield className="w-4 h-4 text-emerald-400" />
-                <span>{language === 'tr' ? 'Oturum & Güvenlik' : 'Session & Security'}</span>
-              </h3>
-
-              <div className="text-xs font-mono text-zinc-400 space-y-1.5">
-                <div className="flex items-center gap-2 text-emerald-400">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{language === 'tr' ? 'Supabase Oturumu Aktif' : 'Supabase Session Active'}</span>
-                </div>
-              </div>
-
+            {/* Logout Action */}
+            <div className="pt-3">
               <button
                 onClick={onLogout}
-                className="w-full py-2.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-800/50 text-red-300 font-semibold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-3 rounded-2xl bg-red-950/30 hover:bg-red-900/40 border border-red-800/40 text-red-300 font-semibold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
                 <span>{language === 'tr' ? 'Oturumu Kapat' : 'Sign Out'}</span>
               </button>
             </div>
-          </>
-        ) : (
-          <form onSubmit={handleSubmit} className="bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl p-5 space-y-4">
-            <div className="flex items-center justify-between border-b border-zinc-800/40 pb-3">
+          </div>
+        )}
+
+        {/* Profile Edit Section */}
+        {activeSection === 'profile' && (
+          <form onSubmit={handleSubmit} className="bg-[#0c0c0e] border border-zinc-800/80 rounded-2xl p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-zinc-800/60 pb-3">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <User className="w-4 h-4 text-blue-400" />
                 <span>{language === 'tr' ? 'Profil Bilgileri' : 'Profile Information'}</span>
@@ -348,7 +321,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="text-zinc-400 block mb-1 font-medium flex items-center justify-between">
+                <label className="text-zinc-300 block mb-1 font-medium flex items-center justify-between">
                   <span>{language === 'tr' ? 'Kullanıcı Adı (@username)' : 'Username (@username)'}</span>
                   <span className="text-[10px] font-mono text-blue-400">@{formData.username}</span>
                 </label>
@@ -357,14 +330,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <input
                     type="text"
                     value={formData.username}
-                    onChange={(e) => setFormData({ ...formData, username: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        username: e.target.value.toLowerCase().replace(/\s+/g, '_')
+                      })
+                    }
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-7 pr-3 py-2 text-white font-mono focus:outline-none focus:border-blue-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-zinc-400 block mb-1 font-medium">
+                <label className="text-zinc-300 block mb-1 font-medium">
                   {language === 'tr' ? 'Görünen Ad' : 'Display Name'}
                 </label>
                 <input
@@ -376,7 +354,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
 
               <div>
-                <label className="text-zinc-400 block mb-1 font-medium">
+                <label className="text-zinc-300 block mb-1 font-medium">
                   {language === 'tr' ? 'Profil Fotoğrafı' : 'Avatar Image'}
                 </label>
                 <div className="flex gap-2 items-center">
@@ -402,7 +380,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <button
                     type="button"
                     onClick={() => avatarInputRef.current?.click()}
-                    className="px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-mono text-xs flex items-center gap-1.5 flex-shrink-0"
+                    className="px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-mono text-xs flex items-center gap-1.5 flex-shrink-0 cursor-pointer"
                   >
                     <Upload className="w-3.5 h-3.5 text-blue-400" />
                     <span>{language === 'tr' ? 'Yükle' : 'Upload'}</span>
@@ -411,7 +389,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
 
               <div>
-                <label className="text-zinc-400 block mb-1 font-medium">
+                <label className="text-zinc-300 block mb-1 font-medium">
                   {language === 'tr' ? 'Banner Görseli' : 'Banner Image'}
                 </label>
                 <div className="flex gap-2 items-center">
@@ -437,7 +415,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <button
                     type="button"
                     onClick={() => bannerInputRef.current?.click()}
-                    className="px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-mono text-xs flex items-center gap-1.5 flex-shrink-0"
+                    className="px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-mono text-xs flex items-center gap-1.5 flex-shrink-0 cursor-pointer"
                   >
                     <Upload className="w-3.5 h-3.5 text-blue-400" />
                     <span>{language === 'tr' ? 'Yükle' : 'Upload'}</span>
@@ -446,7 +424,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
 
               <div>
-                <label className="text-zinc-400 block mb-1 font-medium">
+                <label className="text-zinc-300 block mb-1 font-medium">
                   {language === 'tr' ? 'Biyografi' : 'Bio'}
                 </label>
                 <textarea
@@ -458,7 +436,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
 
               <div>
-                <label className="text-zinc-400 block mb-1 font-medium">
+                <label className="text-zinc-300 block mb-1 font-medium">
                   {language === 'tr' ? 'Konum' : 'Location'}
                 </label>
                 <input
@@ -477,12 +455,149 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
             <button
               type="submit"
-              className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors flex items-center justify-center gap-2"
+              className="w-full py-2.5 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-bold text-xs transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
             >
               <Save className="w-4 h-4" />
               <span>{language === 'tr' ? 'Değişiklikleri Kaydet' : 'Save Changes'}</span>
             </button>
           </form>
+        )}
+
+        {/* Integrations Section */}
+        {activeSection === 'integrations' && (
+          <IntegrationsSettings language={language} />
+        )}
+
+        {/* Notifications & Sound Section */}
+        {activeSection === 'notifications' && (
+          <div className="bg-[#0c0c0e] border border-zinc-800/80 rounded-2xl p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-zinc-800/60 pb-3">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <BellRing className="w-4 h-4 text-amber-400" />
+                <span>{language === 'tr' ? 'Bildirimler & Ses Ayarları' : 'Notifications & Sound Settings'}</span>
+              </h3>
+              {notifPermission === 'granted' && (
+                <span className="text-[11px] font-mono text-emerald-400 font-semibold flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>{language === 'tr' ? 'İzin Verildi' : 'Granted'}</span>
+                </span>
+              )}
+            </div>
+
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              {language === 'tr'
+                ? 'Uygulama arka plandayken veya telefonunuz kilitliyken bile anlık bildirim sesi ve masaüstü/telefon bildirimleri alırsınız.'
+                : 'Receive notification chimes and system notifications on your phone and PC when the app is in the background.'}
+            </p>
+
+            <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2">
+              {notifPermission !== 'granted' ? (
+                <button
+                  type="button"
+                  onClick={handleRequestNotif}
+                  className="w-full py-2.5 px-4 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-md cursor-pointer"
+                >
+                  <Bell className="w-4 h-4 text-zinc-950 fill-zinc-950" />
+                  <span>{language === 'tr' ? 'Sistem Bildirimlerine İzin Ver' : 'Enable System Notifications'}</span>
+                </button>
+              ) : (
+                <div className="w-full py-2.5 px-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-semibold text-xs flex items-center justify-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>{language === 'tr' ? 'Sistem ve Sesli Bildirimler Etkin' : 'System and Sound Notifications Enabled'}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Privacy & Group Invites Section */}
+        {activeSection === 'privacy' && (
+          <div className="bg-[#0c0c0e] border border-zinc-800/80 rounded-2xl p-5 space-y-4">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800/60 pb-3">
+              <Users className="w-4 h-4 text-purple-400" />
+              <span>{language === 'tr' ? 'Grup Davetleri & Gizlilik' : 'Group Invites & Privacy'}</span>
+            </h3>
+
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              {language === 'tr'
+                ? 'Diğer geliştiricilerin sizi gruplara eklemesini veya davet göndermesini buradan kontrol edebilirsiniz.'
+                : 'Control whether other developers can invite or add you to chat groups.'}
+            </p>
+
+            <div className="flex items-center justify-between p-3.5 rounded-xl bg-zinc-950 border border-zinc-800/80">
+              <div className="space-y-0.5">
+                <p className="text-xs font-bold text-white">
+                  {language === 'tr' ? 'Grup Davetlerine İzin Ver' : 'Allow Group Invites'}
+                </p>
+                <p className="text-[11px] text-zinc-400 font-mono">
+                  {formData.allow_group_invites !== false
+                    ? language === 'tr'
+                      ? 'Herkes grup daveti gönderebilir'
+                      : 'Anyone can invite you'
+                    : language === 'tr'
+                    ? 'Hiç kimse gruba ekleyemez (Korumalı)'
+                    : 'No one can invite you (Protected)'}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const newVal = formData.allow_group_invites === false ? true : false;
+                  const updated = { ...formData, allow_group_invites: newVal };
+                  setFormData(updated);
+                  onUpdateProfile(updated);
+                }}
+                className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
+                  formData.allow_group_invites !== false ? 'bg-purple-600' : 'bg-zinc-800'
+                }`}
+              >
+                <span
+                  className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
+                    formData.allow_group_invites !== false ? 'left-7' : 'left-1'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Language & Preferences Section */}
+        {activeSection === 'preferences' && (
+          <div className="bg-[#0c0c0e] border border-zinc-800/80 rounded-2xl p-5 space-y-4">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800/60 pb-3">
+              <Globe className="w-4 h-4 text-cyan-400" />
+              <span>{language === 'tr' ? 'Dil Tercihi' : 'Language Preference'}</span>
+            </h3>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => onChangeLanguage('tr')}
+                className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${
+                  language === 'tr'
+                    ? 'bg-zinc-800 border-zinc-600 text-white font-bold'
+                    : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
+                }`}
+              >
+                <span>Türkçe (TR)</span>
+                {language === 'tr' && <Check className="w-4 h-4 text-emerald-400" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onChangeLanguage('en')}
+                className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${
+                  language === 'en'
+                    ? 'bg-zinc-800 border-zinc-600 text-white font-bold'
+                    : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
+                }`}
+              >
+                <span>English (US)</span>
+                {language === 'en' && <Check className="w-4 h-4 text-emerald-400" />}
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -30,10 +30,12 @@ import {
   Layers,
   Star,
   Zap,
-  Info
+  Info,
+  Database
 } from 'lucide-react';
 import { DEFAULT_BADGE_DEFINITIONS, DEFAULT_PLATFORM_SETTINGS } from '../services/supabaseClient';
 import { verifyAdminAccess, sanitizeText } from '../utils/securityHelper';
+import { SupabaseDatabaseSettings } from './SupabaseDatabaseSettings';
 
 interface AdminViewProps {
   currentUser: UserProfile;
@@ -80,7 +82,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
     return verifyAdminAccess(currentUser);
   }, [currentUser]);
 
-  const [activeTab, setActiveTab] = useState<'beta' | 'badges' | 'definitions' | 'platform' | 'subscriptions'>('beta');
+  const [activeTab, setActiveTab] = useState<'beta' | 'badges' | 'definitions' | 'platform' | 'subscriptions' | 'database'>('beta');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUserForBadges, setSelectedUserForBadges] = useState<UserProfile | null>(null);
 
@@ -752,6 +754,19 @@ export const AdminView: React.FC<AdminViewProps> = ({
         >
           <Crown className="w-4 h-4 text-amber-400" />
           <span>Abonelik Yönetimi</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('database')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'database'
+              ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+              : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
+          }`}
+        >
+          <Database className="w-4 h-4 text-emerald-400" />
+          <span>Supabase SQL & Tablo Durumu</span>
         </button>
       </div>
 
@@ -1888,6 +1903,13 @@ export const AdminView: React.FC<AdminViewProps> = ({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* TAB: SUPABASE VERİTABANI & SQL SETUP */}
+      {activeTab === 'database' && (
+        <div className="p-6">
+          <SupabaseDatabaseSettings language={language} />
         </div>
       )}
 

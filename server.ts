@@ -63,176 +63,200 @@ app.get('/api/health', (req: Request, res: Response) => {
     platform: 'Code4Ever (C4E)',
     timestamp: new Date().toISOString(),
     e2ee_supported: true,
-    rss_supported: true,
+    webhooks_supported: true,
     rate_limiter: 'sliding_window_active'
   });
 });
 
 // -------------------------------------------------------------
-// RSS FEED ENGINE (XML & JSON)
+// WEBHOOK RELAY ENGINE (DISCORD, JUBBIO, TELEGRAM)
 // -------------------------------------------------------------
 
-function escapeXml(unsafe: string): string {
-  return (unsafe || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+async function sendDiscordWebhook(webhookUrl: string, message: string, botName?: string, avatarUrl?: string) {
+  const payload = {
+    content: message,
+    username: botName || 'Code4Ever Bot',
+    avatar_url: avatarUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200'
+  };
+
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`Discord Webhook hatası (${response.status}): ${text || response.statusText}`);
+  }
+  return true;
 }
 
-app.get(['/api/rss', '/api/rss.xml', '/feed.xml', '/rss.xml'], async (req: Request, res: Response) => {
-  const host = req.get('host') || 'localhost:3000';
-  const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-  const baseUrl = `${protocol}://${host}`;
-  const tagFilter = (req.query.tag as string || '').toLowerCase().trim();
-  const userFilter = (req.query.user as string || '').toLowerCase().trim();
+async function sendJubbioWebhook(config: { webhook_url?: string; bot_token?: string; guild_id?: string; channel_id?: string }, message: string) {
+  // 1. Direct Webhook URL if provided
+  if (config.webhook_url && config.webhook_url.trim().startsWith('http')) {
+    const response = await fetch(config.webhook_url.trim(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: message,
+        name: 'Code4Ever Bot',
+        message: message,
+        platform: 'Code4Ever'
+      })
+    });
 
-  // Curated developer feed items
-  const feedItems = [
-    {
-      id: 'c4e_rss_1',
-      title: 'Code4Ever v2.5 Sürümü Yayında: E2EE Şifreleme ve Gerçek Zamanlı Topluluklar',
-      content: 'Code4Ever üzerinde uçtan uca AES-GCM 256-bit şifreli mesajlaşma, canlı kod paylaşım blokları ve çoklu kullanıcı senkronizasyonu aktif!',
-      code: 'const e2ee = new Code4EverSecurity();\nawait e2ee.init();',
-      language: 'TypeScript',
-      author: 'nylithra',
-      author_name: 'Nylithra (Founder)',
-      category: 'Announcements',
-      date: new Date().toUTCString()
-    },
-    {
-      id: 'c4e_rss_2',
-      title: 'Modern Web Geliştirmede TypeScript & React Performans İpuçları',
-      content: 'React 19 ve modern build araçlarında bellek yönetimi, memoize stratejileri ve CSS utility optimizasyonları.',
-      code: 'const memoizedValue = useMemo(() => computeHeavyTree(data), [data]);',
-      language: 'TypeScript',
-      author: 'code4ever_dev',
-      author_name: 'Code4Ever Developer',
-      category: 'WebDev',
-      date: new Date(Date.now() - 3600000).toUTCString()
-    },
-    {
-      id: 'c4e_rss_3',
-      title: 'Supabase PostgreSQL ile Row Level Security (RLS) Mimarisi',
-      content: 'Veritabanı düzeyinde çok kullanıcılı güvenli CRUD politikaları oluşturma ve yetkisiz erişimlerin önlenmesi rehberi.',
-      code: 'CREATE POLICY "Users delete own posts" ON posts FOR DELETE USING (auth.uid() = author_id);',
-      language: 'SQL',
-      author: 'security_lead',
-      author_name: 'Security Team',
-      category: 'Database',
-      date: new Date(Date.now() - 7200000).toUTCString()
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(`Jubbio Webhook hatası (${response.status}): ${text || response.statusText}`);
     }
-  ];
-
-  let filtered = feedItems;
-  if (tagFilter) {
-    filtered = filtered.filter((item) =>
-      item.content.toLowerCase().includes(tagFilter) ||
-      item.title.toLowerCase().includes(tagFilter) ||
-      item.category.toLowerCase().includes(tagFilter)
-    );
-  }
-  if (userFilter) {
-    filtered = filtered.filter((item) => item.author.toLowerCase() === userFilter);
+    return true;
   }
 
-  const feedTitle = tagFilter
-    ? `Code4Ever Feed - #${escapeXml(tagFilter)}`
-    : userFilter
-    ? `Code4Ever Feed - @${escapeXml(userFilter)}`
-    : 'Code4Ever - Geliştirici Sosyal & Kod Akışı';
+  // 2. Jubbio Bot API endpoint if bot token & channel id provided
+  if (config.bot_token && config.channel_id) {
+    const response = await fetch(`https://jubbio.com/api/v1/channels/${encodeURIComponent(config.channel_id)}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bot ${config.bot_token.trim()}`
+      },
+      body: JSON.stringify({
+        content: message
+      })
+    });
 
-  const xmlItems = filtered
-    .map(
-      (item) => `
-    <item>
-      <title>${escapeXml(item.title)}</title>
-      <link>${baseUrl}/#feed?post=${item.id}</link>
-      <guid isPermaLink="false">${item.id}</guid>
-      <pubDate>${item.date}</pubDate>
-      <dc:creator>${escapeXml(item.author_name)} (@${escapeXml(item.author)})</dc:creator>
-      <category>${escapeXml(item.category)}</category>
-      <description><![CDATA[
-        <p>${escapeXml(item.content)}</p>
-        ${item.code ? `<pre><code>${escapeXml(item.code)}</code></pre>` : ''}
-        <p><small>Code4Ever Platformu üzerinden paylaşıldı</small></p>
-      ]]></description>
-    </item>`
-    )
-    .join('');
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(`Jubbio Bot API hatası (${response.status}): ${text || response.statusText}`);
+    }
+    return true;
+  }
 
-  const rssXml = `<?xml version="1.0" encoding="UTF-8" ?>
-<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/">
-  <channel>
-    <title>${feedTitle}</title>
-    <link>${baseUrl}</link>
-    <description>Code4Ever yazılımcı ve geliştirici topluluğunun en güncel gönderileri, kod parçacıkları ve teknik duyuruları.</description>
-    <language>tr-TR</language>
-    <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
-    <generator>Code4Ever RSS Engine v2.5</generator>
-    <atom:link href="${baseUrl}/api/rss.xml" rel="self" type="application/rss+xml" />
-    ${xmlItems}
-  </channel>
-</rss>`;
+  throw new Error('Jubbio için geçerli bir Webhook URL veya Bot Token + Kanal ID girilmelidir.');
+}
 
-  res.setHeader('Content-Type', 'application/rss+xml; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=60');
-  res.send(rssXml);
-});
+async function sendTelegramWebhook(botToken: string, chatId: string, message: string) {
+  const cleanToken = botToken.trim().replace(/^bot/i, '');
+  const cleanChatId = chatId.trim();
 
-// JSON Feed Specification API
-app.get(['/api/rss/feed', '/api/feed.json'], (req: Request, res: Response) => {
-  const host = req.get('host') || 'localhost:3000';
-  const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-  const baseUrl = `${protocol}://${host}`;
-
-  res.json({
-    version: 'https://jsonfeed.org/version/1.1',
-    title: 'Code4Ever Geliştirici Akışı',
-    home_page_url: baseUrl,
-    feed_url: `${baseUrl}/api/feed.json`,
-    description: 'Code4Ever geliştirici sosyal ağı paylaşımları ve kod parçacıkları',
-    items: [
-      {
-        id: 'c4e_rss_1',
-        title: 'Code4Ever v2.5 Sürümü Yayında',
-        content_text: 'Code4Ever üzerinde E2EE mesajlaşma ve canlı kod paylaşım blokları aktif!',
-        url: `${baseUrl}/#feed`,
-        date_published: new Date().toISOString(),
-        author: { name: 'nylithra' }
-      }
-    ]
+  const url = `https://api.telegram.org/bot${cleanToken}/sendMessage`;
+  
+  // Try Markdown first
+  let response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: cleanChatId,
+      text: message,
+      parse_mode: 'Markdown',
+      disable_web_page_preview: false
+    })
   });
-});
 
-// External RSS Fetcher Proxy (CORS-Free for RSS Reader widget)
-app.get('/api/rss/proxy', rateLimiterMiddleware, async (req: Request, res: Response) => {
-  const targetUrl = req.query.url as string;
-  if (!targetUrl || !targetUrl.startsWith('http')) {
-    res.status(400).json({ error: 'Geçerli bir http/https RSS URL adresi gereklidir.' });
+  // Fallback to plain text if Markdown format fails
+  if (!response.ok) {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: cleanChatId,
+        text: message.replace(/[*_`[\]()]/g, ''),
+        disable_web_page_preview: false
+      })
+    });
+  }
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(`Telegram API hatası (${response.status}): ${data.description || 'Geçersiz Bot Token veya Chat ID'}`);
+  }
+  return true;
+}
+
+// Webhook Test Endpoint
+app.post('/api/integrations/webhook/test', rateLimiterMiddleware, async (req: Request, res: Response) => {
+  const { platform, config, message } = req.body || {};
+
+  if (!platform || !message) {
+    res.status(400).json({ success: false, error: 'Platform ve mesaj parametresi zorunludur.' });
     return;
   }
 
   try {
-    const response = await fetch(targetUrl, {
-      headers: {
-        'User-Agent': 'Code4Ever-RSS-Reader/2.5',
-        'Accept': 'application/rss+xml, application/xml, text/xml, application/atom+xml, text/plain'
+    if (platform === 'discord') {
+      if (!config?.webhook_url || !config.webhook_url.startsWith('http')) {
+        res.status(400).json({ success: false, error: 'Lütfen geçerli bir Discord Webhook URL adresi girin.' });
+        return;
       }
-    });
-
-    if (!response.ok) {
-      res.status(response.status).json({ error: `RSS kaynağına ulaşılamadı (${response.status})` });
+      await sendDiscordWebhook(config.webhook_url, message, config.bot_name, config.avatar_url);
+      res.json({ success: true, platform, message: 'Discord test mesajı başarıyla gönderildi!' });
       return;
     }
 
-    const xmlText = await response.text();
-    res.setHeader('Content-Type', 'text/xml; charset=utf-8');
-    res.send(xmlText);
+    if (platform === 'jubbio') {
+      await sendJubbioWebhook(config || {}, message);
+      res.json({ success: true, platform, message: 'Jubbio test mesajı başarıyla iletildi!' });
+      return;
+    }
+
+    if (platform === 'telegram') {
+      if (!config?.bot_token || !config?.chat_id) {
+        res.status(400).json({ success: false, error: 'Lütfen Telegram Bot Token ve Chat ID bilgilerini eksiksiz girin.' });
+        return;
+      }
+      await sendTelegramWebhook(config.bot_token, config.chat_id, message);
+      res.json({ success: true, platform, message: 'Telegram test bildirimi başarıyla gönderildi!' });
+      return;
+    }
+
+    res.status(400).json({ success: false, error: 'Desteklenmeyen platform tipi: ' + platform });
   } catch (err: any) {
-    res.status(500).json({ error: 'RSS akışı çekilirken bağlantı hatası oluştu: ' + err?.message });
+    res.status(500).json({ success: false, error: err?.message || 'Webhook gönderilirken beklenmeyen bir hata oluştu.' });
   }
+});
+
+// Webhook Bulk Send for Job Applications
+app.post('/api/integrations/webhook/send', rateLimiterMiddleware, async (req: Request, res: Response) => {
+  const { settings, message } = req.body || {};
+  if (!settings || !message) {
+    res.status(400).json({ success: false, error: 'Eksik parametreler.' });
+    return;
+  }
+
+  const results: any[] = [];
+
+  // 1. Discord
+  if (settings.discord?.enabled && settings.discord?.webhook_url) {
+    try {
+      await sendDiscordWebhook(settings.discord.webhook_url, message, settings.discord.bot_name, settings.discord.avatar_url);
+      results.push({ platform: 'discord', success: true });
+    } catch (e: any) {
+      results.push({ platform: 'discord', success: false, error: e?.message });
+    }
+  }
+
+  // 2. Jubbio
+  if (settings.jubbio?.enabled && (settings.jubbio?.webhook_url || (settings.jubbio?.bot_token && settings.jubbio?.channel_id))) {
+    try {
+      await sendJubbioWebhook(settings.jubbio, message);
+      results.push({ platform: 'jubbio', success: true });
+    } catch (e: any) {
+      results.push({ platform: 'jubbio', success: false, error: e?.message });
+    }
+  }
+
+  // 3. Telegram
+  if (settings.telegram?.enabled && settings.telegram?.bot_token && settings.telegram?.chat_id) {
+    try {
+      await sendTelegramWebhook(settings.telegram.bot_token, settings.telegram.chat_id, message);
+      results.push({ platform: 'telegram', success: true });
+    } catch (e: any) {
+      results.push({ platform: 'telegram', success: false, error: e?.message });
+    }
+  }
+
+  res.json({ success: true, results });
 });
 
 // GitHub OAuth URL Endpoint
