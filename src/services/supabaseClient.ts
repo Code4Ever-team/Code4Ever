@@ -41,7 +41,13 @@ export const STORAGE_KEYS = {
   PLATFORM: 'c4e_platform_settings'
 };
 
-export function getActiveSupabaseCredentials(): { url: string; anonKey: string; isCustom: boolean } {
+export function getActiveSupabaseCredentials(): {
+  url: string;
+  anonKey: string;
+  isCustom: boolean;
+  envMismatch?: boolean;
+  warning?: string;
+} {
   let customUrl = '';
   let customKey = '';
   try {
@@ -54,13 +60,21 @@ export function getActiveSupabaseCredentials(): { url: string; anonKey: string; 
   const envUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
   const envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
+  const isCustom = Boolean(customUrl.trim() && customKey.trim());
   const url = customUrl.trim() || envUrl;
   const anonKey = customKey.trim() || envKey;
+
+  const envMismatch = Boolean(isCustom && envUrl && customUrl.trim().replace(/\/+$/, '') !== envUrl.replace(/\/+$/, ''));
+  const warning = envMismatch
+    ? `Dikkat: Tarayıcı yerel hafızasındaki Supabase URL (${customUrl}) ile proje ortam değişkeni (.env: ${envUrl}) farklı projelere işaret ediyor!`
+    : undefined;
 
   return {
     url,
     anonKey,
-    isCustom: Boolean(customUrl.trim() && customKey.trim())
+    isCustom,
+    envMismatch,
+    warning
   };
 }
 
@@ -345,13 +359,36 @@ export async function syncDeletedPostsFromServer(): Promise<Set<string>> {
 
 export function subscribeToPosts(onUpdate: (posts: Post[]) => void): () => void {
   const client = getSupabaseClient();
-  const config = getSupabaseConfig();
 
-  const refreshAndFilter = async (rawPosts: Post[]) => {
+  const refreshAndFilter = async (remotePosts: Post[]) => {
     const deletedIds = await syncDeletedPostsFromServer();
-    const clean = (rawPosts || []).filter(
-      (p) => p && p.id && !(p as any).is_deleted && (p as any).content !== '[DELETED]' && !deletedIds.has(p.id)
+    const localPosts = loadStoredPosts();
+
+    // Map by post ID to deduplicate and preserve non-persisted recent local posts
+    const postsMap = new Map<string, Post>();
+
+    // 1. Load remote posts
+    (remotePosts || []).forEach((p) => {
+      if (p && p.id && !(p as any).is_deleted && (p as any).content !== '[DELETED]' && !deletedIds.has(p.id)) {
+        postsMap.set(p.id, p);
+      }
+    });
+
+    // 2. Preserve any very recently created local posts (< 3 minutes old) not yet indexed in remote
+    const now = Date.now();
+    localPosts.forEach((lp) => {
+      if (lp && lp.id && !postsMap.has(lp.id) && !deletedIds.has(lp.id) && !(lp as any).is_deleted) {
+        const postTime = new Date(lp.created_at || '').getTime();
+        if (!isNaN(postTime) && now - postTime < 3 * 60 * 1000) {
+          postsMap.set(lp.id, lp);
+        }
+      }
+    });
+
+    const clean = Array.from(postsMap.values()).sort(
+      (a, b) => new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime()
     );
+
     saveStoredPosts(clean);
     onUpdate(clean);
   };
@@ -470,7 +507,147 @@ export const ALLOWED_POST_COLUMNS = new Set([
   'created_at'
 ]);
 
-export async function createPostInSupabase(post: Post): Promise<void> {
+/**
+ * Executes a Supabase table mutation with automatic adaptive schema retry.
+ * If PostgREST fails with error 'Could not find the '<column>' column of '<table>' in the schema cache',
+ * it automatically identifies the un-migrated column, strips it from the payload, and retries the mutation.
+ */
+export async function resilientSupabaseUpsert(
+  table: string,
+  payload: Record<string, any>,
+  maxRetries = 4
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  const client = getSupabaseClient();
+  const config = getSupabaseConfig();
+  const currentPayload = { ...payload };
+
+  if (client) {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const { data, error } = await client.from(table).upsert(currentPayload);
+        if (!error) {
+          return { success: true, data };
+        }
+
+        const errMsg = error.message || '';
+        // Check for PGRST204 missing column in schema cache error
+        const missingColMatch = errMsg.match(/Could not find the '([^']+)' column/i);
+        if (missingColMatch && missingColMatch[1] && currentPayload.hasOwnProperty(missingColMatch[1])) {
+          const missingCol = missingColMatch[1];
+          console.warn(`[Supabase Auto-Recovery] Table '${table}' schema cache missing column '${missingCol}'. Stripping and retrying.`);
+          delete currentPayload[missingCol];
+          continue;
+        }
+
+        // Other database error
+        return { success: false, error: errMsg };
+      } catch (err: any) {
+        return { success: false, error: err?.message || String(err) };
+      }
+    }
+  }
+
+  // REST Fallback with sanitized payload
+  if (config.url && config.anonKey) {
+    try {
+      const cleanUrl = config.url.replace(/\/+$/, '');
+      const response = await fetch(`${cleanUrl}/rest/v1/${table}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          Prefer: 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify(currentPayload)
+      });
+
+      if (response.ok) {
+        return { success: true };
+      } else {
+        const errText = await response.text().catch(() => '');
+        // If REST also fails on missing column, retry once stripped
+        const missingColMatch = errText.match(/Could not find the '([^']+)' column/i);
+        if (missingColMatch && missingColMatch[1] && currentPayload.hasOwnProperty(missingColMatch[1])) {
+          delete currentPayload[missingColMatch[1]];
+          const retryRes = await fetch(`${cleanUrl}/rest/v1/${table}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: config.anonKey,
+              Authorization: `Bearer ${config.anonKey}`,
+              Prefer: 'resolution=merge-duplicates'
+            },
+            body: JSON.stringify(currentPayload)
+          });
+          if (retryRes.ok) return { success: true };
+        }
+      }
+    } catch {}
+  }
+
+  return { success: false, error: 'Supabase client and REST fallback failed' };
+}
+
+export async function resilientSupabaseUpdate(
+  table: string,
+  matchColumn: string,
+  matchValue: any,
+  updateData: Record<string, any>,
+  maxRetries = 4
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  const client = getSupabaseClient();
+  const config = getSupabaseConfig();
+  const currentUpdate = { ...updateData };
+
+  if (client) {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const { data, error } = await client.from(table).update(currentUpdate).eq(matchColumn, matchValue);
+        if (!error) {
+          return { success: true, data };
+        }
+
+        const errMsg = error.message || '';
+        const missingColMatch = errMsg.match(/Could not find the '([^']+)' column/i);
+        if (missingColMatch && missingColMatch[1] && currentUpdate.hasOwnProperty(missingColMatch[1])) {
+          const missingCol = missingColMatch[1];
+          console.warn(`[Supabase Auto-Recovery] Table '${table}' schema cache missing column '${missingCol}'. Stripping from update.`);
+          delete currentUpdate[missingCol];
+          if (Object.keys(currentUpdate).length === 0) return { success: true };
+          continue;
+        }
+
+        return { success: false, error: errMsg };
+      } catch (err: any) {
+        return { success: false, error: err?.message || String(err) };
+      }
+    }
+  }
+
+  if (config.url && config.anonKey) {
+    try {
+      const cleanUrl = config.url.replace(/\/+$/, '');
+      const response = await fetch(`${cleanUrl}/rest/v1/${table}?${matchColumn}=eq.${encodeURIComponent(matchValue)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          Prefer: 'return=minimal'
+        },
+        body: JSON.stringify(currentUpdate)
+      });
+      if (response.ok) {
+        return { success: true };
+      }
+    } catch {}
+  }
+
+  return { success: false, error: 'Supabase update failed' };
+}
+
+export async function createPostInSupabase(post: Post): Promise<{ success: boolean; error?: string; post: Post }> {
   const current = loadStoredPosts();
   const updated = [post, ...current.filter((p) => p.id !== post.id)];
   saveStoredPosts(updated);
@@ -512,40 +689,14 @@ export async function createPostInSupabase(post: Post): Promise<void> {
     created_at: post.created_at || new Date().toISOString()
   };
 
-  const client = getSupabaseClient();
-  const config = getSupabaseConfig();
-
-  // 1. Direct Supabase Client Upsert
-  if (client) {
-    try {
-      const { error } = await client.from('posts').upsert(payload);
-      if (error) {
-        console.warn('Supabase post upsert error:', error.message || error);
-      }
-    } catch (err) {
-      console.warn('Supabase post creation exception:', err);
-    }
+  const result = await resilientSupabaseUpsert('posts', payload);
+  if (!result.success && result.error) {
+    console.warn('Supabase post creation notice:', result.error);
   }
-
-  // 2. HTTP REST Fallback (Ensures persistence even if client RLS or token context differs)
-  if (config.url && config.anonKey) {
-    try {
-      const cleanUrl = config.url.replace(/\/+$/, '');
-      fetch(`${cleanUrl}/rest/v1/posts`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: config.anonKey,
-          Authorization: `Bearer ${config.anonKey}`,
-          Prefer: 'resolution=merge-duplicates'
-        },
-        body: JSON.stringify(payload)
-      }).catch((e) => console.warn('Supabase REST post insert warning:', e));
-    } catch {}
-  }
+  return { success: result.success, error: result.error, post };
 }
 
-export async function updatePostInSupabase(postId: string, updateData: Partial<Post>): Promise<void> {
+export async function updatePostInSupabase(postId: string, updateData: Partial<Post>): Promise<{ success: boolean; error?: string }> {
   const current = loadStoredPosts();
   const updated = current.map((p) => (p.id === postId ? { ...p, ...updateData } : p));
   saveStoredPosts(updated);
@@ -566,39 +717,9 @@ export async function updatePostInSupabase(postId: string, updateData: Partial<P
     }
   }
 
-  if (Object.keys(sanitizedUpdate).length === 0) return;
+  if (Object.keys(sanitizedUpdate).length === 0) return { success: true };
 
-  const client = getSupabaseClient();
-  const config = getSupabaseConfig();
-
-  // 1. Direct Supabase Client Update
-  if (client) {
-    try {
-      const { error } = await client.from('posts').update(sanitizedUpdate).eq('id', postId);
-      if (error) {
-        console.warn('Supabase post update error:', error.message || error);
-      }
-    } catch (err) {
-      console.warn('Supabase post update exception:', err);
-    }
-  }
-
-  // 2. HTTP REST Fallback
-  if (config.url && config.anonKey) {
-    try {
-      const cleanUrl = config.url.replace(/\/+$/, '');
-      fetch(`${cleanUrl}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: config.anonKey,
-          Authorization: `Bearer ${config.anonKey}`,
-          Prefer: 'return=minimal'
-        },
-        body: JSON.stringify(sanitizedUpdate)
-      }).catch((e) => console.warn('Supabase REST post update warning:', e));
-    } catch {}
-  }
+  return resilientSupabaseUpdate('posts', 'id', postId, sanitizedUpdate);
 }
 
 export async function deletePostInSupabase(postId: string, requestingUser?: UserProfile): Promise<boolean> {
@@ -1202,7 +1323,7 @@ export const ALLOWED_PROFILE_COLUMNS = new Set([
   'updated_at'
 ]);
 
-export async function updateUserProfileInSupabase(userId: string, updateData: Partial<UserProfile>): Promise<void> {
+export async function updateUserProfileInSupabase(userId: string, updateData: Partial<UserProfile>): Promise<{ success: boolean; error?: string }> {
   const local = loadStoredProfile();
   if (local && (local.id === userId || local.username === (updateData as any).username)) {
     saveStoredProfile({ ...local, ...updateData });
@@ -1226,37 +1347,7 @@ export async function updateUserProfileInSupabase(userId: string, updateData: Pa
     }
   }
 
-  const client = getSupabaseClient();
-  const config = getSupabaseConfig();
-
-  // 1. Direct Supabase Client Update
-  if (client) {
-    try {
-      const { error } = await client.from('profiles').update(sanitizedUpdate).eq('id', userId);
-      if (error) {
-        console.warn('Supabase user profile update error:', error.message || error);
-      }
-    } catch (err) {
-      console.warn('Supabase user profile update exception:', err);
-    }
-  }
-
-  // 2. HTTP REST Fallback
-  if (config.url && config.anonKey) {
-    try {
-      const cleanUrl = config.url.replace(/\/+$/, '');
-      fetch(`${cleanUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: config.anonKey,
-          Authorization: `Bearer ${config.anonKey}`,
-          Prefer: 'return=minimal'
-        },
-        body: JSON.stringify(sanitizedUpdate)
-      }).catch((e) => console.warn('Supabase REST profile update warning:', e));
-    } catch {}
-  }
+  return resilientSupabaseUpdate('profiles', 'id', userId, sanitizedUpdate);
 }
 
 export async function deleteUserFromSupabase(userId: string): Promise<void> {
