@@ -190,6 +190,35 @@ CREATE TABLE IF NOT EXISTS public.group_invites (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 9. System Error Reports Table (Platform & Webhook Hata Raporlama)
+CREATE TABLE IF NOT EXISTS public.system_error_reports (
+  id TEXT PRIMARY KEY,
+  error_type TEXT NOT NULL DEFAULT 'general_issue',
+  location TEXT NOT NULL,
+  description TEXT NOT NULL,
+  logs TEXT,
+  reporter_username TEXT NOT NULL,
+  reporter_display_name TEXT,
+  reporter_avatar TEXT,
+  status TEXT DEFAULT 'pending',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 10. Post Reports Table (Gönderi İhlal, Spam & Reklam Şikayetleri)
+CREATE TABLE IF NOT EXISTS public.post_reports (
+  id TEXT PRIMARY KEY,
+  post_id TEXT NOT NULL,
+  post_author_username TEXT NOT NULL,
+  post_content TEXT NOT NULL,
+  reporter_username TEXT NOT NULL,
+  reporter_display_name TEXT,
+  reason TEXT NOT NULL DEFAULT 'other',
+  reason_label TEXT DEFAULT 'İhlal / Şikayet',
+  details TEXT,
+  status TEXT DEFAULT 'pending',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ================================================================
 -- ROW LEVEL SECURITY (RLS) & FULL PERMISSIONS FOR ALL ROLES
 -- ================================================================
@@ -209,12 +238,14 @@ ALTER TABLE public.posts REPLICA IDENTITY FULL;
 ALTER TABLE public.messages REPLICA IDENTITY FULL;
 ALTER TABLE public.job_listings REPLICA IDENTITY FULL;
 ALTER TABLE public.communities REPLICA IDENTITY FULL;
+ALTER TABLE public.system_error_reports REPLICA IDENTITY FULL;
+ALTER TABLE public.post_reports REPLICA IDENTITY FULL;
 
 -- 3. Enable Realtime Publications
 DO $$
 BEGIN
   BEGIN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.posts, public.messages, public.job_listings, public.communities, public.notifications;
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.posts, public.messages, public.job_listings, public.communities, public.notifications, public.system_error_reports, public.post_reports;
   EXCEPTION WHEN OTHERS THEN
     -- If already added or publication doesn't exist, continue safely
   END;
@@ -229,6 +260,8 @@ ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.groups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.group_invites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.system_error_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.post_reports ENABLE ROW LEVEL SECURITY;
 
 -- Full Access Policies for Public Client Apps (SELECT, INSERT, UPDATE, DELETE)
 DO $$
@@ -268,6 +301,14 @@ BEGIN
   -- Group Invites
   DROP POLICY IF EXISTS "allow_all_group_invites" ON public.group_invites;
   CREATE POLICY "allow_all_group_invites" ON public.group_invites FOR ALL USING (true) WITH CHECK (true);
+
+  -- System Error Reports
+  DROP POLICY IF EXISTS "allow_all_system_error_reports" ON public.system_error_reports;
+  CREATE POLICY "allow_all_system_error_reports" ON public.system_error_reports FOR ALL USING (true) WITH CHECK (true);
+
+  -- Post Reports
+  DROP POLICY IF EXISTS "allow_all_post_reports" ON public.post_reports;
+  CREATE POLICY "allow_all_post_reports" ON public.post_reports FOR ALL USING (true) WITH CHECK (true);
 END $$;
 
 -- Performance Indexes
@@ -277,4 +318,7 @@ CREATE INDEX IF NOT EXISTS idx_posts_is_deleted ON public.posts(is_deleted);
 CREATE INDEX IF NOT EXISTS idx_job_listings_created_at ON public.job_listings(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_profiles_username ON public.profiles(username);
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON public.messages(conversation_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_system_error_reports_created_at ON public.system_error_reports(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_post_reports_created_at ON public.post_reports(created_at DESC);
+
 `;

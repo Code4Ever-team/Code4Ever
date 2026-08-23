@@ -42,6 +42,7 @@ export interface UserProfile {
   bio: string;
   role: string;
   isAdmin?: boolean;
+  is_admin?: boolean;
   website?: string;
   pinned_repos?: GitHubRepo[];
   verified?: boolean;
@@ -443,4 +444,41 @@ export const DEFAULT_WEBHOOK_TEMPLATE = `📢 **Yeni Ekip / İş İlanı Başvur
 > {des}
 
 🔗 İncelemek ve yanıtlamak için Code4Ever platformunu ziyaret edin: https://app.lanux.online/`;
+
+export interface SystemErrorReport {
+  id: string;
+  error_type: 'webhook_failure' | 'api_error' | 'database_error' | 'auth_error' | 'ui_runtime_error' | 'general_issue';
+  location: string;
+  description: string;
+  logs: string;
+  reporter_username: string;
+  reporter_display_name: string;
+  reporter_avatar?: string;
+  status: 'pending' | 'resolved';
+  created_at: string;
+}
+
+export interface PostReport {
+  id: string;
+  post_id: string;
+  post_author_username: string;
+  post_content: string;
+  reporter_username: string;
+  reporter_display_name?: string;
+  reason: 'violation' | 'ad' | 'misleading' | 'spam' | 'hate' | 'privacy' | 'other';
+  reason_label?: string;
+  details?: string;
+  status: 'pending' | 'resolved';
+  created_at: string;
+}
+
+export const INITIAL_CATEGORIES: PostCategory[] = [
+  { id: 'genel', name_tr: 'Genel & Sohbet', name_en: 'General & Chat', icon: 'Globe', color: '#64748b' },
+  { id: 'yazilim', name_tr: 'Yazılım & Kodlama', name_en: 'Software & Code', icon: 'Code', color: '#38bdf8' },
+  { id: 'tasarim', name_tr: 'Tasarım & UI', name_en: 'Design & UI', icon: 'Layout', color: '#ec4899' },
+  { id: 'soru_cevap', name_tr: 'Soru & Cevap', name_en: 'Q&A / Help', icon: 'HelpCircle', color: '#eab308' },
+  { id: 'proje_vitrini', name_tr: 'Proje Vitrini', name_en: 'Project Showcase', icon: 'Sparkles', color: '#8b5cf6' }
+];
+
+
 

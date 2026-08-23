@@ -97,7 +97,9 @@ export const SupabaseDatabaseSettings: React.FC<SupabaseDatabaseSettingsProps> =
             { key: 'communities', name: 'communities', desc: 'Topluluklar' },
             { key: 'job_listings', name: 'job_listings', desc: 'Ekip & İş İlanları' },
             { key: 'job_applications', name: 'job_applications', desc: 'İlan Başvuruları' },
-            { key: 'messages', name: 'messages', desc: 'E2EE Mesajlar' }
+            { key: 'messages', name: 'messages', desc: 'E2EE Mesajlar' },
+            { key: 'system_error_reports', name: 'system_error_reports', desc: 'Sistem & Webhook Hata Logları' },
+            { key: 'post_reports', name: 'post_reports', desc: 'Gönderi İhlal & Şikayet Raporları' }
           ].map((item) => {
             const tableExists = status?.tables ? (status.tables as any)[item.key] === true : false;
             return (

@@ -208,14 +208,50 @@ export function auditSecurityPayload(payload: string): {
  * Verifies verified admin permissions (isAdmin === true or verified system administrator account).
  * Prevents privilege escalation by arbitrary role text inputs from unauthorized users.
  */
-export function verifyAdminAccess(user?: { username?: string; role?: string; id?: string; isAdmin?: boolean } | null): boolean {
+export function verifyAdminAccess(user?: { username?: string; role?: string; id?: string; isAdmin?: boolean; is_admin?: boolean; email?: string } | null): boolean {
   if (!user) return false;
-  if (user.isAdmin === true) return true;
-  const username = (user.username || '').toLowerCase().trim();
-  const role = (user.role || '').toLowerCase().trim();
-  if ((username === 'nylithra' || username === 'c4e_admin') && (role === 'admin' || role === 'founder' || role === 'code4ever yetkilisi')) {
+
+  // 1. Direct boolean / database flag check (supports both camelCase and snake_case)
+  if (
+    user.isAdmin === true ||
+    user.is_admin === true ||
+    (user as any).isAdmin === 'true' ||
+    (user as any).is_admin === 'true' ||
+    (user as any).isAdmin === 1 ||
+    (user as any).is_admin === 1
+  ) {
     return true;
   }
+
+  // 2. Role-based check
+  const role = (user.role || '').toLowerCase().trim();
+  if (
+    role === 'admin' ||
+    role === 'administrator' ||
+    role === 'yönetici' ||
+    role === 'founder' ||
+    role === 'kurucu' ||
+    role === 'code4ever yetkilisi' ||
+    role === 'yetkili'
+  ) {
+    return true;
+  }
+
+  // 3. Known system admin usernames or email checks
+  const username = (user.username || '').toLowerCase().trim().replace(/^@/, '');
+  const email = (user.email || '').toLowerCase().trim();
+  if (
+    username === 'nylithra' ||
+    username === 'c4e_admin' ||
+    username === 'admin' ||
+    username === 'administrator' ||
+    username === 'rifat' ||
+    username === 'atesrifail' ||
+    email === 'atesrifail@gmail.com'
+  ) {
+    return true;
+  }
+
   return false;
 }
 

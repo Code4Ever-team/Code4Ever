@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Post, UserProfile, GitHubRepo, Community, POST_CATEGORIES, PostCategory } from '../types';
+import { Post, UserProfile, GitHubRepo, Community } from '../types';
 import { UserBadges } from './UserBadges';
 import { CodeSnippetBlock } from './CodeSnippetBlock';
+import { ReportPostModal } from './ReportPostModal';
+import { CategorySelector } from './CategorySelector';
+import { getStoredCategories, DynamicCategory } from '../utils/categoryHelper';
 import {
   MessageSquare,
   Heart,
@@ -26,7 +29,9 @@ import {
   User,
   AlertCircle,
   Tag,
-  Filter
+  Filter,
+  Flag,
+  MoreHorizontal
 } from 'lucide-react';
 import { getGitHubToken } from '../services/supabaseClient';
 import { validateFileSize, notifyFileSizeExceeded } from '../utils/fileUploadHelper';
@@ -80,9 +85,15 @@ export const FeedView: React.FC<FeedViewProps> = ({
   onSelectUser
 }) => {
   const [content, setContent] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('general');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('genel');
+  const [selectedCategoryName, setSelectedCategoryName] = useState<string>('Genel & Sohbet');
   const [feedCategoryFilter, setFeedCategoryFilter] = useState<string>('all');
   const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(null);
+  const [dynamicCategories, setDynamicCategories] = useState<DynamicCategory[]>([]);
+
+  useEffect(() => {
+    setDynamicCategories(getStoredCategories());
+  }, []);
 
   const [showCodeAttach, setShowCodeAttach] = useState(false);
   const [codeTitle, setCodeTitle] = useState('');
@@ -104,6 +115,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
   const [copiedPostId, setCopiedPostId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [postToDelete, setPostToDelete] = useState<Post | null>(null);
+  const [postToReport, setPostToReport] = useState<Post | null>(null);
 
   // Right-click / long-press context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -149,7 +161,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
     e.preventDefault();
     e.stopPropagation();
     const menuWidth = 240;
-    const menuHeight = 220;
+    const menuHeight = 240;
     const x = Math.min(e.clientX, window.innerWidth - menuWidth - 16);
     const y = Math.min(e.clientY, window.innerHeight - menuHeight - 16);
     setContextMenu({ visible: true, x, y, post });
@@ -175,14 +187,14 @@ export const FeedView: React.FC<FeedViewProps> = ({
         const posX = touchStartPosRef.current.x;
         const posY = touchStartPosRef.current.y;
         const menuWidth = 240;
-        const menuHeight = 220;
+        const menuHeight = 240;
         const x = Math.min(Math.max(16, posX - 100), window.innerWidth - menuWidth - 16);
         const y = Math.min(Math.max(16, posY - 50), window.innerHeight - menuHeight - 16);
         setContextMenu({ visible: true, x, y, post });
       }
       setLongPressingPostId(null);
       touchTimerRef.current = null;
-    }, 2000);
+    }, 550);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -289,7 +301,6 @@ export const FeedView: React.FC<FeedViewProps> = ({
     }
 
     const selectedComm = communities.find((c) => c.id === selectedCommunityId);
-    const catObj = POST_CATEGORIES.find((c) => c.id === selectedCategory);
 
     try {
       const res = await onCreatePost(
@@ -301,8 +312,8 @@ export const FeedView: React.FC<FeedViewProps> = ({
         selectedComm?.id,
         selectedComm?.name,
         selectedComm?.handle,
-        selectedCategory,
-        catObj ? (language === 'tr' ? catObj.name_tr : catObj.name_en) : 'Genel & Sohbet'
+        selectedCategoryId,
+        selectedCategoryName || selectedCategoryId
       );
 
       if (res !== false) {
@@ -315,6 +326,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
         setMediaUrl(null);
         setMediaType(null);
         setSelectedCommunityId(null);
+        setSelectedCategoryId('genel');
+        setSelectedCategoryName('Genel & Sohbet');
+        setDynamicCategories(getStoredCategories());
       }
     } finally {
       setIsSubmitting(false);
@@ -339,6 +353,24 @@ export const FeedView: React.FC<FeedViewProps> = ({
     }, 2500);
   };
 
+  // Build combined unique categories from stored categories + posts
+  const combinedCategoryList = (() => {
+    const map = new Map<string, { id: string; name: string; icon: string }>();
+    dynamicCategories.forEach((c) => {
+      map.set(c.id, { id: c.id, name: c.name, icon: c.icon || '🏷️' });
+    });
+    posts.forEach((p) => {
+      if (p.category && !map.has(p.category)) {
+        map.set(p.category, {
+          id: p.category,
+          name: p.category_name || p.category,
+          icon: '🏷️'
+        });
+      }
+    });
+    return Array.from(map.values());
+  })();
+
   // Filter posts by category and hashtag
   const filteredPosts = posts.filter((post) => {
     if (selectedHashtag) {
@@ -349,7 +381,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
     }
 
     if (feedCategoryFilter !== 'all') {
-      const postCat = post.category || 'general';
+      const postCat = post.category || 'genel';
       if (postCat !== feedCategoryFilter) return false;
     }
 
@@ -397,7 +429,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
           <span>{language === 'tr' ? 'Tüm Akış' : 'All Posts'}</span>
         </button>
 
-        {POST_CATEGORIES.map((cat) => {
+        {combinedCategoryList.map((cat) => {
           const isActive = feedCategoryFilter === cat.id;
           return (
             <button
@@ -410,8 +442,8 @@ export const FeedView: React.FC<FeedViewProps> = ({
                   : 'bg-zinc-900/80 text-zinc-400 hover:text-white hover:bg-zinc-800 border border-zinc-800/80'
               }`}
             >
-              <span>{cat.icon}</span>
-              <span>{language === 'tr' ? cat.name_tr : cat.name_en}</span>
+              <span>{cat.icon || '🏷️'}</span>
+              <span>{cat.name}</span>
             </button>
           );
         })}
@@ -429,48 +461,43 @@ export const FeedView: React.FC<FeedViewProps> = ({
             />
             <div className="flex-1 space-y-2.5">
               {/* Category & Community Target Selector Bar */}
-              <div className="flex items-center gap-2 flex-wrap">
-                {/* Category Picker */}
-                <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-1">
-                  <Tag className="w-3.5 h-3.5 text-blue-400" />
-                  <span className="text-[11px] text-zinc-400 font-medium">
-                    {language === 'tr' ? 'Kategori:' : 'Category:'}
-                  </span>
-                  <select
-                    value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
-                    className="bg-transparent text-white text-xs font-bold focus:outline-none cursor-pointer"
-                  >
-                    {POST_CATEGORIES.map((cat) => (
-                      <option key={cat.id} value={cat.id} className="bg-zinc-900 text-white">
-                        {cat.icon} {language === 'tr' ? cat.name_tr : cat.name_en}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {/* Dynamic Category Selector */}
+                <CategorySelector
+                  selectedCategoryId={selectedCategoryId}
+                  selectedCategoryName={selectedCategoryName}
+                  onSelectCategory={(id, name) => {
+                    setSelectedCategoryId(id);
+                    setSelectedCategoryName(name);
+                    setDynamicCategories(getStoredCategories());
+                  }}
+                  username={user.username}
+                  language={language}
+                />
 
                 {/* Community Picker (If joined) */}
-                {communities && communities.filter((c) => c.is_joined).length > 0 && (
-                  <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-1">
+                <div className="flex items-center justify-between bg-zinc-950/80 border border-zinc-800 rounded-xl px-3 py-2 text-xs min-h-[38px]">
+                  <span className="text-zinc-400 font-mono text-[11px] flex items-center gap-1.5">
                     <Users className="w-3.5 h-3.5 text-purple-400" />
-                    <select
-                      value={selectedCommunityId || ''}
-                      onChange={(e) => setSelectedCommunityId(e.target.value || null)}
-                      className="bg-transparent text-zinc-300 text-xs focus:outline-none cursor-pointer"
-                    >
-                      <option value="" className="bg-zinc-900 text-zinc-400">
-                        {language === 'tr' ? '🌐 Genel Akış' : '🌐 General Feed'}
-                      </option>
-                      {communities
-                        .filter((c) => c.is_joined)
-                        .map((comm) => (
-                          <option key={comm.id} value={comm.id} className="bg-zinc-900 text-white">
-                            👥 {comm.name}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                )}
+                    <span>{language === 'tr' ? 'Topluluk:' : 'Scope:'}</span>
+                  </span>
+                  <select
+                    value={selectedCommunityId || ''}
+                    onChange={(e) => setSelectedCommunityId(e.target.value || null)}
+                    className="bg-zinc-900 border border-zinc-700/80 text-zinc-200 text-xs rounded-lg px-2 py-1 focus:outline-none font-mono cursor-pointer max-w-[130px]"
+                  >
+                    <option value="" className="bg-zinc-900 text-zinc-400">
+                      {language === 'tr' ? '🌐 Genel Feed' : '🌐 General Feed'}
+                    </option>
+                    {communities
+                      .filter((c) => c.is_joined)
+                      .map((comm) => (
+                        <option key={comm.id} value={comm.id} className="bg-zinc-900 text-white">
+                          👥 {comm.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
               </div>
 
               {/* Textarea Input */}
@@ -749,7 +776,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
               (authorProfile.username || '').toLowerCase() === (user.username || '').toLowerCase();
             const canDelete = isPostAuthor || isNylithra;
 
-            const postCategoryObj = POST_CATEGORIES.find((c) => c.id === post.category);
+            const postCategoryObj = combinedCategoryList.find((c) => c.id === post.category);
 
             return (
               <article
@@ -806,11 +833,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                             >
                               <span>{postCategoryObj?.icon || '🏷️'}</span>
                               <span>
-                                {postCategoryObj
-                                  ? language === 'tr'
-                                    ? postCategoryObj.name_tr
-                                    : postCategoryObj.name_en
-                                  : post.category_name || post.category}
+                                {postCategoryObj?.name || post.category_name || post.category}
                               </span>
                             </button>
                           </>
@@ -832,24 +855,35 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     </div>
                   </div>
 
-                  {canDelete && (
+                  <div className="flex items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => setPostToDelete(post)}
-                      title={
-                        isNylithra && !isPostAuthor
-                          ? language === 'tr'
-                            ? 'Yönetici Olarak Sil'
-                            : 'Delete as Admin'
-                          : language === 'tr'
-                          ? 'Sil'
-                          : 'Delete'
-                      }
-                      className="text-zinc-600 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer"
+                      onClick={() => setPostToReport(post)}
+                      title={language === 'tr' ? 'Gönderiyi Bildir' : 'Report Post'}
+                      className="text-zinc-600 hover:text-amber-400 p-1.5 rounded-lg hover:bg-amber-500/10 transition-colors cursor-pointer"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Flag className="w-3.5 h-3.5" />
                     </button>
-                  )}
+
+                    {canDelete && (
+                      <button
+                        type="button"
+                        onClick={() => setPostToDelete(post)}
+                        title={
+                          isNylithra && !isPostAuthor
+                            ? language === 'tr'
+                              ? 'Yönetici Olarak Sil'
+                              : 'Delete as Admin'
+                            : language === 'tr'
+                            ? 'Sil'
+                            : 'Delete'
+                        }
+                        className="text-zinc-600 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Content */}
@@ -1173,6 +1207,22 @@ export const FeedView: React.FC<FeedViewProps> = ({
                 </span>
               </button>
 
+              {/* Report Post Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (contextMenu.post) {
+                    const target = contextMenu.post;
+                    setContextMenu({ visible: false, x: 0, y: 0, post: null });
+                    setPostToReport(target);
+                  }
+                }}
+                className="w-full px-3 py-2 rounded-xl text-left text-xs font-semibold text-amber-400 hover:bg-amber-500/15 transition-colors flex items-center gap-2.5 cursor-pointer"
+              >
+                <Flag className="w-3.5 h-3.5 text-amber-400" />
+                <span>{language === 'tr' ? 'Gönderiyi Bildir' : 'Report Post'}</span>
+              </button>
+
               {/* Delete Button */}
               {canDelete && (
                 <button
@@ -1202,6 +1252,25 @@ export const FeedView: React.FC<FeedViewProps> = ({
           </div>
         );
       })()}
+
+      {/* Report Post Modal */}
+      {postToReport && (
+        <ReportPostModal
+          isOpen={Boolean(postToReport)}
+          onClose={() => setPostToReport(null)}
+          post={postToReport}
+          currentUser={user}
+          language={language}
+          onSuccess={() => {
+            setToastMessage(
+              language === 'tr'
+                ? 'Şikayetiniz yöneticiye iletildi. Teşekkürler!'
+                : 'Report submitted to admin. Thank you!'
+            );
+            setTimeout(() => setToastMessage(null), 3000);
+          }}
+        />
+      )}
 
       {/* Delete Confirmation Modal */}
       {postToDelete && (

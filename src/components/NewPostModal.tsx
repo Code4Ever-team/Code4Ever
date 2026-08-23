@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { X, Code, Send, Image as ImageIcon, Video, Trash2, Loader2, Users, Tag } from 'lucide-react';
-import { UserProfile, Community, POST_CATEGORIES } from '../types';
+import { X, Code, Send, Image as ImageIcon, Video, Trash2, Loader2, Users } from 'lucide-react';
+import { UserProfile, Community } from '../types';
 import { validateFileSize, notifyFileSizeExceeded } from '../utils/fileUploadHelper';
+import { CategorySelector } from './CategorySelector';
 
 interface NewPostModalProps {
   isOpen: boolean;
@@ -32,7 +33,8 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
   onCreatePost
 }) => {
   const [content, setContent] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('general');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('genel');
+  const [selectedCategoryName, setSelectedCategoryName] = useState<string>('Genel & Sohbet');
   const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(null);
   const [showCode, setShowCode] = useState(false);
   const [codeTitle, setCodeTitle] = useState('');
@@ -100,7 +102,6 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
     }
 
     const selectedComm = communities.find((c) => c.id === selectedCommunityId);
-    const catObj = POST_CATEGORIES.find((c) => c.id === selectedCategory);
 
     try {
       const res = await onCreatePost(
@@ -112,8 +113,8 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
         selectedComm?.id,
         selectedComm?.name,
         selectedComm?.handle,
-        selectedCategory,
-        catObj ? (language === 'tr' ? catObj.name_tr : catObj.name_en) : 'Genel & Sohbet'
+        selectedCategoryId,
+        selectedCategoryName || selectedCategoryId
       );
 
       if (res !== false) {
@@ -124,6 +125,8 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
         setMediaUrl(null);
         setMediaType(null);
         setSelectedCommunityId(null);
+        setSelectedCategoryId('genel');
+        setSelectedCategoryName('Genel & Sohbet');
         onClose();
       }
     } finally {
@@ -156,30 +159,23 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Target Category & Community Selection */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {/* Category Selector */}
-            <div className="flex items-center justify-between bg-zinc-950/80 border border-zinc-800 rounded-xl px-3 py-2 text-xs">
-              <span className="text-zinc-400 font-mono text-[11px] flex items-center gap-1.5">
-                <Tag className="w-3.5 h-3.5 text-blue-400" />
-                <span>{language === 'tr' ? 'Kategori:' : 'Category:'}</span>
-              </span>
-              <select
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-                className="bg-zinc-900 border border-zinc-700/80 text-zinc-200 text-xs rounded-lg px-2 py-1 focus:outline-none font-mono cursor-pointer max-w-[130px]"
-              >
-                {POST_CATEGORIES.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.icon} {language === 'tr' ? cat.name_tr : cat.name_en}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {/* Dynamic Searchable Category Selector */}
+            <CategorySelector
+              selectedCategoryId={selectedCategoryId}
+              selectedCategoryName={selectedCategoryName}
+              onSelectCategory={(id, name) => {
+                setSelectedCategoryId(id);
+                setSelectedCategoryName(name);
+              }}
+              username={user.username}
+              language={language}
+            />
 
             {/* Target Community Selection */}
-            <div className="flex items-center justify-between bg-zinc-950/80 border border-zinc-800 rounded-xl px-3 py-2 text-xs">
+            <div className="flex items-center justify-between bg-zinc-950/80 border border-zinc-800 rounded-xl px-3 py-2 text-xs min-h-[38px]">
               <span className="text-zinc-400 font-mono text-[11px] flex items-center gap-1.5">
                 <Users className="w-3.5 h-3.5 text-purple-400" />
-                <span>{language === 'tr' ? 'Alan:' : 'Scope:'}</span>
+                <span>{language === 'tr' ? 'Topluluk:' : 'Community:'}</span>
               </span>
               <select
                 value={selectedCommunityId || ''}

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { WebhookIntegrationSettings, DEFAULT_WEBHOOK_TEMPLATE } from '../types';
+import { WebhookIntegrationSettings, DEFAULT_WEBHOOK_TEMPLATE, UserProfile } from '../types';
 import { loadWebhookSettings, saveWebhookSettings, testWebhook, WebhookSendResult } from '../services/webhookService';
-import { Send, CheckCircle2, AlertCircle, RefreshCw, ExternalLink, Bot, MessageSquare, Shield, HelpCircle, Code2, Copy, Check } from 'lucide-react';
+import { loadStoredProfile, reportSystemErrorInSupabase } from '../services/supabaseClient';
+import { Send, CheckCircle2, AlertCircle, RefreshCw, ExternalLink, Bot, MessageSquare, Shield, HelpCircle, Code2, Copy, Check, Bug, AlertTriangle, FileText } from 'lucide-react';
+import { ReportErrorModal } from './ReportErrorModal';
 
 interface IntegrationsSettingsProps {
   language: 'tr' | 'en';
@@ -14,9 +16,18 @@ export const IntegrationsSettings: React.FC<IntegrationsSettingsProps> = ({ lang
   const [isTesting, setIsTesting] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [copiedVariable, setCopiedVariable] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+
+  // Error Report Modal State
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [reportedSuccess, setReportedSuccess] = useState(false);
+  const [modalLocation, setModalLocation] = useState('');
+  const [modalDescription, setModalDescription] = useState('');
+  const [modalLogs, setModalLogs] = useState('');
 
   useEffect(() => {
     setSettings(loadWebhookSettings());
+    setCurrentUser(loadStoredProfile());
   }, []);
 
   const handleSave = (newSettings?: WebhookIntegrationSettings) => {
@@ -30,6 +41,7 @@ export const IntegrationsSettings: React.FC<IntegrationsSettingsProps> = ({ lang
   const handleRunTest = async (platform: 'discord' | 'jubbio' | 'telegram') => {
     setIsTesting(true);
     setTestResult(null);
+    setReportedSuccess(false);
     try {
       const config = platform === 'discord'
         ? settings.discord
@@ -49,6 +61,59 @@ export const IntegrationsSettings: React.FC<IntegrationsSettingsProps> = ({ lang
       setIsTesting(false);
     }
   };
+
+  const handleQuickReportWebhookError = async () => {
+    if (!testResult) return;
+    const user = currentUser || { username: 'anonim', display_name: 'Geliştirici' };
+    const platformName = activePlatform.toUpperCase();
+    
+    const config = activePlatform === 'discord'
+      ? { ...settings.discord, webhook_url: settings.discord.webhook_url ? '***REDACTED***' + settings.discord.webhook_url.slice(-8) : '' }
+      : activePlatform === 'jubbio'
+      ? { ...settings.jubbio, bot_token: settings.jubbio.bot_token ? '***REDACTED***' : '' }
+      : { ...settings.telegram, bot_token: settings.telegram.bot_token ? '***REDACTED***' : '' };
+
+    const logsJson = JSON.stringify(
+      {
+        platform: activePlatform,
+        testResult,
+        configSummary: config,
+        timestamp: new Date().toISOString(),
+        userAgent: navigator.userAgent
+      },
+      null,
+      2
+    );
+
+    try {
+      await reportSystemErrorInSupabase({
+        error_type: 'webhook_failure',
+        location: `Webhook Entegrasyonu (${platformName})`,
+        description: `Webhook test gönderimi başarısız oldu: ${testResult.message}`,
+        logs: logsJson,
+        reporter_username: user.username || 'anonim',
+        reporter_display_name: user.display_name || 'Kullanıcı',
+        reporter_avatar: user.avatar_url
+      });
+      setReportedSuccess(true);
+      setTimeout(() => setReportedSuccess(false), 4000);
+    } catch (e) {
+      console.error('Hata raporu gönderilirken sorun:', e);
+    }
+  };
+
+  const handleOpenCustomReportModal = () => {
+    const platformName = activePlatform.toUpperCase();
+    setModalLocation(`Webhook Entegrasyon Sayfası (${platformName})`);
+    setModalDescription(testResult ? `Test hatası: ${testResult.message}` : 'Webhook yapılandırma veya iletim sorunu.');
+    setModalLogs(
+      testResult
+        ? JSON.stringify({ platform: activePlatform, testResult, timestamp: new Date().toISOString() }, null, 2)
+        : ''
+    );
+    setIsReportModalOpen(true);
+  };
+
 
   const insertVariable = (varName: string) => {
     setSettings((prev) => ({
@@ -498,24 +563,88 @@ export const IntegrationsSettings: React.FC<IntegrationsSettingsProps> = ({ lang
         {/* Test Result Toast/Banner */}
         {testResult && (
           <div
-            className={`p-3.5 rounded-xl border text-xs font-mono flex items-start gap-2.5 animate-fade-in ${
+            className={`p-4 rounded-xl border text-xs font-mono space-y-3 animate-fade-in ${
               testResult.success
                 ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
                 : 'bg-red-950/40 border-red-500/40 text-red-300'
             }`}
           >
-            {testResult.success ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-            ) : (
-              <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-            )}
-            <div className="flex-1 space-y-1">
-              <div className="font-bold">{testResult.success ? 'Başarılı!' : 'Test Başarısız Oldu'}</div>
-              <p className="text-[11px] leading-relaxed">{testResult.message}</p>
+            <div className="flex items-start gap-2.5">
+              {testResult.success ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+              )}
+              <div className="flex-1 space-y-1">
+                <div className="font-bold flex items-center justify-between">
+                  <span>{testResult.success ? 'Başarılı!' : 'Test Başarısız Oldu / Webhook Hatası'}</span>
+                  <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-black/40 text-zinc-400">
+                    {testResult.platform}
+                  </span>
+                </div>
+                <p className="text-[11px] leading-relaxed">{testResult.message}</p>
+              </div>
             </div>
+
+            {/* Error Report Trigger Button */}
+            {!testResult.success && (
+              <div className="pt-2 border-t border-red-500/20 flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleQuickReportWebhookError}
+                    disabled={reportedSuccess}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold font-sans flex items-center gap-1.5 cursor-pointer transition-all ${
+                      reportedSuccess
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-red-600 hover:bg-red-500 text-white shadow-md shadow-red-600/30'
+                    }`}
+                  >
+                    {reportedSuccess ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{language === 'tr' ? 'Hata Admin Paneline İletildi!' : 'Reported to Admin!'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Bug className="w-3.5 h-3.5" />
+                        <span>{language === 'tr' ? 'Bu Hatayı Admin\'e Bildir' : 'Report this Error to Admin'}</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleOpenCustomReportModal}
+                    className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 text-xs font-sans font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-zinc-400" />
+                    <span>{language === 'tr' ? 'Detaylı Bildir' : 'Detailed Report'}</span>
+                  </button>
+                </div>
+
+                <span className="text-[10px] text-zinc-400 font-mono">
+                  {language === 'tr'
+                    ? 'Hata logu ve istek detayları direkt admin paneline düşer.'
+                    : 'Error logs are sent directly to the admin dashboard.'}
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      <ReportErrorModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        currentUser={currentUser || { id: 'anon', username: 'anonim', display_name: 'Geliştirici', email: '', role: 'user', created_at: '' }}
+        initialErrorType="webhook_failure"
+        initialLocation={modalLocation}
+        initialDescription={modalDescription}
+        initialLogs={modalLogs}
+        language={language}
+      />
+
 
       {/* Webhook Message Template Editor */}
       <div className="bg-[#0c0c0e] border border-zinc-800/80 rounded-2xl p-5 space-y-4">

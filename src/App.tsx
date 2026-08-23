@@ -1103,6 +1103,8 @@ export default function App() {
                 setPlatformSettings(settings);
                 savePlatformSettings(settings);
               }}
+              onDeletePost={handleDeletePost}
+              posts={posts}
             />
           )}
 

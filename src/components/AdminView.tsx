@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { UserProfile, ClosedBetaSettings, BadgeItem, SubscriptionPlan, BadgeDefinition, PlatformSettings } from '../types';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { UserProfile, ClosedBetaSettings, BadgeItem, SubscriptionPlan, BadgeDefinition, PlatformSettings, SystemErrorReport, PostReport, Post } from '../types';
 import { UserBadges } from './UserBadges';
 import {
   Shield,
@@ -31,9 +31,24 @@ import {
   Star,
   Zap,
   Info,
-  Database
+  Database,
+  Bug,
+  Terminal,
+  Copy,
+  ExternalLink,
+  FileText,
+  Flag,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
-import { DEFAULT_BADGE_DEFINITIONS, DEFAULT_PLATFORM_SETTINGS } from '../services/supabaseClient';
+import {
+  DEFAULT_BADGE_DEFINITIONS,
+  DEFAULT_PLATFORM_SETTINGS,
+  subscribeToSystemErrorReports,
+  deleteSystemErrorReportInSupabase,
+  subscribeToPostReports,
+  deletePostReportInSupabase
+} from '../services/supabaseClient';
 import { verifyAdminAccess, sanitizeText } from '../utils/securityHelper';
 import { SupabaseDatabaseSettings } from './SupabaseDatabaseSettings';
 
@@ -51,6 +66,8 @@ interface AdminViewProps {
   onSaveSubscriptionPlans: (plans: SubscriptionPlan[]) => void;
   onSaveBadgeDefinitions?: (badges: BadgeDefinition[]) => void;
   onSavePlatformSettings?: (settings: PlatformSettings) => void;
+  onDeletePost?: (postId: string) => void;
+  posts?: Post[];
 }
 
 // Regex to validate hex color codes
@@ -75,16 +92,72 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onDeleteUser,
   onSaveSubscriptionPlans,
   onSaveBadgeDefinitions,
-  onSavePlatformSettings
+  onSavePlatformSettings,
+  onDeletePost,
+  posts = []
 }) => {
   // Strict admin authorization check
   const isAdminAuthorized = useMemo(() => {
     return verifyAdminAccess(currentUser);
   }, [currentUser]);
 
-  const [activeTab, setActiveTab] = useState<'beta' | 'badges' | 'definitions' | 'platform' | 'subscriptions' | 'database'>('beta');
+  const [activeTab, setActiveTab] = useState<'beta' | 'badges' | 'definitions' | 'platform' | 'subscriptions' | 'database' | 'errors' | 'post_reports'>('beta');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUserForBadges, setSelectedUserForBadges] = useState<UserProfile | null>(null);
+
+  // System Error Reports & Post Reports State
+  const [errorReports, setErrorReports] = useState<SystemErrorReport[]>([]);
+  const [postReports, setPostReports] = useState<PostReport[]>([]);
+  const [errorFilterType, setErrorFilterType] = useState<string>('all');
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const [copiedLogId, setCopiedLogId] = useState<string | null>(null);
+  const [fixingReportId, setFixingReportId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsubErrors = subscribeToSystemErrorReports((reports) => {
+      setErrorReports(reports);
+    });
+    const unsubPostReports = subscribeToPostReports((reports) => {
+      setPostReports(reports);
+    });
+    return () => {
+      unsubErrors();
+      unsubPostReports();
+    };
+  }, []);
+
+  const handleMarkErrorAsFixed = async (reportId: string) => {
+    setFixingReportId(reportId);
+    try {
+      await deleteSystemErrorReportInSupabase(reportId);
+      setErrorReports((prev) => prev.filter((r) => r.id !== reportId));
+      showNotification('Hata kaydı "FIX" olarak işaretlendi ve başarıyla silindi!');
+    } catch (e) {
+      console.error('Hata silinirken sorun:', e);
+    } finally {
+      setFixingReportId(null);
+    }
+  };
+
+  const handleDeletePostReport = async (reportId: string, alsoDeletePost?: boolean, postId?: string) => {
+    try {
+      if (alsoDeletePost && postId && onDeletePost) {
+        await onDeletePost(postId);
+      }
+      await deletePostReportInSupabase(reportId);
+      setPostReports((prev) => prev.filter((r) => r.id !== reportId));
+      showNotification(alsoDeletePost ? 'Gönderi silindi ve şikayet kaydı kapatıldı.' : 'Şikayet kaydı kapatıldı.');
+    } catch (e) {
+      console.error('Şikayet işlemi sırasında sorun:', e);
+    }
+  };
+
+  const handleCopyLog = (id: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedLogId(id);
+    setTimeout(() => setCopiedLogId(null), 2000);
+  };
+
 
   // Custom badge form state
   const [newBadgeLabel, setNewBadgeLabel] = useState('');
@@ -767,6 +840,42 @@ export const AdminView: React.FC<AdminViewProps> = ({
         >
           <Database className="w-4 h-4 text-emerald-400" />
           <span>Supabase SQL & Tablo Durumu</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('errors')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'errors'
+              ? 'bg-red-600 text-white shadow-lg shadow-red-600/20'
+              : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
+          }`}
+        >
+          <Bug className="w-4 h-4 text-red-400" />
+          <span>Sistem Hataları & Webhook Logları</span>
+          {errorReports.length > 0 && (
+            <span className="px-1.5 py-0.2 text-[10px] font-mono bg-red-500 text-white rounded-full font-bold animate-pulse">
+              {errorReports.length}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('post_reports')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'post_reports'
+              ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/20'
+              : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
+          }`}
+        >
+          <Flag className="w-4 h-4 text-amber-400" />
+          <span>Gönderi Şikayetleri</span>
+          {postReports.length > 0 && (
+            <span className="px-1.5 py-0.2 text-[10px] font-mono bg-amber-500 text-black rounded-full font-bold">
+              {postReports.length}
+            </span>
+          )}
         </button>
       </div>
 
@@ -1912,6 +2021,369 @@ export const AdminView: React.FC<AdminViewProps> = ({
           <SupabaseDatabaseSettings language={language} />
         </div>
       )}
+
+      {/* TAB: SİSTEM HATALARI & WEBHOOK LOGLARI */}
+      {activeTab === 'errors' && (
+        <div className="p-6 space-y-6 animate-fade-in">
+          {/* Header Stats & Quick Info */}
+          <div className="p-5 rounded-3xl bg-[#0c0c0e] border border-zinc-800/80 space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400">
+                    <Bug className="w-4 h-4" />
+                  </div>
+                  <h2 className="text-base font-bold text-white">
+                    Sistem & Webhook Hata Kayıtları
+                  </h2>
+                </div>
+                <p className="text-xs text-zinc-400 mt-1">
+                  Kullanıcıların ve otomatik tetikleyicilerin bildirdiği anlık hatalar, loglar ve konum bilgileri.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs font-mono text-zinc-300">
+                  Toplam Hata: <strong className="text-white">{errorReports.length}</strong>
+                </span>
+                <span className="px-3 py-1.5 rounded-xl bg-red-500/10 border border-red-500/30 text-xs font-mono text-red-400 font-bold">
+                  Bekleyen: {errorReports.filter((r) => r.status === 'pending').length}
+                </span>
+              </div>
+            </div>
+
+            {/* Filter Pills */}
+            <div className="pt-2 border-t border-zinc-800/60 flex items-center gap-2 overflow-x-auto pb-1">
+              <span className="text-xs text-zinc-400 font-semibold flex items-center gap-1 mr-1 flex-shrink-0">
+                <Sliders className="w-3.5 h-3.5 text-zinc-400" />
+                Filtrele:
+              </span>
+              {[
+                { id: 'all', label: 'Tüm Hatalar', count: errorReports.length },
+                {
+                  id: 'webhook_failure',
+                  label: 'Webhook Hataları',
+                  count: errorReports.filter((r) => r.error_type === 'webhook_failure').length
+                },
+                {
+                  id: 'ui_runtime_error',
+                  label: 'Arayüz / Ekran',
+                  count: errorReports.filter((r) => r.error_type === 'ui_runtime_error').length
+                },
+                {
+                  id: 'api_error',
+                  label: 'API İstekleri',
+                  count: errorReports.filter((r) => r.error_type === 'api_error').length
+                },
+                {
+                  id: 'database_error',
+                  label: 'Veritabanı / Supabase',
+                  count: errorReports.filter((r) => r.error_type === 'database_error').length
+                },
+                {
+                  id: 'general_issue',
+                  label: 'Genel Sorunlar',
+                  count: errorReports.filter((r) => r.error_type === 'general_issue' || !r.error_type).length
+                }
+              ].map((pill) => (
+                <button
+                  key={pill.id}
+                  type="button"
+                  onClick={() => setErrorFilterType(pill.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 flex-shrink-0 transition-all cursor-pointer ${
+                    errorFilterType === pill.id
+                      ? 'bg-red-600 text-white shadow-sm'
+                      : 'bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  <span>{pill.label}</span>
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-black/40 font-bold">
+                    {pill.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Error Reports List */}
+          {errorReports.length === 0 ? (
+            <div className="p-12 rounded-3xl bg-[#0c0c0e] border border-zinc-800/80 text-center space-y-3">
+              <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-7 h-7" />
+              </div>
+              <h3 className="text-base font-bold text-white">Sistemde Bekleyen Hata Yok!</h3>
+              <p className="text-xs text-zinc-400 max-w-md mx-auto">
+                Harika! Webhook gönderimleri, arayüz veya sistemle ilgili bildirilmiş çözülmemiş bir hata bulunmuyor.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {errorReports
+                .filter(
+                  (r) =>
+                    errorFilterType === 'all' ||
+                    r.error_type === errorFilterType ||
+                    (errorFilterType === 'general_issue' && !r.error_type)
+                )
+                .map((report) => {
+                  const isExpanded = expandedLogId === report.id;
+                  const isFixing = fixingReportId === report.id;
+
+                  const typeLabel =
+                    report.error_type === 'webhook_failure'
+                      ? '📡 Webhook Hatası'
+                      : report.error_type === 'ui_runtime_error'
+                      ? '🖥️ Arayüz Hatası'
+                      : report.error_type === 'api_error'
+                      ? '⚡ API İstek Hatası'
+                      : report.error_type === 'database_error'
+                      ? '🗄️ Veritabanı Hatası'
+                      : report.error_type === 'auth_error'
+                      ? '🔒 Oturum Hatası'
+                      : '⚠️ Genel Sorun';
+
+                  return (
+                    <div
+                      key={report.id}
+                      className="p-5 rounded-3xl bg-[#0c0c0e] border border-zinc-800/90 space-y-4 hover:border-zinc-700 transition-all shadow-lg"
+                    >
+                      {/* Top Bar: Type, Location, Status, Date */}
+                      <div className="flex items-start justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-red-950/40 border border-red-500/40 text-red-300">
+                            {typeLabel}
+                          </span>
+
+                          <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-950 border border-zinc-800 text-xs font-mono text-zinc-300">
+                            <span className="text-zinc-500">Konum:</span>
+                            <span className="text-white font-semibold">{report.location}</span>
+                          </div>
+
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold">
+                            {report.status || 'BEKLEMEDE'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 text-xs font-mono text-zinc-500">
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>
+                            {report.created_at ? new Date(report.created_at).toLocaleString('tr-TR') : 'Şimdi'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Description Block */}
+                      <div className="p-3.5 rounded-2xl bg-zinc-950 border border-zinc-800/80 space-y-1">
+                        <div className="text-[11px] font-bold text-zinc-400 font-mono flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Hata Açıklaması:</span>
+                        </div>
+                        <p className="text-xs text-white leading-relaxed font-sans pl-5 whitespace-pre-wrap">
+                          {report.description}
+                        </p>
+                      </div>
+
+                      {/* Log Kaydı Container */}
+                      {report.logs && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedLogId(isExpanded ? null : report.id)}
+                              className="text-xs font-mono text-zinc-400 hover:text-white flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Terminal className="w-3.5 h-3.5 text-blue-400" />
+                              <span className="font-bold">Log Kaydı / JSON Detayı</span>
+                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleCopyLog(report.id, report.logs || '')}
+                              className="px-2.5 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-[11px] font-mono text-zinc-300 flex items-center gap-1.5 cursor-pointer transition-colors"
+                            >
+                              {copiedLogId === report.id ? (
+                                <>
+                                  <Check className="w-3 h-3 text-emerald-400" />
+                                  <span className="text-emerald-400 font-bold">Kopyalandı!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3" />
+                                  <span>Logu Kopyala</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+
+                          <div
+                            className={`p-3 rounded-2xl bg-black/80 border border-zinc-900 font-mono text-[11px] text-emerald-400 overflow-x-auto ${
+                              isExpanded ? 'max-h-96' : 'max-h-24'
+                            } transition-all`}
+                          >
+                            <pre className="whitespace-pre-wrap leading-relaxed">{report.logs}</pre>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Footer Info & Fix Button */}
+                      <div className="pt-3 border-t border-zinc-800/80 flex items-center justify-between flex-wrap gap-3">
+                        <div className="flex items-center gap-2">
+                          {report.reporter_avatar ? (
+                            <img
+                              src={report.reporter_avatar}
+                              alt={report.reporter_username}
+                              className="w-6 h-6 rounded-full object-cover border border-zinc-700"
+                            />
+                          ) : (
+                            <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] text-zinc-300 font-bold">
+                              {report.reporter_username?.charAt(0).toUpperCase() || 'U'}
+                            </div>
+                          )}
+                          <div className="text-xs text-zinc-400">
+                            Bildiren:{' '}
+                            <strong className="text-zinc-200">
+                              {report.reporter_display_name || report.reporter_username}
+                            </strong>{' '}
+                            <span className="font-mono text-[11px] text-zinc-500">
+                              (@{report.reporter_username})
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Mark As Fixed & Delete Button */}
+                        <button
+                          type="button"
+                          disabled={isFixing}
+                          onClick={() => handleMarkErrorAsFixed(report.id)}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer transition-all disabled:opacity-40"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>{isFixing ? 'Siliniyor...' : 'Fix Olarak İşaretle & Sil'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB: GÖNDERİ ŞİKAYETLERİ & MODERASYON */}
+      {activeTab === 'post_reports' && (
+        <div className="p-6 space-y-6 animate-fade-in">
+          {/* Header Stats */}
+          <div className="p-5 rounded-3xl bg-[#0c0c0e] border border-zinc-800/80 flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <Flag className="w-4 h-4" />
+                </div>
+                <h2 className="text-base font-bold text-white">Gönderi Şikayetleri & İhlal Bildirimleri</h2>
+              </div>
+              <p className="text-xs text-zinc-400 mt-1">
+                Kullanıcıların sağ tıklayarak veya basılı tutarak bildirdiği kural ihlali ve spam gönderiler.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs font-mono text-zinc-300">
+                Toplam Şikayet: <strong className="text-white">{postReports.length}</strong>
+              </span>
+            </div>
+          </div>
+
+          {/* Post Reports List */}
+          {postReports.length === 0 ? (
+            <div className="p-12 rounded-3xl bg-[#0c0c0e] border border-zinc-800/80 text-center space-y-3">
+              <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-7 h-7" />
+              </div>
+              <h3 className="text-base font-bold text-white">Bekleyen Gönderi Şikayeti Yok!</h3>
+              <p className="text-xs text-zinc-400 max-w-md mx-auto">
+                Topluluk akışı temiz ve güvenli. Şikayet edilen herhangi bir gönderi bulunmuyor.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {postReports.map((report) => (
+                <div
+                  key={report.id}
+                  className="p-5 rounded-3xl bg-[#0c0c0e] border border-zinc-800/90 space-y-4 hover:border-zinc-700 transition-all shadow-lg"
+                >
+                  <div className="flex items-start justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-950/40 border border-amber-500/40 text-amber-300">
+                        {report.reason_label || report.reason}
+                      </span>
+
+                      <div className="px-2.5 py-1 rounded-lg bg-zinc-950 border border-zinc-800 text-xs font-mono text-zinc-300">
+                        Gönderi Sahibi: <strong className="text-white">@{report.post_author_username}</strong>
+                      </div>
+                    </div>
+
+                    <span className="text-xs font-mono text-zinc-500">
+                      {report.created_at ? new Date(report.created_at).toLocaleString('tr-TR') : 'Şimdi'}
+                    </span>
+                  </div>
+
+                  {/* Post Content Snippet */}
+                  <div className="p-3.5 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-1">
+                    <div className="text-[11px] font-mono text-zinc-500">Bildirilen İçerik:</div>
+                    <p className="text-xs text-zinc-300 italic whitespace-pre-wrap leading-relaxed">
+                      "{report.post_content}"
+                    </p>
+                  </div>
+
+                  {/* Additional notes from reporter */}
+                  {report.details && (
+                    <div className="p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800/60 text-xs text-zinc-400">
+                      <span className="text-zinc-500 font-mono">Kullanıcı Açıklaması: </span>
+                      {report.details}
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="pt-3 border-t border-zinc-800/80 flex items-center justify-between flex-wrap gap-3">
+                    <div className="text-xs text-zinc-400">
+                      Bildiren:{' '}
+                      <strong className="text-zinc-200">
+                        {report.reporter_display_name || report.reporter_username}
+                      </strong>{' '}
+                      <span className="font-mono text-[11px] text-zinc-500">
+                        (@{report.reporter_username})
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePostReport(report.id, false)}
+                        className="px-3.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 text-xs font-bold transition-all cursor-pointer"
+                      >
+                        Şikayeti Kapat / Sil
+                      </button>
+
+                      {onDeletePost && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePostReport(report.id, true, report.post_id)}
+                          className="px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-red-600/20 transition-all cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Gönderiyi & Şikayeti Sil</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
 
       {/* BADGE DEFINITION MODAL */}
       {isBadgeModalOpen && (

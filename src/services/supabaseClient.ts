@@ -14,7 +14,11 @@ import {
   ChatMessage,
   ChatGroup,
   GroupInvite,
-  GroupMember
+  GroupMember,
+  SystemErrorReport,
+  PostReport,
+  PostCategory,
+  INITIAL_CATEGORIES
 } from '../types';
 import { sanitizeText, sanitizeUrl } from '../utils/securityHelper';
 import { sendJobApplicationWebhook } from './webhookService';
@@ -38,7 +42,10 @@ export const STORAGE_KEYS = {
   CLOSED_BETA: 'c4e_closed_beta_settings',
   SUBSCRIPTIONS: 'c4e_subscription_plans',
   BADGES: 'c4e_badge_definitions',
-  PLATFORM: 'c4e_platform_settings'
+  PLATFORM: 'c4e_platform_settings',
+  SYSTEM_ERROR_REPORTS: 'c4e_system_error_reports',
+  POST_REPORTS: 'c4e_post_reports',
+  CUSTOM_CATEGORIES: 'c4e_custom_categories'
 };
 
 export function getActiveSupabaseCredentials(): {
@@ -818,6 +825,8 @@ export interface SupabaseTableStatus {
     job_listings: boolean | 'checking';
     job_applications: boolean | 'checking';
     messages: boolean | 'checking';
+    system_error_reports?: boolean | 'checking';
+    post_reports?: boolean | 'checking';
   };
   error?: string;
 }
@@ -837,7 +846,9 @@ export async function checkSupabaseTablesStatus(): Promise<SupabaseTableStatus> 
         communities: false,
         job_listings: false,
         job_applications: false,
-        messages: false
+        messages: false,
+        system_error_reports: false,
+        post_reports: false
       },
       error: 'Supabase URL veya Anon Key tanımlanmamış.'
     };
@@ -853,16 +864,18 @@ export async function checkSupabaseTablesStatus(): Promise<SupabaseTableStatus> 
   };
 
   try {
-    const [posts, profiles, communities, job_listings, job_applications, messages] = await Promise.all([
+    const [posts, profiles, communities, job_listings, job_applications, messages, system_error_reports, post_reports] = await Promise.all([
       checkTable('posts'),
       checkTable('profiles'),
       checkTable('communities'),
       checkTable('job_listings'),
       checkTable('job_applications'),
-      checkTable('messages')
+      checkTable('messages'),
+      checkTable('system_error_reports'),
+      checkTable('post_reports')
     ]);
 
-    const isConnected = posts || profiles || communities || job_listings || job_applications || messages;
+    const isConnected = posts || profiles || communities || job_listings || job_applications || messages || system_error_reports || post_reports;
 
     return {
       connected: isConnected,
@@ -874,7 +887,9 @@ export async function checkSupabaseTablesStatus(): Promise<SupabaseTableStatus> 
         communities,
         job_listings,
         job_applications,
-        messages
+        messages,
+        system_error_reports,
+        post_reports
       }
     };
   } catch (err: any) {
@@ -888,7 +903,9 @@ export async function checkSupabaseTablesStatus(): Promise<SupabaseTableStatus> 
         communities: false,
         job_listings: false,
         job_applications: false,
-        messages: false
+        messages: false,
+        system_error_reports: false,
+        post_reports: false
       },
       error: err?.message || 'Bağlantı testi başarısız oldu.'
     };
@@ -2362,4 +2379,398 @@ export async function updateUserPresence(userId: string, isOnline: boolean): Pro
     } catch {}
   }
 }
+
+// -------------------------------------------------------------
+// DYNAMIC CATEGORIES PERSISTENCE & DISCOVERY
+// -------------------------------------------------------------
+
+export function loadStoredCategories(): PostCategory[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.CUSTOM_CATEGORIES);
+    if (data) {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {}
+  return INITIAL_CATEGORIES;
+}
+
+export function saveStoredCategories(categories: PostCategory[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.CUSTOM_CATEGORIES, JSON.stringify(categories));
+  } catch {}
+}
+
+export function getPlatformCategories(posts: Post[] = []): PostCategory[] {
+  const stored = loadStoredCategories();
+  const categoryMap = new Map<string, PostCategory>();
+
+  // 1. Add stored categories
+  stored.forEach((cat) => {
+    categoryMap.set(cat.id.toLowerCase(), cat);
+  });
+
+  // 2. Discover custom categories created on posts
+  posts.forEach((p) => {
+    if (p.category && p.category !== 'all') {
+      const catId = p.category.toLowerCase().trim();
+      if (!categoryMap.has(catId)) {
+        categoryMap.set(catId, {
+          id: catId,
+          name_tr: p.category_name || p.category,
+          name_en: p.category_name || p.category,
+          icon: 'Tag',
+          color: '#3b82f6'
+        });
+      }
+    }
+  });
+
+  return Array.from(categoryMap.values());
+}
+
+export function createOrAddCategory(name: string): PostCategory {
+  const cleanName = sanitizeText(name, 40).trim();
+  const catId = cleanName.toLowerCase().replace(/[^a-z0-9_]/g, '_').substring(0, 30) || `cat_${Date.now()}`;
+  
+  const current = loadStoredCategories();
+  const existing = current.find((c) => c.id === catId || c.name_tr.toLowerCase() === cleanName.toLowerCase());
+  if (existing) return existing;
+
+  const newCat: PostCategory = {
+    id: catId,
+    name_tr: cleanName,
+    name_en: cleanName,
+    icon: 'Tag',
+    color: '#3b82f6'
+  };
+
+  const updated = [...current, newCat];
+  saveStoredCategories(updated);
+  return newCat;
+}
+
+// -------------------------------------------------------------
+// SYSTEM ERROR REPORTS (FOR WEBHOOKS, APIS, UI RUNTIME & USER REPORTS)
+// -------------------------------------------------------------
+
+export function loadStoredSystemErrorReports(): SystemErrorReport[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.SYSTEM_ERROR_REPORTS);
+    if (data) {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+export function saveStoredSystemErrorReports(reports: SystemErrorReport[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.SYSTEM_ERROR_REPORTS, JSON.stringify(reports));
+  } catch {}
+}
+
+export async function reportSystemErrorInSupabase(
+  reportData: Omit<SystemErrorReport, 'id' | 'created_at' | 'status'> & { id?: string }
+): Promise<{ success: boolean; id: string; error?: string }> {
+  const id = reportData.id || `err_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const fullReport: SystemErrorReport = {
+    id,
+    error_type: reportData.error_type || 'general_issue',
+    location: sanitizeText(reportData.location, 200) || 'Bilinmeyen Konum',
+    description: sanitizeText(reportData.description, 2000) || 'Açıklama belirtilmedi.',
+    logs: typeof reportData.logs === 'string' ? reportData.logs : JSON.stringify(reportData.logs, null, 2),
+    reporter_username: sanitizeText(reportData.reporter_username, 60) || 'anonim',
+    reporter_display_name: sanitizeText(reportData.reporter_display_name, 60) || 'Kullanıcı',
+    reporter_avatar: reportData.reporter_avatar,
+    status: 'pending',
+    created_at: new Date().toISOString()
+  };
+
+  // 1. Save to local cache
+  const local = loadStoredSystemErrorReports();
+  const updatedLocal = [fullReport, ...local.filter((r) => r.id !== id)];
+  saveStoredSystemErrorReports(updatedLocal);
+
+  // 2. Save to Supabase table
+  const client = getSupabaseClient();
+  const config = getSupabaseConfig();
+
+  if (client) {
+    try {
+      const { error } = await client.from('system_error_reports').upsert({
+        id: fullReport.id,
+        error_type: fullReport.error_type,
+        location: fullReport.location,
+        description: fullReport.description,
+        logs: fullReport.logs,
+        reporter_username: fullReport.reporter_username,
+        reporter_display_name: fullReport.reporter_display_name,
+        reporter_avatar: fullReport.reporter_avatar,
+        status: fullReport.status,
+        created_at: fullReport.created_at
+      });
+      if (error) {
+        console.warn('Supabase system error report upsert error:', error.message || error);
+      }
+    } catch (err) {
+      console.warn('Supabase system error report exception:', err);
+    }
+  }
+
+  if (config.url && config.anonKey) {
+    try {
+      const cleanUrl = config.url.replace(/\/+$/, '');
+      fetch(`${cleanUrl}/rest/v1/system_error_reports`, {
+        method: 'POST',
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify(fullReport)
+      }).catch(() => {});
+    } catch {}
+  }
+
+  return { success: true, id };
+}
+
+export async function getSystemErrorReportsFromSupabase(): Promise<SystemErrorReport[]> {
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const { data, error } = await client
+        .from('system_error_reports')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (data && !error && Array.isArray(data)) {
+        saveStoredSystemErrorReports(data as SystemErrorReport[]);
+        return data as SystemErrorReport[];
+      }
+    } catch (err) {
+      console.warn('Supabase get error reports error:', err);
+    }
+  }
+  return loadStoredSystemErrorReports();
+}
+
+export function subscribeToSystemErrorReports(onUpdate: (reports: SystemErrorReport[]) => void): () => void {
+  const client = getSupabaseClient();
+  if (!client) {
+    onUpdate(loadStoredSystemErrorReports());
+    return () => {};
+  }
+
+  getSystemErrorReportsFromSupabase().then((data) => onUpdate(data));
+
+  const channel = client
+    .channel('public:system_error_reports')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'system_error_reports' }, async () => {
+      const latest = await getSystemErrorReportsFromSupabase();
+      onUpdate(latest);
+    })
+    .subscribe();
+
+  return () => {
+    client.removeChannel(channel);
+  };
+}
+
+export async function deleteSystemErrorReportInSupabase(reportId: string): Promise<void> {
+  // 1. Remove from local
+  const current = loadStoredSystemErrorReports();
+  const updated = current.filter((r) => r.id !== reportId);
+  saveStoredSystemErrorReports(updated);
+
+  // 2. Delete from Supabase
+  const client = getSupabaseClient();
+  const config = getSupabaseConfig();
+
+  if (client) {
+    try {
+      await client.from('system_error_reports').delete().eq('id', reportId);
+    } catch (err) {
+      console.warn('Supabase delete error report exception:', err);
+    }
+  }
+
+  if (config.url && config.anonKey) {
+    try {
+      const cleanUrl = config.url.replace(/\/+$/, '');
+      fetch(`${cleanUrl}/rest/v1/system_error_reports?id=eq.${encodeURIComponent(reportId)}`, {
+        method: 'DELETE',
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          Prefer: 'return=minimal'
+        }
+      }).catch(() => {});
+    } catch {}
+  }
+}
+
+// -------------------------------------------------------------
+// POST REPORTS (REPORT A POST FOR VIOLATION / SPAM / AD / HATE)
+// -------------------------------------------------------------
+
+export function loadStoredPostReports(): PostReport[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.POST_REPORTS);
+    if (data) {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+export function saveStoredPostReports(reports: PostReport[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.POST_REPORTS, JSON.stringify(reports));
+  } catch {}
+}
+
+export async function reportPostInSupabase(
+  reportData: Omit<PostReport, 'id' | 'created_at' | 'status'> & { id?: string }
+): Promise<{ success: boolean; id: string }> {
+  const id = reportData.id || `prep_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const fullReport: PostReport = {
+    id,
+    post_id: reportData.post_id,
+    post_author_username: reportData.post_author_username,
+    post_content: sanitizeText(reportData.post_content, 1000),
+    reporter_username: sanitizeText(reportData.reporter_username, 60),
+    reporter_display_name: sanitizeText(reportData.reporter_display_name || '', 60),
+    reason: reportData.reason || 'other',
+    reason_label: reportData.reason_label || 'Şikayet / İhlal',
+    details: sanitizeText(reportData.details || '', 1000),
+    status: 'pending',
+    created_at: new Date().toISOString()
+  };
+
+  const local = loadStoredPostReports();
+  const updatedLocal = [fullReport, ...local.filter((r) => r.id !== id)];
+  saveStoredPostReports(updatedLocal);
+
+  const client = getSupabaseClient();
+  const config = getSupabaseConfig();
+
+  if (client) {
+    try {
+      await client.from('post_reports').upsert({
+        id: fullReport.id,
+        post_id: fullReport.post_id,
+        post_author_username: fullReport.post_author_username,
+        post_content: fullReport.post_content,
+        reporter_username: fullReport.reporter_username,
+        reporter_display_name: fullReport.reporter_display_name,
+        reason: fullReport.reason,
+        reason_label: fullReport.reason_label,
+        details: fullReport.details,
+        status: fullReport.status,
+        created_at: fullReport.created_at
+      });
+    } catch (err) {
+      console.warn('Supabase post report error:', err);
+    }
+  }
+
+  if (config.url && config.anonKey) {
+    try {
+      const cleanUrl = config.url.replace(/\/+$/, '');
+      fetch(`${cleanUrl}/rest/v1/post_reports`, {
+        method: 'POST',
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify(fullReport)
+      }).catch(() => {});
+    } catch {}
+  }
+
+  return { success: true, id };
+}
+
+export async function getPostReportsFromSupabase(): Promise<PostReport[]> {
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const { data, error } = await client
+        .from('post_reports')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (data && !error && Array.isArray(data)) {
+        saveStoredPostReports(data as PostReport[]);
+        return data as PostReport[];
+      }
+    } catch (err) {
+      console.warn('Supabase get post reports error:', err);
+    }
+  }
+  return loadStoredPostReports();
+}
+
+export function subscribeToPostReports(onUpdate: (reports: PostReport[]) => void): () => void {
+  const client = getSupabaseClient();
+  if (!client) {
+    onUpdate(loadStoredPostReports());
+    return () => {};
+  }
+
+  getPostReportsFromSupabase().then((data) => onUpdate(data));
+
+  const channel = client
+    .channel('public:post_reports')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'post_reports' }, async () => {
+      const latest = await getPostReportsFromSupabase();
+      onUpdate(latest);
+    })
+    .subscribe();
+
+  return () => {
+    client.removeChannel(channel);
+  };
+}
+
+export async function deletePostReportInSupabase(reportId: string): Promise<void> {
+  const current = loadStoredPostReports();
+  const updated = current.filter((r) => r.id !== reportId);
+  saveStoredPostReports(updated);
+
+  const client = getSupabaseClient();
+  const config = getSupabaseConfig();
+
+  if (client) {
+    try {
+      await client.from('post_reports').delete().eq('id', reportId);
+    } catch (err) {
+      console.warn('Supabase delete post report error:', err);
+    }
+  }
+
+  if (config.url && config.anonKey) {
+    try {
+      const cleanUrl = config.url.replace(/\/+$/, '');
+      fetch(`${cleanUrl}/rest/v1/post_reports?id=eq.${encodeURIComponent(reportId)}`, {
+        method: 'DELETE',
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          Prefer: 'return=minimal'
+        }
+      }).catch(() => {});
+    } catch {}
+  }
+}
+
 
