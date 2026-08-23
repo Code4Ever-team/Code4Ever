@@ -46,17 +46,21 @@ export const JobListingsView: React.FC<JobListingsViewProps> = ({
 
   const filteredListings = useMemo(() => {
     return jobListings.filter((job) => {
+      if (!job || !job.id) return false;
+      const authorUsername = job.author?.username || '';
+      const authorDisplayName = job.author?.display_name || '';
+
       // Type filter
       if (filterType === 'job' && job.type !== 'job') return false;
       if (filterType === 'team' && job.type !== 'team') return false;
-      if (filterType === 'mine' && job.author.username !== currentUser.username) return false;
+      if (filterType === 'mine' && authorUsername.toLowerCase() !== currentUser.username.toLowerCase()) return false;
 
       // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const matchesTitle = job.title.toLowerCase().includes(q);
-        const matchesDesc = job.description.toLowerCase().includes(q);
-        const matchesAuthor = job.author.username.toLowerCase().includes(q) || job.author.display_name.toLowerCase().includes(q);
+        const matchesTitle = (job.title || '').toLowerCase().includes(q);
+        const matchesDesc = (job.description || '').toLowerCase().includes(q);
+        const matchesAuthor = authorUsername.toLowerCase().includes(q) || authorDisplayName.toLowerCase().includes(q);
         if (!matchesTitle && !matchesDesc && !matchesAuthor) return false;
       }
 
@@ -186,7 +190,12 @@ export const JobListingsView: React.FC<JobListingsViewProps> = ({
           </div>
         ) : (
           filteredListings.map((job) => {
-            const isOwner = job.author.username === currentUser.username;
+            const authorUsername = job.author?.username || 'anonim';
+            const authorDisplayName = job.author?.display_name || authorUsername;
+            const authorAvatar = job.author?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150';
+            const authorRole = job.author?.role;
+
+            const isOwner = authorUsername.toLowerCase() === currentUser.username.toLowerCase();
             const hasApplied = (job.applied_by || []).includes(currentUser.id || '') ||
               (job.applied_by || []).includes(currentUser.username) ||
               (job.applications || []).some((a) => a.applicant_username === currentUser.username);
@@ -200,26 +209,26 @@ export const JobListingsView: React.FC<JobListingsViewProps> = ({
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <img
-                      src={job.author.avatar_url}
-                      alt={job.author.display_name}
+                      src={authorAvatar}
+                      alt={authorDisplayName}
                       className="w-10 h-10 rounded-full object-cover ring-1 ring-zinc-800 cursor-pointer"
-                      onClick={() => onSelectUser && onSelectUser(job.author.username)}
+                      onClick={() => onSelectUser && onSelectUser(authorUsername)}
                     />
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <button
                           type="button"
-                          onClick={() => onSelectUser && onSelectUser(job.author.username)}
+                          onClick={() => onSelectUser && onSelectUser(authorUsername)}
                           className="font-bold text-white text-xs hover:underline cursor-pointer"
                         >
-                          {job.author.display_name}
+                          {authorDisplayName}
                         </button>
-                        <span className="text-[11px] text-zinc-500 font-mono">@{job.author.username}</span>
+                        <span className="text-[11px] text-zinc-500 font-mono">@{authorUsername}</span>
                         <span className="text-zinc-600">·</span>
                         <span className="text-[11px] text-zinc-500 font-mono">{job.time_ago || 'Yeni'}</span>
                       </div>
-                      {job.author.role && (
-                        <span className="text-[10px] text-zinc-400 font-mono">{job.author.role}</span>
+                      {authorRole && (
+                        <span className="text-[10px] text-zinc-400 font-mono">{authorRole}</span>
                       )}
                     </div>
                   </div>

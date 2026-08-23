@@ -48,6 +48,14 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [notFound, setNotFound] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
+  const [isTogglingJoin, setIsTogglingJoin] = useState(false);
+
+  const handleToggleJoin = (commId: string) => {
+    if (isTogglingJoin || !onToggleJoinCommunity) return;
+    setIsTogglingJoin(true);
+    setTimeout(() => setIsTogglingJoin(false), 500);
+    onToggleJoinCommunity(commId);
+  };
 
   useEffect(() => {
     if (!isOpen || !username) {
@@ -239,8 +247,10 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
                 {onToggleJoinCommunity && (
                   <button
-                    onClick={() => onToggleJoinCommunity(currentComm.id)}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md ${
+                    type="button"
+                    disabled={isTogglingJoin}
+                    onClick={() => handleToggleJoin(currentComm.id)}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md disabled:opacity-60 disabled:cursor-not-allowed active:scale-95 cursor-pointer ${
                       currentComm.is_joined
                         ? 'bg-zinc-800 hover:bg-zinc-700 text-emerald-400 border border-zinc-700'
                         : 'bg-blue-600 hover:bg-blue-500 text-white'

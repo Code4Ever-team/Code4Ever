@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Trend, Community, PlatformSettings } from '../types';
 import { TrendingUp, Users, Check, UserPlus, Sparkles } from 'lucide-react';
 
@@ -21,8 +21,22 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   onSelectCommunity,
   onSelectTrend
 }) => {
+  const [pendingJoinIds, setPendingJoinIds] = useState<Set<string>>(new Set());
   const brandTitle = platformSettings?.brandTitle || 'Code4Ever Platform';
   const brandDomain = platformSettings?.brandDomain || 'code4ever.ai.studio';
+
+  const handleJoinClick = (commId: string) => {
+    if (pendingJoinIds.has(commId)) return;
+    setPendingJoinIds((prev) => new Set(prev).add(commId));
+    setTimeout(() => {
+      setPendingJoinIds((prev) => {
+        const next = new Set(prev);
+        next.delete(commId);
+        return next;
+      });
+    }, 500);
+    onToggleJoinCommunity(commId);
+  };
 
   return (
     <aside className="w-80 min-w-[320px] max-w-[320px] flex-shrink-0 hidden xl:block p-4 space-y-4 border-l border-zinc-800/60 bg-[#09090b]/95 h-screen sticky top-0 overflow-y-auto z-20 select-none">
@@ -100,8 +114,10 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                 </div>
 
                 <button
-                  onClick={() => onToggleJoinCommunity(comm.id)}
-                  className={`p-1.5 rounded-lg text-xs font-semibold transition-all flex-shrink-0 cursor-pointer ${
+                  type="button"
+                  disabled={pendingJoinIds.has(comm.id)}
+                  onClick={() => handleJoinClick(comm.id)}
+                  className={`p-1.5 rounded-lg text-xs font-semibold transition-all flex-shrink-0 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed active:scale-95 ${
                     comm.is_joined
                       ? 'bg-zinc-800 text-emerald-400 border border-zinc-700/50'
                       : 'bg-zinc-100 hover:bg-white text-zinc-950 shadow'

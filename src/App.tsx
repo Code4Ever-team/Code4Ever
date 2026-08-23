@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   UserProfile,
   Post,
@@ -52,6 +52,7 @@ import {
   DEFAULT_USER,
   loadStoredJobListings,
   saveStoredJobListings,
+  subscribeToJobListings,
   createJobListing as createJobListingService,
   deleteJobListing as deleteJobListingService,
   submitJobApplication as submitJobApplicationService,
@@ -92,6 +93,7 @@ import { ClosedBetaScreen } from './components/ClosedBetaScreen';
 import { PWAInstallModal } from './components/PWAInstallModal';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { sendNativeNotification } from './utils/notificationSound';
+import { ReportErrorModal } from './components/ReportErrorModal';
 import { Sparkles, X, AlertTriangle, Lock } from 'lucide-react';
 
 export default function App() {
@@ -108,6 +110,7 @@ export default function App() {
   });
   const [jobListings, setJobListings] = useState<JobListing[]>(loadStoredJobListings());
   const [isNewPostOpen, setIsNewPostOpen] = useState<boolean>(false);
+  const [isReportErrorOpen, setIsReportErrorOpen] = useState<boolean>(false);
   const [isPWAInstallModalOpen, setIsPWAInstallModalOpen] = useState<boolean>(false);
   const [betaModalInfo, setBetaModalInfo] = useState<{ title: string; desc: string; iconType?: 'sparkles' | 'lock' } | null>(null);
 
@@ -158,6 +161,24 @@ export default function App() {
 
     return list;
   }, [posts, language]);
+
+  // Anti-spam concurrency mutex for community toggle actions
+  const togglingCommunityIds = useRef<Set<string>>(new Set());
+
+  // Dynamically resolve joined status and clean member counts based on current user's profile
+  const displayCommunities = useMemo(() => {
+    const userJoinedSet = new Set(user?.joined_communities || []);
+    return communities.map((c) => {
+      const isUserJoined = userJoinedSet.has(c.id);
+      const rawCount = Number(c.members_count);
+      const safeCount = Number.isFinite(rawCount) && rawCount >= 0 ? rawCount : (isUserJoined ? 1 : 0);
+      return {
+        ...c,
+        is_joined: isUserJoined,
+        members_count: safeCount
+      };
+    });
+  }, [communities, user?.joined_communities]);
 
   const parseHashParams = () => {
     if (window.location.hash.includes('access_token')) {
@@ -256,6 +277,10 @@ export default function App() {
       }
     });
 
+    const unsubscribeJobListings = subscribeToJobListings((realtimeJobs) => {
+      setJobListings(realtimeJobs);
+    });
+
     // Run Simulated Attacker Security Audit on boot
     try {
       const auditResult = runSecurityPenetrationTest();
@@ -270,6 +295,7 @@ export default function App() {
       unsubscribePosts();
       unsubscribeCommunities();
       unsubscribeUsers();
+      unsubscribeJobListings();
     };
   }, []);
 
@@ -731,31 +757,87 @@ export default function App() {
     }
   };
 
-  const handleToggleJoinCommunity = (id: string) => {
-    const target = communities.find((c) => c.id === id);
-    if (!target) return;
-    const joined = !target.is_joined;
-    const newMembersCount = joined ? target.members_count + 1 : Math.max(0, target.members_count - 1);
+  const handleToggleJoinCommunity = async (id: string) => {
+    if (!id) return;
+    // Anti-spam debounce & in-flight lock to prevent duplicate rapid clicks
+    if (togglingCommunityIds.current.has(id)) {
+      return;
+    }
+    togglingCommunityIds.current.add(id);
+    setTimeout(() => {
+      togglingCommunityIds.current.delete(id);
+    }, 500);
 
-    const updated = communities.map((c) => {
+    const userJoinedSet = new Set(user.joined_communities || []);
+    const isCurrentlyJoined = userJoinedSet.has(id);
+    const target = communities.find((c) => c.id === id);
+    if (!target) {
+      togglingCommunityIds.current.delete(id);
+      return;
+    }
+
+    const currentCount = Math.max(0, parseInt(String(target.members_count), 10) || 0);
+
+    // 1. Calculate strictly deterministic transitions based on user.joined_communities
+    let newJoinedCommunities: string[];
+    let newMembersCount: number;
+
+    if (isCurrentlyJoined) {
+      // User leaves community -> strictly remove from list & decrement by 1 (min 0)
+      newJoinedCommunities = (user.joined_communities || []).filter((cId) => cId !== id);
+      newMembersCount = Math.max(0, currentCount - 1);
+    } else {
+      // User joins community -> strictly add to list & increment by 1
+      newJoinedCommunities = Array.from(new Set([...(user.joined_communities || []), id]));
+      newMembersCount = Math.max(1, currentCount + 1);
+    }
+
+    // 2. Persist updated user profile locally and to Supabase
+    const updatedUser: UserProfile = {
+      ...user,
+      joined_communities: newJoinedCommunities
+    };
+    setUser(updatedUser);
+    saveStoredProfile(updatedUser);
+    if (user.id) {
+      updateUserProfileInSupabase(user.id, {
+        joined_communities: newJoinedCommunities
+      });
+    }
+
+    // 3. Persist updated communities list locally
+    const updatedCommunities = communities.map((c) => {
       if (c.id === id) {
         return {
           ...c,
-          is_joined: joined,
+          is_joined: !isCurrentlyJoined,
           members_count: newMembersCount
         };
       }
       return c;
     });
-    setCommunities(updated);
-    saveStoredCommunities(updated);
-    updateCommunityInSupabase(id, { is_joined: joined, members_count: newMembersCount });
+    setCommunities(updatedCommunities);
+    saveStoredCommunities(updatedCommunities);
+
+    // 4. Update community in Supabase database
+    try {
+      await updateCommunityInSupabase(id, {
+        members_count: newMembersCount
+      });
+    } catch (err) {
+      console.warn('Supabase community count update warning:', err);
+    } finally {
+      setTimeout(() => {
+        togglingCommunityIds.current.delete(id);
+      }, 300);
+    }
   };
 
   const handleCreateCommunity = (newComm: { name: string; handle: string; description?: string; avatar_url: string; banner_url?: string }) => {
     const cleanHandle = newComm.handle.replace(/^@/, '').toLowerCase().trim().replace(/[^a-z0-9_]/g, '');
+    const newCommId = `comm_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const created: Community = {
-      id: `comm_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: newCommId,
       name: sanitizeText(newComm.name, 60),
       handle: cleanHandle,
       description: newComm.description ? sanitizeText(newComm.description, 250) : undefined,
@@ -767,6 +849,21 @@ export default function App() {
       creator_username: user.username,
       created_at: new Date().toISOString()
     };
+
+    // Also register the new community in the user's joined_communities list
+    const newJoined = Array.from(new Set([...(user.joined_communities || []), newCommId]));
+    const updatedUser: UserProfile = {
+      ...user,
+      joined_communities: newJoined
+    };
+    setUser(updatedUser);
+    saveStoredProfile(updatedUser);
+    if (user.id) {
+      updateUserProfileInSupabase(user.id, {
+        joined_communities: newJoined
+      });
+    }
+
     const updated = [created, ...communities];
     setCommunities(updated);
     saveStoredCommunities(updated);
@@ -908,6 +1005,7 @@ export default function App() {
           language={language}
           unreadCount={unreadNotificationsCount}
           onOpenNewPost={() => setIsNewPostOpen(true)}
+          onOpenReportError={() => setIsReportErrorOpen(true)}
           onLogout={handleLogout}
           onChangeLanguage={handleChangeLanguage}
           onOpenInstallPWA={() => setIsPWAInstallModalOpen(true)}
@@ -938,7 +1036,7 @@ export default function App() {
               posts={posts}
               user={user}
               allUsers={allUsers}
-              communities={communities}
+              communities={displayCommunities}
               language={language}
               selectedHashtag={selectedHashtag}
               onClearHashtag={() => setSelectedHashtag(null)}
@@ -956,7 +1054,7 @@ export default function App() {
           {activeTab === 'explore' && (
             <ExploreView
               posts={posts}
-              communities={communities}
+              communities={displayCommunities}
               trends={dynamicTrends}
               language={language}
               onLikePost={handleLikePost}
@@ -1013,7 +1111,7 @@ export default function App() {
 
           {activeTab === 'communities' && (
             <CommunitiesView
-              communities={communities}
+              communities={displayCommunities}
               user={user}
               allUsers={allUsers}
               language={language}
@@ -1044,7 +1142,7 @@ export default function App() {
               posts={posts}
               theme={theme}
               language={language}
-              communities={communities}
+              communities={displayCommunities}
               onUpdateProfile={handleUpdateProfile}
               onSelectCommunity={(comm) => setSelectedModalUsername(comm.handle)}
               onLikePost={handleLikePost}
@@ -1109,7 +1207,7 @@ export default function App() {
           )}
 
           <RightPanel
-            communities={communities}
+            communities={displayCommunities}
             trends={dynamicTrends}
             platformSettings={platformSettings}
             language={language}
@@ -1124,7 +1222,7 @@ export default function App() {
       <NewPostModal
         isOpen={isNewPostOpen}
         user={user}
-        communities={communities}
+        communities={displayCommunities}
         language={language}
         onClose={() => setIsNewPostOpen(false)}
         onCreatePost={handleCreatePost}
@@ -1135,7 +1233,7 @@ export default function App() {
         username={selectedModalUsername}
         onClose={() => setSelectedModalUsername(null)}
         currentUser={user}
-        communities={communities}
+        communities={displayCommunities}
         language={language}
         onToggleJoinCommunity={handleToggleJoinCommunity}
         onNavigateToFullProfile={(profile) => {
@@ -1143,6 +1241,13 @@ export default function App() {
           setActiveTab('profile');
         }}
         onStartDirectChat={handleStartDirectChat}
+      />
+
+      <ReportErrorModal
+        isOpen={isReportErrorOpen}
+        onClose={() => setIsReportErrorOpen(false)}
+        currentUser={user}
+        language={language}
       />
 
       <PWAInstallBanner

@@ -35,6 +35,20 @@ export const CommunitiesView: React.FC<CommunitiesViewProps> = ({
   const [avatarUrl, setAvatarUrl] = useState('');
   const [bannerUrl, setBannerUrl] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [pendingJoinIds, setPendingJoinIds] = useState<Set<string>>(new Set());
+
+  const handleJoinClick = (commId: string) => {
+    if (pendingJoinIds.has(commId)) return;
+    setPendingJoinIds((prev) => new Set(prev).add(commId));
+    setTimeout(() => {
+      setPendingJoinIds((prev) => {
+        const next = new Set(prev);
+        next.delete(commId);
+        return next;
+      });
+    }, 500);
+    onToggleJoin(commId);
+  };
 
   const hasAdminAccess = verifyAdminAccess(user);
 
@@ -180,8 +194,10 @@ export const CommunitiesView: React.FC<CommunitiesViewProps> = ({
                     )}
 
                     <button
-                      onClick={() => onToggleJoin(comm.id)}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      type="button"
+                      disabled={pendingJoinIds.has(comm.id)}
+                      onClick={() => handleJoinClick(comm.id)}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed active:scale-95 ${
                         comm.is_joined
                           ? 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800 border border-zinc-800'
                           : 'bg-zinc-100 hover:bg-white text-zinc-950 shadow-md'

@@ -451,9 +451,8 @@ export function subscribeToPosts(onUpdate: (posts: Post[]) => void): () => void 
   }
 
   // 5. Realtime subscription via Supabase Channels (Postgres changes + Broadcast)
-  const channelTopic = `posts_feed_hub_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const channel = client
-    .channel(channelTopic)
+    .channel('public:posts')
     .on('broadcast', { event: 'new_post' }, ({ payload }) => {
       if (payload && (payload as Post).id) {
         const incoming = payload as Post;
@@ -1089,7 +1088,11 @@ export async function updateCommunityInSupabase(commId: string, updateData: Part
   };
   for (const [key, val] of Object.entries(updateData)) {
     if (ALLOWED_COMMUNITY_COLUMNS.has(key)) {
-      payload[key] = val;
+      if (key === 'members_count') {
+        payload[key] = Math.max(0, parseInt(String(val), 10) || 0);
+      } else {
+        payload[key] = val;
+      }
     }
   }
 
@@ -1193,25 +1196,53 @@ export async function fetchJobListingsFromSupabase(): Promise<JobListing[]> {
       if (!error && Array.isArray(data)) {
         data.forEach((item: any) => {
           if (item && item.id) {
+            let parsedAuthor: any = {
+              username: item.author_username || item.username || 'anonim',
+              display_name: item.author_name || item.display_name || item.author_username || 'Geliştirici',
+              avatar_url: item.author_avatar || item.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+              role: item.author_role || item.role || 'Geliştirici'
+            };
+
+            if (typeof item.author === 'string') {
+              try {
+                const json = JSON.parse(item.author);
+                if (json && typeof json === 'object') parsedAuthor = { ...parsedAuthor, ...json };
+              } catch {}
+            } else if (item.author && typeof item.author === 'object') {
+              parsedAuthor = { ...parsedAuthor, ...item.author };
+            }
+
+            let parsedApps: any[] = [];
+            if (Array.isArray(item.applications)) {
+              parsedApps = item.applications;
+            } else if (typeof item.applications === 'string') {
+              try {
+                const json = JSON.parse(item.applications);
+                if (Array.isArray(json)) parsedApps = json;
+              } catch {}
+            }
+
+            let parsedAppliedBy: string[] = [];
+            if (Array.isArray(item.applied_by)) {
+              parsedAppliedBy = item.applied_by;
+            } else if (typeof item.applied_by === 'string') {
+              try {
+                const json = JSON.parse(item.applied_by);
+                if (Array.isArray(json)) parsedAppliedBy = json;
+              } catch {}
+            }
+
             listingsMap.set(item.id, {
               id: item.id,
               type: item.type || 'job',
               title: item.title || 'İlan',
               description: item.description || '',
               quota: Number(item.quota) || 1,
-              author: typeof item.author === 'string' ? JSON.parse(item.author) : item.author,
+              author: parsedAuthor,
               status: item.status || 'active',
-              applications: Array.isArray(item.applications)
-                ? item.applications
-                : typeof item.applications === 'string'
-                ? JSON.parse(item.applications || '[]')
-                : [],
-              applied_by: Array.isArray(item.applied_by)
-                ? item.applied_by
-                : typeof item.applied_by === 'string'
-                ? JSON.parse(item.applied_by || '[]')
-                : [],
-              applications_count: Array.isArray(item.applications) ? item.applications.length : 0,
+              applications: parsedApps,
+              applied_by: parsedAppliedBy,
+              applications_count: parsedApps.length,
               created_at: item.created_at || new Date().toISOString(),
               time_ago: 'Az önce'
             });
@@ -1223,12 +1254,12 @@ export async function fetchJobListingsFromSupabase(): Promise<JobListing[]> {
     }
   }
 
-  // Preserve any very recent local listings (< 5 mins) not yet fetched
+  // Preserve any very recent local listings (< 10 mins) not yet fetched
   const now = Date.now();
   localListings.forEach((lj) => {
     if (lj && lj.id && !listingsMap.has(lj.id)) {
       const jobTime = new Date(lj.created_at || '').getTime();
-      if (!isNaN(jobTime) && now - jobTime < 5 * 60 * 1000) {
+      if (!isNaN(jobTime) && now - jobTime < 10 * 60 * 1000) {
         listingsMap.set(lj.id, lj);
       }
     }
@@ -1288,9 +1319,8 @@ export function subscribeToJobListings(onUpdate: (listings: JobListing[]) => voi
   }
 
   // 5. Supabase Realtime Channel
-  const channelTopic = `job_listings_hub_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const channel = client
-    .channel(channelTopic)
+    .channel('public:job_listings')
     .on('broadcast', { event: 'new_job' }, ({ payload }) => {
       if (payload?.id) {
         const item = payload as JobListing;
@@ -1365,6 +1395,9 @@ export async function createJobListing(listing: JobListing): Promise<void> {
     description: sanitizeText(listing.description),
     quota: listing.quota,
     author: listing.author,
+    author_username: listing.author?.username,
+    author_name: listing.author?.display_name,
+    author_avatar: listing.author?.avatar_url,
     status: listing.status || 'active',
     created_at: listing.created_at || new Date().toISOString(),
     applications: listing.applications || [],
@@ -2874,9 +2907,8 @@ export function subscribeToSystemErrorReports(onUpdate: (reports: SystemErrorRep
   }
 
   // 4. Supabase Realtime channel
-  const channelTopic = `system_error_reports_hub_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const channel = client
-    .channel(channelTopic)
+    .channel('public:system_error_reports')
     .on('broadcast', { event: 'new_error_report' }, ({ payload }) => {
       if (payload?.id) {
         const item = payload as SystemErrorReport;
@@ -3104,9 +3136,8 @@ export function subscribeToPostReports(onUpdate: (reports: PostReport[]) => void
   }
 
   // 4. Supabase Realtime channel
-  const channelTopic = `post_reports_hub_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const channel = client
-    .channel(channelTopic)
+    .channel('public:post_reports')
     .on('broadcast', { event: 'new_post_report' }, ({ payload }) => {
       if (payload?.id) {
         const item = payload as PostReport;

@@ -21,7 +21,8 @@ import {
   User,
   Globe,
   Download,
-  Smartphone
+  Smartphone,
+  Bug
 } from 'lucide-react';
 import { UserProfile, DynamicTheme } from '../types';
 import { verifyAdminAccess } from '../utils/securityHelper';
@@ -39,6 +40,7 @@ interface SidebarProps {
   onOpenBetaModal: (tabType?: string) => void;
   onChangeLanguage?: (lang: 'tr' | 'en') => void;
   onOpenInstallPWA?: () => void;
+  onOpenReportError?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -52,7 +54,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   onOpenBetaModal,
   onChangeLanguage,
-  onOpenInstallPWA
+  onOpenInstallPWA,
+  onOpenReportError
 }) => {
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
@@ -325,6 +328,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {/* Bottom Actions inside Drawer */}
             <div className="pt-4 border-t border-zinc-800/60 space-y-2">
+              {onOpenReportError && (
+                <button
+                  onClick={() => {
+                    setIsMobileDrawerOpen(false);
+                    onOpenReportError();
+                  }}
+                  className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold text-red-400 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 transition-all cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Bug className="w-4 h-4 text-red-400" />
+                    <span>{language === 'tr' ? 'Bu Hatayı Bildir' : 'Report an Issue'}</span>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded">
+                    LOG
+                  </span>
+                </button>
+              )}
+
               {onChangeLanguage && (
                 <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-zinc-900/60 border border-zinc-800/60 text-xs text-zinc-400">
                   <div className="flex items-center gap-2">
@@ -503,6 +524,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <PlusCircle className="w-4 h-4 text-zinc-950" />
               <span>{language === 'tr' ? 'Yeni Gönderi' : 'New Post'}</span>
             </button>
+
+            {onOpenReportError && (
+              <button
+                onClick={onOpenReportError}
+                className="w-full py-2.5 px-3 rounded-xl font-bold text-red-400 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] cursor-pointer"
+              >
+                <Bug className="w-3.5 h-3.5 text-red-400" />
+                <span>{language === 'tr' ? 'Bu Hatayı Bildir' : 'Report an Issue'}</span>
+              </button>
+            )}
           </div>
         </div>
 
