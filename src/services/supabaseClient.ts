@@ -381,12 +381,12 @@ export function subscribeToPosts(onUpdate: (posts: Post[]) => void): () => void 
       }
     });
 
-    // 2. Preserve any very recently created local posts (< 3 minutes old) not yet indexed in remote
+    // 2. Preserve any very recently created local posts (< 5 minutes old) not yet indexed in remote
     const now = Date.now();
     localPosts.forEach((lp) => {
       if (lp && lp.id && !postsMap.has(lp.id) && !deletedIds.has(lp.id) && !(lp as any).is_deleted) {
         const postTime = new Date(lp.created_at || '').getTime();
-        if (!isNaN(postTime) && now - postTime < 3 * 60 * 1000) {
+        if (!isNaN(postTime) && now - postTime < 5 * 60 * 1000) {
           postsMap.set(lp.id, lp);
         }
       }
@@ -400,41 +400,77 @@ export function subscribeToPosts(onUpdate: (posts: Post[]) => void): () => void 
     onUpdate(clean);
   };
 
+  const fetchRemote = async () => {
+    if (client) {
+      try {
+        const { data, error } = await client
+          .from('posts')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!error && Array.isArray(data)) {
+          refreshAndFilter(data as Post[]);
+        }
+      } catch {}
+    }
+  };
+
   // 1. Initial Load from Local Cache
   const initialLocal = loadStoredPosts();
   onUpdate(initialLocal);
 
   // 2. Fetch latest from Server / Supabase
   syncDeletedPostsFromServer().then(() => {
-    if (client) {
-      client
-        .from('posts')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .then(
-          ({ data, error }) => {
-            if (!error && Array.isArray(data)) {
-              refreshAndFilter(data as Post[]);
-            } else {
-              refreshAndFilter(loadStoredPosts());
-            }
-          },
-          () => {
-            refreshAndFilter(loadStoredPosts());
-          }
-        );
-    } else {
-      refreshAndFilter(loadStoredPosts());
-    }
+    fetchRemote();
   });
 
+  // 3. Same-window broadcast event listener
+  const handleLocalBroadcast = (e: any) => {
+    if (e.detail?.post) {
+      const incomingPost = e.detail.post as Post;
+      const current = loadStoredPosts();
+      const updated = [incomingPost, ...current.filter((p) => p.id !== incomingPost.id)];
+      saveStoredPosts(updated);
+      onUpdate(updated);
+    }
+  };
+  window.addEventListener('c4e_post_broadcast', handleLocalBroadcast);
+
+  // 4. Multi-tab storage event listener
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key === STORAGE_KEYS.POSTS) {
+      onUpdate(loadStoredPosts());
+    }
+  };
+  window.addEventListener('storage', handleStorage);
+
   if (!client) {
-    return () => {};
+    return () => {
+      window.removeEventListener('c4e_post_broadcast', handleLocalBroadcast);
+      window.removeEventListener('storage', handleStorage);
+    };
   }
 
-  // 3. Realtime subscription via Supabase Channels
+  // 5. Realtime subscription via Supabase Channels (Postgres changes + Broadcast)
+  const channelTopic = `posts_feed_hub_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const channel = client
-    .channel('public:posts')
+    .channel(channelTopic)
+    .on('broadcast', { event: 'new_post' }, ({ payload }) => {
+      if (payload && (payload as Post).id) {
+        const incoming = payload as Post;
+        const current = loadStoredPosts();
+        const updated = [incoming, ...current.filter((p) => p.id !== incoming.id)];
+        saveStoredPosts(updated);
+        onUpdate(updated);
+      }
+    })
+    .on('broadcast', { event: 'delete_post' }, ({ payload }) => {
+      if (payload?.id) {
+        saveDeletedPostId(payload.id);
+        const current = loadStoredPosts().filter((p) => p.id !== payload.id);
+        saveStoredPosts(current);
+        onUpdate(current);
+      }
+    })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, async (payload: any) => {
       try {
         if (payload?.eventType === 'DELETE') {
@@ -459,19 +495,17 @@ export function subscribeToPosts(onUpdate: (posts: Post[]) => void): () => void 
           }
         }
 
-        const { data, error } = await client
-          .from('posts')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (!error && Array.isArray(data)) {
-          refreshAndFilter(data as Post[]);
-        }
+        fetchRemote();
       } catch (e) {
         console.warn('Realtime post refresh error:', e);
       }
     })
     .subscribe();
+
+  // 6. Active background poller to ensure continuous real-time sync across different users
+  const pollInterval = setInterval(() => {
+    fetchRemote();
+  }, 4000);
 
   // Listen to window post deletion event
   const handleLocalDeleted = (e: Event) => {
@@ -483,6 +517,9 @@ export function subscribeToPosts(onUpdate: (posts: Post[]) => void): () => void 
   window.addEventListener('c4e_post_deleted', handleLocalDeleted);
 
   return () => {
+    clearInterval(pollInterval);
+    window.removeEventListener('c4e_post_broadcast', handleLocalBroadcast);
+    window.removeEventListener('storage', handleStorage);
     window.removeEventListener('c4e_post_deleted', handleLocalDeleted);
     client.removeChannel(channel);
   };
@@ -658,6 +695,22 @@ export async function createPostInSupabase(post: Post): Promise<{ success: boole
   const current = loadStoredPosts();
   const updated = [post, ...current.filter((p) => p.id !== post.id)];
   saveStoredPosts(updated);
+
+  // Dispatch instant event in the active window
+  try {
+    window.dispatchEvent(new CustomEvent('c4e_post_broadcast', { detail: { post } }));
+  } catch {}
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      client.channel('public:posts').send({
+        type: 'broadcast',
+        event: 'new_post',
+        payload: post
+      });
+    } catch {}
+  }
 
   const snippetCode =
     typeof post.code_snippet === 'object'
@@ -1112,7 +1165,7 @@ export function loadStoredJobListings(): JobListing[] {
   if (data) {
     try {
       const parsed: JobListing[] = JSON.parse(data);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) return parsed.filter((j) => j && j.id);
     } catch {
       // Fallback
     }
@@ -1121,7 +1174,168 @@ export function loadStoredJobListings(): JobListing[] {
 }
 
 export function saveStoredJobListings(listings: JobListing[]): void {
-  localStorage.setItem(STORAGE_KEYS.JOB_LISTINGS, JSON.stringify(listings));
+  const clean = (listings || []).filter((j) => j && j.id);
+  localStorage.setItem(STORAGE_KEYS.JOB_LISTINGS, JSON.stringify(clean));
+}
+
+export async function fetchJobListingsFromSupabase(): Promise<JobListing[]> {
+  const client = getSupabaseClient();
+  const localListings = loadStoredJobListings();
+  const listingsMap = new Map<string, JobListing>();
+
+  if (client) {
+    try {
+      const { data, error } = await client
+        .from('job_listings')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && Array.isArray(data)) {
+        data.forEach((item: any) => {
+          if (item && item.id) {
+            listingsMap.set(item.id, {
+              id: item.id,
+              type: item.type || 'job',
+              title: item.title || 'İlan',
+              description: item.description || '',
+              quota: Number(item.quota) || 1,
+              author: typeof item.author === 'string' ? JSON.parse(item.author) : item.author,
+              status: item.status || 'active',
+              applications: Array.isArray(item.applications)
+                ? item.applications
+                : typeof item.applications === 'string'
+                ? JSON.parse(item.applications || '[]')
+                : [],
+              applied_by: Array.isArray(item.applied_by)
+                ? item.applied_by
+                : typeof item.applied_by === 'string'
+                ? JSON.parse(item.applied_by || '[]')
+                : [],
+              applications_count: Array.isArray(item.applications) ? item.applications.length : 0,
+              created_at: item.created_at || new Date().toISOString(),
+              time_ago: 'Az önce'
+            });
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('Error fetching job listings from Supabase:', e);
+    }
+  }
+
+  // Preserve any very recent local listings (< 5 mins) not yet fetched
+  const now = Date.now();
+  localListings.forEach((lj) => {
+    if (lj && lj.id && !listingsMap.has(lj.id)) {
+      const jobTime = new Date(lj.created_at || '').getTime();
+      if (!isNaN(jobTime) && now - jobTime < 5 * 60 * 1000) {
+        listingsMap.set(lj.id, lj);
+      }
+    }
+  });
+
+  const merged = Array.from(listingsMap.values()).sort(
+    (a, b) => new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime()
+  );
+
+  saveStoredJobListings(merged);
+  return merged;
+}
+
+export function subscribeToJobListings(onUpdate: (listings: JobListing[]) => void): () => void {
+  const client = getSupabaseClient();
+
+  const refreshAndNotify = async () => {
+    const list = await fetchJobListingsFromSupabase();
+    onUpdate(list);
+  };
+
+  // 1. Initial local load
+  onUpdate(loadStoredJobListings());
+
+  // 2. Fetch from Supabase
+  refreshAndNotify();
+
+  // 3. Window event listener
+  const handleLocalBroadcast = (e: any) => {
+    if (e.detail?.listing) {
+      const item = e.detail.listing as JobListing;
+      const current = loadStoredJobListings();
+      const updated = [item, ...current.filter((j) => j.id !== item.id)];
+      saveStoredJobListings(updated);
+      onUpdate(updated);
+    } else if (e.detail?.deletedId) {
+      const current = loadStoredJobListings().filter((j) => j.id !== e.detail.deletedId);
+      saveStoredJobListings(current);
+      onUpdate(current);
+    }
+  };
+  window.addEventListener('c4e_job_broadcast', handleLocalBroadcast);
+
+  // 4. Storage event listener (multi-tab)
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key === STORAGE_KEYS.JOB_LISTINGS) {
+      onUpdate(loadStoredJobListings());
+    }
+  };
+  window.addEventListener('storage', handleStorage);
+
+  if (!client) {
+    return () => {
+      window.removeEventListener('c4e_job_broadcast', handleLocalBroadcast);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }
+
+  // 5. Supabase Realtime Channel
+  const channelTopic = `job_listings_hub_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const channel = client
+    .channel(channelTopic)
+    .on('broadcast', { event: 'new_job' }, ({ payload }) => {
+      if (payload?.id) {
+        const item = payload as JobListing;
+        const current = loadStoredJobListings();
+        const updated = [item, ...current.filter((j) => j.id !== item.id)];
+        saveStoredJobListings(updated);
+        onUpdate(updated);
+      }
+    })
+    .on('broadcast', { event: 'delete_job' }, ({ payload }) => {
+      if (payload?.id) {
+        const current = loadStoredJobListings().filter((j) => j.id !== payload.id);
+        saveStoredJobListings(current);
+        onUpdate(current);
+      }
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'job_listings' }, async (payload: any) => {
+      try {
+        if (payload?.eventType === 'DELETE') {
+          const deletedId = payload.old?.id;
+          if (deletedId) {
+            const current = loadStoredJobListings().filter((j) => j.id !== deletedId);
+            saveStoredJobListings(current);
+            onUpdate(current);
+            return;
+          }
+        }
+        refreshAndNotify();
+      } catch (e) {
+        console.warn('Realtime job refresh error:', e);
+      }
+    })
+    .subscribe();
+
+  // 6. Active polling interval
+  const pollInterval = setInterval(() => {
+    refreshAndNotify();
+  }, 4000);
+
+  return () => {
+    clearInterval(pollInterval);
+    window.removeEventListener('c4e_job_broadcast', handleLocalBroadcast);
+    window.removeEventListener('storage', handleStorage);
+    client.removeChannel(channel);
+  };
 }
 
 export async function createJobListing(listing: JobListing): Promise<void> {
@@ -1129,24 +1343,37 @@ export async function createJobListing(listing: JobListing): Promise<void> {
   const updated = [listing, ...current.filter((j) => j.id !== listing.id)];
   saveStoredJobListings(updated);
 
+  try {
+    window.dispatchEvent(new CustomEvent('c4e_job_broadcast', { detail: { listing } }));
+  } catch {}
+
   const client = getSupabaseClient();
   if (client) {
     try {
-      await client.from('job_listings').upsert({
-        id: listing.id,
-        type: listing.type,
-        title: sanitizeText(listing.title),
-        description: sanitizeText(listing.description),
-        quota: listing.quota,
-        author: listing.author,
-        status: listing.status,
-        created_at: listing.created_at,
-        applications: listing.applications || [],
-        applied_by: listing.applied_by || []
+      client.channel('public:job_listings').send({
+        type: 'broadcast',
+        event: 'new_job',
+        payload: listing
       });
-    } catch (err) {
-      console.warn('Supabase job listing sync error:', err);
-    }
+    } catch {}
+  }
+
+  const payload: Record<string, any> = {
+    id: listing.id,
+    type: listing.type,
+    title: sanitizeText(listing.title),
+    description: sanitizeText(listing.description),
+    quota: listing.quota,
+    author: listing.author,
+    status: listing.status || 'active',
+    created_at: listing.created_at || new Date().toISOString(),
+    applications: listing.applications || [],
+    applied_by: listing.applied_by || []
+  };
+
+  const result = await resilientSupabaseUpsert('job_listings', payload);
+  if (!result.success && result.error) {
+    console.warn('Supabase job listing sync error:', result.error);
   }
 }
 
@@ -1155,13 +1382,38 @@ export async function deleteJobListing(jobId: string): Promise<void> {
   const updated = current.filter((j) => j.id !== jobId);
   saveStoredJobListings(updated);
 
+  try {
+    window.dispatchEvent(new CustomEvent('c4e_job_broadcast', { detail: { deletedId: jobId } }));
+  } catch {}
+
   const client = getSupabaseClient();
+  const config = getSupabaseConfig();
+
   if (client) {
     try {
+      client.channel('public:job_listings').send({
+        type: 'broadcast',
+        event: 'delete_job',
+        payload: { id: jobId }
+      });
       await client.from('job_listings').delete().eq('id', jobId);
     } catch (err) {
       console.warn('Supabase job listing delete error:', err);
     }
+  }
+
+  if (config.url && config.anonKey) {
+    try {
+      const cleanUrl = config.url.replace(/\/+$/, '');
+      fetch(`${cleanUrl}/rest/v1/job_listings?id=eq.${encodeURIComponent(jobId)}`, {
+        method: 'DELETE',
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          Prefer: 'return=minimal'
+        }
+      }).catch(() => {});
+    } catch {}
   }
 }
 
@@ -1195,6 +1447,10 @@ export async function submitJobApplication(
 
   const updatedListings = currentListings.map((j) => (j.id === targetJob.id ? updatedJob : j));
   saveStoredJobListings(updatedListings);
+
+  try {
+    window.dispatchEvent(new CustomEvent('c4e_job_broadcast', { detail: { listing: updatedJob } }));
+  } catch {}
 
   if (onNotifyAuthor && targetJob.author.username !== application.applicant_username) {
     const notification: NotificationItem = {
@@ -1237,10 +1493,11 @@ export async function submitJobApplication(
         description: cleanApp.description,
         created_at: cleanApp.created_at
       });
-      await client.from('job_listings').update({
+      await resilientSupabaseUpsert('job_listings', {
+        id: targetJob.id,
         applications: updatedApps,
         applied_by: appliedBy
-      }).eq('id', targetJob.id);
+      });
     } catch (err) {
       console.warn('Supabase application sync error:', err);
     }
@@ -2495,53 +2752,46 @@ export async function reportSystemErrorInSupabase(
   const updatedLocal = [fullReport, ...local.filter((r) => r.id !== id)];
   saveStoredSystemErrorReports(updatedLocal);
 
-  // 2. Save to Supabase table
-  const client = getSupabaseClient();
-  const config = getSupabaseConfig();
+  // 2. Dispatch local broadcast
+  try {
+    window.dispatchEvent(new CustomEvent('c4e_system_error_broadcast', { detail: { report: fullReport } }));
+  } catch {}
 
+  // 3. Send Supabase broadcast
+  const client = getSupabaseClient();
   if (client) {
     try {
-      const { error } = await client.from('system_error_reports').upsert({
-        id: fullReport.id,
-        error_type: fullReport.error_type,
-        location: fullReport.location,
-        description: fullReport.description,
-        logs: fullReport.logs,
-        reporter_username: fullReport.reporter_username,
-        reporter_display_name: fullReport.reporter_display_name,
-        reporter_avatar: fullReport.reporter_avatar,
-        status: fullReport.status,
-        created_at: fullReport.created_at
+      client.channel('public:system_error_reports').send({
+        type: 'broadcast',
+        event: 'new_error_report',
+        payload: fullReport
       });
-      if (error) {
-        console.warn('Supabase system error report upsert error:', error.message || error);
-      }
-    } catch (err) {
-      console.warn('Supabase system error report exception:', err);
-    }
-  }
-
-  if (config.url && config.anonKey) {
-    try {
-      const cleanUrl = config.url.replace(/\/+$/, '');
-      fetch(`${cleanUrl}/rest/v1/system_error_reports`, {
-        method: 'POST',
-        headers: {
-          apikey: config.anonKey,
-          Authorization: `Bearer ${config.anonKey}`,
-          'Content-Type': 'application/json',
-          Prefer: 'resolution=merge-duplicates'
-        },
-        body: JSON.stringify(fullReport)
-      }).catch(() => {});
     } catch {}
   }
 
-  return { success: true, id };
+  // 4. Resilient upsert to Supabase
+  const payload: Record<string, any> = {
+    id: fullReport.id,
+    error_type: fullReport.error_type,
+    location: fullReport.location,
+    description: fullReport.description,
+    logs: fullReport.logs,
+    reporter_username: fullReport.reporter_username,
+    reporter_display_name: fullReport.reporter_display_name,
+    reporter_avatar: fullReport.reporter_avatar,
+    status: fullReport.status,
+    created_at: fullReport.created_at
+  };
+
+  const result = await resilientSupabaseUpsert('system_error_reports', payload);
+  return { success: true, id, error: result.error };
 }
 
 export async function getSystemErrorReportsFromSupabase(): Promise<SystemErrorReport[]> {
   const client = getSupabaseClient();
+  const local = loadStoredSystemErrorReports();
+  const map = new Map<string, SystemErrorReport>();
+
   if (client) {
     try {
       const { data, error } = await client
@@ -2550,34 +2800,106 @@ export async function getSystemErrorReportsFromSupabase(): Promise<SystemErrorRe
         .order('created_at', { ascending: false });
 
       if (data && !error && Array.isArray(data)) {
-        saveStoredSystemErrorReports(data as SystemErrorReport[]);
-        return data as SystemErrorReport[];
+        data.forEach((item: any) => {
+          if (item && item.id) {
+            map.set(item.id, item as SystemErrorReport);
+          }
+        });
       }
     } catch (err) {
       console.warn('Supabase get error reports error:', err);
     }
   }
-  return loadStoredSystemErrorReports();
+
+  // Merge recent local reports (< 10 mins)
+  const now = Date.now();
+  local.forEach((r) => {
+    if (r && r.id && !map.has(r.id)) {
+      const t = new Date(r.created_at || '').getTime();
+      if (!isNaN(t) && now - t < 10 * 60 * 1000) {
+        map.set(r.id, r);
+      }
+    }
+  });
+
+  const merged = Array.from(map.values()).sort(
+    (a, b) => new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime()
+  );
+
+  saveStoredSystemErrorReports(merged);
+  return merged;
 }
 
 export function subscribeToSystemErrorReports(onUpdate: (reports: SystemErrorReport[]) => void): () => void {
   const client = getSupabaseClient();
+
+  const refreshAndNotify = async () => {
+    const list = await getSystemErrorReportsFromSupabase();
+    onUpdate(list);
+  };
+
+  // 1. Initial Load
+  onUpdate(loadStoredSystemErrorReports());
+  refreshAndNotify();
+
+  // 2. Window event listener
+  const handleLocalBroadcast = (e: any) => {
+    if (e.detail?.report) {
+      const rep = e.detail.report as SystemErrorReport;
+      const current = loadStoredSystemErrorReports();
+      const updated = [rep, ...current.filter((r) => r.id !== rep.id)];
+      saveStoredSystemErrorReports(updated);
+      onUpdate(updated);
+    } else if (e.detail?.deletedId) {
+      const current = loadStoredSystemErrorReports().filter((r) => r.id !== e.detail.deletedId);
+      saveStoredSystemErrorReports(current);
+      onUpdate(current);
+    }
+  };
+  window.addEventListener('c4e_system_error_broadcast', handleLocalBroadcast);
+
+  // 3. Multi-tab storage event
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key === STORAGE_KEYS.SYSTEM_ERROR_REPORTS) {
+      onUpdate(loadStoredSystemErrorReports());
+    }
+  };
+  window.addEventListener('storage', handleStorage);
+
   if (!client) {
-    onUpdate(loadStoredSystemErrorReports());
-    return () => {};
+    return () => {
+      window.removeEventListener('c4e_system_error_broadcast', handleLocalBroadcast);
+      window.removeEventListener('storage', handleStorage);
+    };
   }
 
-  getSystemErrorReportsFromSupabase().then((data) => onUpdate(data));
-
+  // 4. Supabase Realtime channel
+  const channelTopic = `system_error_reports_hub_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const channel = client
-    .channel('public:system_error_reports')
+    .channel(channelTopic)
+    .on('broadcast', { event: 'new_error_report' }, ({ payload }) => {
+      if (payload?.id) {
+        const item = payload as SystemErrorReport;
+        const current = loadStoredSystemErrorReports();
+        const updated = [item, ...current.filter((r) => r.id !== item.id)];
+        saveStoredSystemErrorReports(updated);
+        onUpdate(updated);
+      }
+    })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'system_error_reports' }, async () => {
-      const latest = await getSystemErrorReportsFromSupabase();
-      onUpdate(latest);
+      refreshAndNotify();
     })
     .subscribe();
 
+  // 5. Active background polling
+  const pollInterval = setInterval(() => {
+    refreshAndNotify();
+  }, 4000);
+
   return () => {
+    clearInterval(pollInterval);
+    window.removeEventListener('c4e_system_error_broadcast', handleLocalBroadcast);
+    window.removeEventListener('storage', handleStorage);
     client.removeChannel(channel);
   };
 }
@@ -2587,6 +2909,10 @@ export async function deleteSystemErrorReportInSupabase(reportId: string): Promi
   const current = loadStoredSystemErrorReports();
   const updated = current.filter((r) => r.id !== reportId);
   saveStoredSystemErrorReports(updated);
+
+  try {
+    window.dispatchEvent(new CustomEvent('c4e_system_error_broadcast', { detail: { deletedId: reportId } }));
+  } catch {}
 
   // 2. Delete from Supabase
   const client = getSupabaseClient();
@@ -2638,7 +2964,7 @@ export function saveStoredPostReports(reports: PostReport[]): void {
 
 export async function reportPostInSupabase(
   reportData: Omit<PostReport, 'id' | 'created_at' | 'status'> & { id?: string }
-): Promise<{ success: boolean; id: string }> {
+): Promise<{ success: boolean; id: string; error?: string }> {
   const id = reportData.id || `prep_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const fullReport: PostReport = {
     id,
@@ -2658,50 +2984,44 @@ export async function reportPostInSupabase(
   const updatedLocal = [fullReport, ...local.filter((r) => r.id !== id)];
   saveStoredPostReports(updatedLocal);
 
-  const client = getSupabaseClient();
-  const config = getSupabaseConfig();
+  try {
+    window.dispatchEvent(new CustomEvent('c4e_post_report_broadcast', { detail: { report: fullReport } }));
+  } catch {}
 
+  const client = getSupabaseClient();
   if (client) {
     try {
-      await client.from('post_reports').upsert({
-        id: fullReport.id,
-        post_id: fullReport.post_id,
-        post_author_username: fullReport.post_author_username,
-        post_content: fullReport.post_content,
-        reporter_username: fullReport.reporter_username,
-        reporter_display_name: fullReport.reporter_display_name,
-        reason: fullReport.reason,
-        reason_label: fullReport.reason_label,
-        details: fullReport.details,
-        status: fullReport.status,
-        created_at: fullReport.created_at
+      client.channel('public:post_reports').send({
+        type: 'broadcast',
+        event: 'new_post_report',
+        payload: fullReport
       });
-    } catch (err) {
-      console.warn('Supabase post report error:', err);
-    }
-  }
-
-  if (config.url && config.anonKey) {
-    try {
-      const cleanUrl = config.url.replace(/\/+$/, '');
-      fetch(`${cleanUrl}/rest/v1/post_reports`, {
-        method: 'POST',
-        headers: {
-          apikey: config.anonKey,
-          Authorization: `Bearer ${config.anonKey}`,
-          'Content-Type': 'application/json',
-          Prefer: 'resolution=merge-duplicates'
-        },
-        body: JSON.stringify(fullReport)
-      }).catch(() => {});
     } catch {}
   }
 
-  return { success: true, id };
+  const payload: Record<string, any> = {
+    id: fullReport.id,
+    post_id: fullReport.post_id,
+    post_author_username: fullReport.post_author_username,
+    post_content: fullReport.post_content,
+    reporter_username: fullReport.reporter_username,
+    reporter_display_name: fullReport.reporter_display_name,
+    reason: fullReport.reason,
+    reason_label: fullReport.reason_label,
+    details: fullReport.details,
+    status: fullReport.status,
+    created_at: fullReport.created_at
+  };
+
+  const result = await resilientSupabaseUpsert('post_reports', payload);
+  return { success: true, id, error: result.error };
 }
 
 export async function getPostReportsFromSupabase(): Promise<PostReport[]> {
   const client = getSupabaseClient();
+  const local = loadStoredPostReports();
+  const map = new Map<string, PostReport>();
+
   if (client) {
     try {
       const { data, error } = await client
@@ -2710,34 +3030,106 @@ export async function getPostReportsFromSupabase(): Promise<PostReport[]> {
         .order('created_at', { ascending: false });
 
       if (data && !error && Array.isArray(data)) {
-        saveStoredPostReports(data as PostReport[]);
-        return data as PostReport[];
+        data.forEach((item: any) => {
+          if (item && item.id) {
+            map.set(item.id, item as PostReport);
+          }
+        });
       }
     } catch (err) {
       console.warn('Supabase get post reports error:', err);
     }
   }
-  return loadStoredPostReports();
+
+  // Merge recent local reports (< 10 mins)
+  const now = Date.now();
+  local.forEach((r) => {
+    if (r && r.id && !map.has(r.id)) {
+      const t = new Date(r.created_at || '').getTime();
+      if (!isNaN(t) && now - t < 10 * 60 * 1000) {
+        map.set(r.id, r);
+      }
+    }
+  });
+
+  const merged = Array.from(map.values()).sort(
+    (a, b) => new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime()
+  );
+
+  saveStoredPostReports(merged);
+  return merged;
 }
 
 export function subscribeToPostReports(onUpdate: (reports: PostReport[]) => void): () => void {
   const client = getSupabaseClient();
+
+  const refreshAndNotify = async () => {
+    const list = await getPostReportsFromSupabase();
+    onUpdate(list);
+  };
+
+  // 1. Initial Load
+  onUpdate(loadStoredPostReports());
+  refreshAndNotify();
+
+  // 2. Window event listener
+  const handleLocalBroadcast = (e: any) => {
+    if (e.detail?.report) {
+      const rep = e.detail.report as PostReport;
+      const current = loadStoredPostReports();
+      const updated = [rep, ...current.filter((r) => r.id !== rep.id)];
+      saveStoredPostReports(updated);
+      onUpdate(updated);
+    } else if (e.detail?.deletedId) {
+      const current = loadStoredPostReports().filter((r) => r.id !== e.detail.deletedId);
+      saveStoredPostReports(current);
+      onUpdate(current);
+    }
+  };
+  window.addEventListener('c4e_post_report_broadcast', handleLocalBroadcast);
+
+  // 3. Multi-tab storage event
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key === STORAGE_KEYS.POST_REPORTS) {
+      onUpdate(loadStoredPostReports());
+    }
+  };
+  window.addEventListener('storage', handleStorage);
+
   if (!client) {
-    onUpdate(loadStoredPostReports());
-    return () => {};
+    return () => {
+      window.removeEventListener('c4e_post_report_broadcast', handleLocalBroadcast);
+      window.removeEventListener('storage', handleStorage);
+    };
   }
 
-  getPostReportsFromSupabase().then((data) => onUpdate(data));
-
+  // 4. Supabase Realtime channel
+  const channelTopic = `post_reports_hub_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const channel = client
-    .channel('public:post_reports')
+    .channel(channelTopic)
+    .on('broadcast', { event: 'new_post_report' }, ({ payload }) => {
+      if (payload?.id) {
+        const item = payload as PostReport;
+        const current = loadStoredPostReports();
+        const updated = [item, ...current.filter((r) => r.id !== item.id)];
+        saveStoredPostReports(updated);
+        onUpdate(updated);
+      }
+    })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'post_reports' }, async () => {
-      const latest = await getPostReportsFromSupabase();
-      onUpdate(latest);
+      refreshAndNotify();
     })
     .subscribe();
 
+  // 5. Active background polling
+  const pollInterval = setInterval(() => {
+    refreshAndNotify();
+  }, 4000);
+
   return () => {
+    clearInterval(pollInterval);
+    window.removeEventListener('c4e_post_report_broadcast', handleLocalBroadcast);
+    window.removeEventListener('storage', handleStorage);
     client.removeChannel(channel);
   };
 }
@@ -2746,6 +3138,10 @@ export async function deletePostReportInSupabase(reportId: string): Promise<void
   const current = loadStoredPostReports();
   const updated = current.filter((r) => r.id !== reportId);
   saveStoredPostReports(updated);
+
+  try {
+    window.dispatchEvent(new CustomEvent('c4e_post_report_broadcast', { detail: { deletedId: reportId } }));
+  } catch {}
 
   const client = getSupabaseClient();
   const config = getSupabaseConfig();
@@ -2772,5 +3168,6 @@ export async function deletePostReportInSupabase(reportId: string): Promise<void
     } catch {}
   }
 }
+
 
 
