@@ -239,11 +239,16 @@ export const CommunitiesView: React.FC<CommunitiesViewProps> = ({
         <CommunitySettingsModal
           isOpen={!!editingCommunity}
           community={editingCommunity}
-          currentUser={user}
+          currentUser={user || { id: '', username: '', display_name: '', avatar_url: '', banner_url: '', bio: '', role: 'user' }}
           language={language}
           allUsers={allUsers}
           onClose={() => setEditingCommunity(null)}
-          onSaveCommunity={(updated) => {
+          onUpdateCommunity={(communityId, updatedData) => {
+            const updated: Community = {
+              ...editingCommunity,
+              ...updatedData,
+              updated_at: new Date().toISOString()
+            };
             if (onUpdateCommunity) onUpdateCommunity(updated);
             setEditingCommunity(null);
           }}
@@ -251,10 +256,11 @@ export const CommunitiesView: React.FC<CommunitiesViewProps> = ({
             if (onDeleteCommunity) onDeleteCommunity(commId);
             setEditingCommunity(null);
           }}
-          onTransferOwnership={(commId, newOwnerUsername) => {
-            const updated = {
+          onTransferOwnership={(commId, newOwnerUsername, newOwnerId) => {
+            const updated: Community = {
               ...editingCommunity,
               creator_username: newOwnerUsername,
+              created_by: newOwnerId || editingCommunity.created_by,
               updated_at: new Date().toISOString()
             };
             if (onUpdateCommunity) onUpdateCommunity(updated);

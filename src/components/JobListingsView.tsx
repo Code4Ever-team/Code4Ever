@@ -50,10 +50,12 @@ export const JobListingsView: React.FC<JobListingsViewProps> = ({
       const authorUsername = job.author?.username || '';
       const authorDisplayName = job.author?.display_name || '';
 
+      const currentUsername = (currentUser?.username || '').toLowerCase();
+
       // Type filter
       if (filterType === 'job' && job.type !== 'job') return false;
       if (filterType === 'team' && job.type !== 'team') return false;
-      if (filterType === 'mine' && authorUsername.toLowerCase() !== currentUser.username.toLowerCase()) return false;
+      if (filterType === 'mine' && authorUsername.toLowerCase() !== currentUsername) return false;
 
       // Search query
       if (searchQuery.trim()) {
@@ -195,7 +197,9 @@ export const JobListingsView: React.FC<JobListingsViewProps> = ({
             const authorAvatar = job.author?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150';
             const authorRole = job.author?.role;
 
-            const isOwner = authorUsername.toLowerCase() === currentUser.username.toLowerCase();
+            const isOwner = (currentUser?.username && authorUsername) 
+              ? authorUsername.toLowerCase() === currentUser.username.toLowerCase()
+              : false;
             const hasApplied = (job.applied_by || []).includes(currentUser.id || '') ||
               (job.applied_by || []).includes(currentUser.username) ||
               (job.applications || []).some((a) => a.applicant_username === currentUser.username);

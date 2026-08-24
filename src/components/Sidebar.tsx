@@ -338,7 +338,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   <div className="flex items-center gap-2.5">
                     <Bug className="w-4 h-4 text-red-400" />
-                    <span>{language === 'tr' ? 'Bu Hatayı Bildir' : 'Report an Issue'}</span>
+                    <span>{language === 'tr' ? 'Bir Hata Bildir' : 'Report an Issue'}</span>
                   </div>
                   <span className="text-[10px] font-mono font-bold bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded">
                     LOG
@@ -531,7 +531,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className="w-full py-2.5 px-3 rounded-xl font-bold text-red-400 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] cursor-pointer"
               >
                 <Bug className="w-3.5 h-3.5 text-red-400" />
-                <span>{language === 'tr' ? 'Bu Hatayı Bildir' : 'Report an Issue'}</span>
+                <span>{language === 'tr' ? 'Bir Hata Bildir' : 'Report an Issue'}</span>
               </button>
             )}
           </div>

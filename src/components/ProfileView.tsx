@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { UserProfile, DynamicTheme, Community, Post } from '../types';
 import { UserBadges } from './UserBadges';
 import { CodeSnippetBlock } from './CodeSnippetBlock';
@@ -28,7 +28,8 @@ import {
   Trash2,
   Sparkles,
   Globe,
-  Mail
+  Mail,
+  Lock
 } from 'lucide-react';
 import { validateFileSize, notifyFileSizeExceeded } from '../utils/fileUploadHelper';
 import { validateUsername, sanitizeText, sanitizeUrl, checkUsernameAvailability, verifyAdminAccess } from '../utils/securityHelper';
@@ -81,6 +82,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [isShowcaseModalOpen, setIsShowcaseModalOpen] = useState(false);
   const [usernameTakenError, setUsernameTakenError] = useState<string | null>(null);
   const [postToDelete, setPostToDelete] = useState<Post | null>(null);
+
+  useEffect(() => {
+    setFormData(user);
+  }, [user]);
 
   const activeUser = currentUser || user;
   const profileUserKey = (user.username || user.id || '').toLowerCase();
@@ -232,13 +237,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
 const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
 
+  const isLikesHidden = !isOwnProfile && (user.show_liked_posts === false || formData.show_liked_posts === false);
+
   const displayedList =
     profileTab === 'posts'
       ? userAuthoredPosts
       : profileTab === 'reposts'
       ? userRepostedPosts
       : profileTab === 'likes'
-      ? userLikedPosts
+      ? (isLikesHidden ? [] : userLikedPosts)
       : userMediaPosts;
 
   return (
@@ -455,11 +462,17 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
                 : 'text-zinc-400 border-transparent hover:text-zinc-200'
             }`}
           >
-            <Heart className="w-3.5 h-3.5 text-zinc-400" />
-            <span>{language === 'tr' ? 'Beğeniler' : 'Likes'}</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-zinc-800 font-mono text-zinc-400">
-              {userLikedPosts.length}
-            </span>
+            {isLikesHidden ? (
+              <Lock className="w-3.5 h-3.5 text-zinc-400" />
+            ) : (
+              <Heart className="w-3.5 h-3.5 text-zinc-400" />
+            )}
+            <span>{language === 'tr' ? (isLikesHidden ? 'Beğeniler (Gizli)' : 'Beğeniler') : (isLikesHidden ? 'Likes (Private)' : 'Likes')}</span>
+            {!isLikesHidden && (
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-zinc-800 font-mono text-zinc-400">
+                {userLikedPosts.length}
+              </span>
+            )}
           </button>
 
           <button
@@ -496,7 +509,21 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
         </div>
 
         {/* Tab Contents */}
-        {profileTab === 'communities' ? (
+        {profileTab === 'likes' && isLikesHidden ? (
+          <div className="p-12 text-center space-y-3 bg-[#0c0c0e] rounded-2xl border border-zinc-800/40">
+            <div className="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-zinc-400">
+              <Lock className="w-6 h-6 text-zinc-400" />
+            </div>
+            <h3 className="text-sm font-bold text-white">
+              {language === 'tr' ? 'Beğenilen Gönderiler Gizlidir' : 'Liked Posts are Private'}
+            </h3>
+            <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+              {language === 'tr'
+                ? 'Bu kullanıcı beğenilen gönderilerinin görünürlüğünü kapattı.'
+                : 'This user has made their liked posts private.'}
+            </p>
+          </div>
+        ) : profileTab === 'communities' ? (
           <div className="bg-[#0c0c0e] border border-zinc-800/50 rounded-2xl p-4 space-y-3">
             <h3 className="text-xs font-bold text-white flex items-center gap-2">
               <Users className="w-4 h-4 text-purple-400" />

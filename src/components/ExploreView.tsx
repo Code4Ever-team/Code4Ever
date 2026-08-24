@@ -21,16 +21,24 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'posts' | 'communities'>('all');
 
-  const filteredPosts = posts.filter((p) =>
-    p.content.toLowerCase().includes(query.toLowerCase()) ||
-    (p.code_snippet && p.code_snippet.code.toLowerCase().includes(query.toLowerCase())) ||
-    p.author.username.toLowerCase().includes(query.toLowerCase())
-  );
+  const q = (query || '').toLowerCase().trim();
 
-  const filteredCommunities = communities.filter((c) =>
-    c.name.toLowerCase().includes(query.toLowerCase()) ||
-    c.handle.toLowerCase().includes(query.toLowerCase())
-  );
+  const filteredPosts = posts.filter((p) => {
+    if (!p) return false;
+    const content = (p.content || '').toLowerCase();
+    const snippetCode = typeof p.code_snippet === 'object' && p.code_snippet 
+      ? (p.code_snippet.code || '') 
+      : (typeof p.code_snippet === 'string' ? p.code_snippet : '');
+    const authorUser = (p.author?.username || '').toLowerCase();
+    return content.includes(q) || snippetCode.toLowerCase().includes(q) || authorUser.includes(q);
+  });
+
+  const filteredCommunities = communities.filter((c) => {
+    if (!c) return false;
+    const cName = (c.name || '').toLowerCase();
+    const cHandle = (c.handle || '').toLowerCase();
+    return cName.includes(q) || cHandle.includes(q);
+  });
 
   return (
     <div className="flex-1 min-w-0 w-full border-r border-zinc-800/60 min-h-screen pb-16 bg-[#09090b]">

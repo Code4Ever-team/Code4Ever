@@ -65,6 +65,7 @@ import {
   checkPersistentRateLimit,
   checkDuplicatePost,
   sanitizeText,
+  sanitizeCode,
   sanitizeUrl,
   runSecurityPenetrationTest,
   verifyAdminAccess
@@ -622,11 +623,11 @@ export default function App() {
     const sanitizedContent = sanitizeText(content, 4000);
     const sanitizedMediaUrl = mediaUrl ? (mediaUrl.startsWith('data:') ? mediaUrl : sanitizeUrl(mediaUrl)) : undefined;
 
-    const sanitizedSnippet = codeSnippet
+    const sanitizedSnippet = codeSnippet && codeSnippet.code && codeSnippet.code.trim()
       ? {
           title: sanitizeText(codeSnippet.title, 80) || 'Snippet',
           language: sanitizeText(codeSnippet.language, 40) || 'Code',
-          code: sanitizeText(codeSnippet.code, 15000)
+          code: sanitizeCode(codeSnippet.code, 50000)
         }
       : undefined;
 

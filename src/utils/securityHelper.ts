@@ -51,7 +51,10 @@ export function isReservedUsername(username: string): boolean {
  * Validates and normalizes a username.
  * Only allows alphanumeric characters and underscores (3-25 chars).
  */
-export function validateUsername(username: string): { isValid: boolean; error?: string; cleanUsername: string } {
+export function validateUsername(username?: string | null): { isValid: boolean; error?: string; cleanUsername: string } {
+  if (!username || typeof username !== 'string') {
+    return { isValid: false, error: 'Kullanıcı adı boş olamaz.', cleanUsername: '' };
+  }
   const clean = username.trim().toLowerCase().replace(/^@/, '').replace(/[^a-z0-9_]/g, '');
   
   if (clean.length < 3) {
@@ -88,6 +91,11 @@ export function sanitizeUrl(url?: string | null): string {
     return '#';
   }
   
+  // Allow data:image and data:video URIs for local media uploads
+  if (lower.startsWith('data:image/') || lower.startsWith('data:video/')) {
+    return trimmed;
+  }
+
   // Ensure valid web protocol or prepend https if needed
   if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('mailto:')) {
     return trimmed;
@@ -132,19 +140,17 @@ export function sanitizeText(input?: string | null, maxLength = 5000): string {
   // Neutralize null bytes and unicode control bypasses
   sanitized = sanitized.replace(/\0/g, '').replace(/[\u202E\u202D\u200E\u200F]/g, '');
 
-  // Strip dangerous tag patterns, iframe, embed, object and script blocks
-  sanitized = sanitized
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
-    .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
-    .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, '')
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-    .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '') // inline event handlers like onerror=, onload=
-    .replace(/on\w+\s*=\s*[^>\s]+/gi, '')
-    .replace(/javascript:/gi, '')
-    .replace(/vbscript:/gi, '');
-    
   return sanitized;
+}
+
+/**
+ * Safely sanitizes source code for snippets.
+ * Source code must NOT strip programming syntax like <script>, <style>, onClick, javascript:, etc.,
+ * as it is rendered safely as escaped plain text inside pre/code blocks in React.
+ */
+export function sanitizeCode(input?: string | null, maxLength = 50000): string {
+  if (!input || typeof input !== 'string') return '';
+  return input.slice(0, maxLength).replace(/\0/g, '');
 }
 
 /**

@@ -2,6 +2,7 @@ import { createClient, SupabaseClient, User as SupabaseUser } from '@supabase/su
 import {
   UserProfile,
   Post,
+  CodeSnippet,
   PostComment,
   Community,
   JobListing,
@@ -323,6 +324,61 @@ export function saveDeletedPostId(postId: string): void {
   } catch {}
 }
 
+export function normalizePostCodeSnippet(snippet: any, codeLanguage?: string): CodeSnippet | undefined {
+  if (!snippet) return undefined;
+
+  if (typeof snippet === 'object') {
+    const code = typeof snippet.code === 'string' ? snippet.code : '';
+    if (!code && !snippet.title) return undefined;
+    return {
+      title: snippet.title || 'Snippet',
+      language: snippet.language || codeLanguage || 'Code',
+      code: code
+    };
+  }
+
+  if (typeof snippet === 'string') {
+    const trimmed = snippet.trim();
+    if (!trimmed) return undefined;
+
+    // Try parsing stringified JSON
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === 'object') {
+          const code = typeof parsed.code === 'string' ? parsed.code : (typeof parsed === 'string' ? parsed : '');
+          if (code || parsed.title) {
+            return {
+              title: parsed.title || 'Snippet',
+              language: parsed.language || codeLanguage || 'Code',
+              code: code
+            };
+          }
+        }
+      } catch {}
+    }
+
+    return {
+      title: 'Snippet',
+      language: codeLanguage || 'Code',
+      code: trimmed
+    };
+  }
+
+  return undefined;
+}
+
+export function normalizePost(post: any): Post {
+  if (!post || typeof post !== 'object') return post;
+  const snippet = normalizePostCodeSnippet(post.code_snippet, (post as any).code_language);
+  return {
+    ...post,
+    code_snippet: snippet,
+    category: post.category || 'general',
+    category_name: post.category_name || 'Genel & Sohbet'
+  };
+}
+
 export function loadStoredPosts(): Post[] {
   const data = localStorage.getItem(STORAGE_KEYS.POSTS);
   const deletedIds = loadDeletedPostIds();
@@ -330,7 +386,9 @@ export function loadStoredPosts(): Post[] {
     try {
       const parsed: Post[] = JSON.parse(data);
       if (Array.isArray(parsed)) {
-        return parsed.filter((p) => p && p.id && !(p as any).is_deleted && !deletedIds.has(p.id));
+        return parsed
+          .filter((p) => p && p.id && !(p as any).is_deleted && !deletedIds.has(p.id))
+          .map((p) => normalizePost(p));
       }
     } catch {
       // Fallback
@@ -341,7 +399,9 @@ export function loadStoredPosts(): Post[] {
 
 export function saveStoredPosts(posts: Post[]): void {
   const deletedIds = loadDeletedPostIds();
-  const clean = (posts || []).filter((p) => p && p.id && !(p as any).is_deleted && !deletedIds.has(p.id));
+  const clean = (posts || [])
+    .filter((p) => p && p.id && !(p as any).is_deleted && !deletedIds.has(p.id))
+    .map((p) => normalizePost(p));
   localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(clean));
 }
 
@@ -377,7 +437,7 @@ export function subscribeToPosts(onUpdate: (posts: Post[]) => void): () => void 
     // 1. Load remote posts
     (remotePosts || []).forEach((p) => {
       if (p && p.id && !(p as any).is_deleted && (p as any).content !== '[DELETED]' && !deletedIds.has(p.id)) {
-        postsMap.set(p.id, p);
+        postsMap.set(p.id, normalizePost(p));
       }
     });
 
@@ -387,7 +447,7 @@ export function subscribeToPosts(onUpdate: (posts: Post[]) => void): () => void 
       if (lp && lp.id && !postsMap.has(lp.id) && !deletedIds.has(lp.id) && !(lp as any).is_deleted) {
         const postTime = new Date(lp.created_at || '').getTime();
         if (!isNaN(postTime) && now - postTime < 5 * 60 * 1000) {
-          postsMap.set(lp.id, lp);
+          postsMap.set(lp.id, normalizePost(lp));
         }
       }
     });
@@ -691,13 +751,14 @@ export async function resilientSupabaseUpdate(
 }
 
 export async function createPostInSupabase(post: Post): Promise<{ success: boolean; error?: string; post: Post }> {
+  const normalizedPost = normalizePost(post);
   const current = loadStoredPosts();
-  const updated = [post, ...current.filter((p) => p.id !== post.id)];
+  const updated = [normalizedPost, ...current.filter((p) => p.id !== normalizedPost.id)];
   saveStoredPosts(updated);
 
   // Dispatch instant event in the active window
   try {
-    window.dispatchEvent(new CustomEvent('c4e_post_broadcast', { detail: { post } }));
+    window.dispatchEvent(new CustomEvent('c4e_post_broadcast', { detail: { post: normalizedPost } }));
   } catch {}
 
   const client = getSupabaseClient();
@@ -706,58 +767,57 @@ export async function createPostInSupabase(post: Post): Promise<{ success: boole
       client.channel('public:posts').send({
         type: 'broadcast',
         event: 'new_post',
-        payload: post
+        payload: normalizedPost
       });
     } catch {}
   }
 
-  const snippetCode =
-    typeof post.code_snippet === 'object'
-      ? post.code_snippet?.code
-      : typeof post.code_snippet === 'string'
-      ? post.code_snippet
-      : null;
-  const snippetLang =
-    typeof post.code_snippet === 'object'
-      ? post.code_snippet?.language
-      : (post as any).code_language || null;
+  const snippetCode = normalizedPost.code_snippet?.code || null;
+  const snippetLang = normalizedPost.code_snippet?.language || (normalizedPost as any).code_language || null;
+  const snippetPayload = normalizedPost.code_snippet
+    ? JSON.stringify({
+        title: normalizedPost.code_snippet.title || 'Snippet',
+        language: snippetLang || 'Code',
+        code: snippetCode || ''
+      })
+    : null;
 
   const payload: Record<string, any> = {
-    id: post.id,
-    author: post.author,
-    content: sanitizeText(post.content, 5000),
-    category: post.category || 'general',
-    category_name: post.category_name || 'Genel & Sohbet',
-    code_snippet: snippetCode || null,
+    id: normalizedPost.id,
+    author: normalizedPost.author,
+    content: sanitizeText(normalizedPost.content, 5000),
+    category: normalizedPost.category || 'general',
+    category_name: normalizedPost.category_name || 'Genel & Sohbet',
+    code_snippet: snippetPayload,
     code_language: snippetLang || null,
-    media_url: post.media_url || null,
-    media_type: post.media_type || null,
-    project_card: post.project_card || null,
-    community_id: post.community_id || null,
-    community_name: post.community_name || null,
-    community_handle: post.community_handle || null,
-    likes_count: Number(post.likes_count) || 0,
-    liked_by: post.liked_by || [],
-    comments_count: Number(post.comments_count) || 0,
-    comments: post.comments || [],
-    reposts_count: Number(post.reposts_count) || 0,
-    reposted_by: post.reposted_by || [],
-    bookmarked_by: post.bookmarked_by || [],
-    is_pinned: Boolean((post as any).is_pinned),
+    media_url: normalizedPost.media_url || null,
+    media_type: normalizedPost.media_type || null,
+    project_card: normalizedPost.project_card || null,
+    community_id: normalizedPost.community_id || null,
+    community_name: normalizedPost.community_name || null,
+    community_handle: normalizedPost.community_handle || null,
+    likes_count: Number(normalizedPost.likes_count) || 0,
+    liked_by: normalizedPost.liked_by || [],
+    comments_count: Number(normalizedPost.comments_count) || 0,
+    comments: normalizedPost.comments || [],
+    reposts_count: Number(normalizedPost.reposts_count) || 0,
+    reposted_by: normalizedPost.reposted_by || [],
+    bookmarked_by: normalizedPost.bookmarked_by || [],
+    is_pinned: Boolean((normalizedPost as any).is_pinned),
     is_deleted: false,
-    created_at: post.created_at || new Date().toISOString()
+    created_at: normalizedPost.created_at || new Date().toISOString()
   };
 
   const result = await resilientSupabaseUpsert('posts', payload);
   if (!result.success && result.error) {
     console.warn('Supabase post creation notice:', result.error);
   }
-  return { success: result.success, error: result.error, post };
+  return { success: result.success, error: result.error, post: normalizedPost };
 }
 
 export async function updatePostInSupabase(postId: string, updateData: Partial<Post>): Promise<{ success: boolean; error?: string }> {
   const current = loadStoredPosts();
-  const updated = current.map((p) => (p.id === postId ? { ...p, ...updateData } : p));
+  const updated = current.map((p) => (p.id === postId ? normalizePost({ ...p, ...updateData }) : p));
   saveStoredPosts(updated);
 
   // Sanitize updateData - strip client-only properties like is_liked, is_reposted, is_bookmarked, time_ago
@@ -765,10 +825,10 @@ export async function updatePostInSupabase(postId: string, updateData: Partial<P
   for (const [key, val] of Object.entries(updateData)) {
     if (ALLOWED_POST_COLUMNS.has(key)) {
       if (key === 'code_snippet') {
-        sanitizedUpdate.code_snippet =
-          typeof val === 'object' ? (val as any)?.code : typeof val === 'string' ? val : null;
-        if (typeof val === 'object' && (val as any)?.language) {
-          sanitizedUpdate.code_language = (val as any).language;
+        const normSnippet = normalizePostCodeSnippet(val, (updateData as any)?.code_language);
+        sanitizedUpdate.code_snippet = normSnippet ? JSON.stringify(normSnippet) : null;
+        if (normSnippet?.language) {
+          sanitizedUpdate.code_language = normSnippet.language;
         }
       } else {
         sanitizedUpdate[key] = val;
@@ -1455,8 +1515,7 @@ export async function submitJobApplication(
   onNotifyAuthor?: (notification: NotificationItem) => void
 ): Promise<boolean> {
   const currentListings = loadStoredJobListings();
-  const targetJob = currentListings.find((j) => j.id === application.job_id);
-  if (!targetJob) return false;
+  let targetJob = currentListings.find((j) => j.id === application.job_id);
 
   const cleanApp: JobApplication = {
     ...application,
@@ -1465,6 +1524,38 @@ export async function submitJobApplication(
     languages: sanitizeText(application.languages),
     description: sanitizeText(application.description)
   };
+
+  const client = getSupabaseClient();
+
+  if (!targetJob && client) {
+    try {
+      const { data } = await client.from('job_listings').select('*').eq('id', application.job_id).maybeSingle();
+      if (data) {
+        targetJob = data as JobListing;
+      }
+    } catch {}
+  }
+
+  if (!targetJob) {
+    targetJob = {
+      id: application.job_id,
+      title: 'İlan',
+      description: '',
+      type: 'job',
+      quota: 1,
+      status: 'active',
+      author: {
+        id: '',
+        username: '',
+        display_name: 'İlan Sahibi',
+        avatar_url: ''
+      },
+      applications: [],
+      applications_count: 0,
+      applied_by: [],
+      created_at: new Date().toISOString()
+    };
+  }
 
   const updatedApps = [...(targetJob.applications || []), cleanApp];
   const appliedBy = Array.from(
@@ -1479,28 +1570,41 @@ export async function submitJobApplication(
   };
 
   const updatedListings = currentListings.map((j) => (j.id === targetJob.id ? updatedJob : j));
+  if (!currentListings.some((j) => j.id === targetJob.id)) {
+    updatedListings.unshift(updatedJob);
+  }
   saveStoredJobListings(updatedListings);
 
   try {
     window.dispatchEvent(new CustomEvent('c4e_job_broadcast', { detail: { listing: updatedJob } }));
   } catch {}
 
+  const notification: NotificationItem = {
+    id: `notif_app_${Date.now()}`,
+    type: 'job_application',
+    actor: {
+      username: application.applicant_username,
+      display_name: application.applicant_display_name || application.name || application.applicant_username,
+      avatar_url: application.applicant_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'
+    },
+    content: `"${targetJob.title}" başlıklı ${targetJob.type === 'team' ? 'ekip' : 'iş'} ilanınıza başvurdu.`,
+    time_ago: 'Az önce',
+    is_read: false,
+    target_id: targetJob.id
+  };
+
   if (onNotifyAuthor && targetJob.author.username !== application.applicant_username) {
-    const notification: NotificationItem = {
-      id: `notif_app_${Date.now()}`,
-      type: 'job_application',
-      actor: {
-        username: application.applicant_username,
-        display_name: application.applicant_display_name || application.name || application.applicant_username,
-        avatar_url: application.applicant_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'
-      },
-      content: `"${targetJob.title}" başlıklı ${targetJob.type === 'team' ? 'ekip' : 'iş'} ilanınıza başvurdu.`,
-      time_ago: 'Az önce',
-      is_read: false,
-      target_id: targetJob.id
-    };
     onNotifyAuthor(notification);
   }
+
+  // Also push to local stored notifications if target author matches local user
+  try {
+    const localUser = loadStoredProfile();
+    if (localUser && targetJob.author.username && localUser.username.toLowerCase() === targetJob.author.username.toLowerCase()) {
+      const storedNotifs = loadStoredNotifications();
+      saveStoredNotifications([notification, ...storedNotifs]);
+    }
+  } catch {}
 
   // Dispatch Webhooks (Discord, Jubbio, Telegram) configured in settings
   try {
@@ -1511,7 +1615,6 @@ export async function submitJobApplication(
     console.warn('Webhook execution error:', err);
   }
 
-  const client = getSupabaseClient();
   if (client) {
     try {
       await client.from('job_applications').insert({
@@ -1530,6 +1633,18 @@ export async function submitJobApplication(
         id: targetJob.id,
         applications: updatedApps,
         applied_by: appliedBy
+      });
+
+      // Broadcast update to real-time channel
+      const jobChan = client.channel('public:job_listings');
+      jobChan.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          jobChan.send({
+            type: 'broadcast',
+            event: 'update_job',
+            payload: updatedJob
+          }).finally(() => client.removeChannel(jobChan));
+        }
       });
     } catch (err) {
       console.warn('Supabase application sync error:', err);
@@ -1620,20 +1735,27 @@ export const ALLOWED_PROFILE_COLUMNS = new Set([
   'role',
   'verified',
   'email',
+  'website',
   'theme_color',
   'accent_color',
   'joined_communities',
   'custom_fields',
   'is_admin',
   'saved_post_ids',
+  'allow_group_invites',
+  'show_liked_posts',
+  'is_online',
+  'last_seen_at',
+  'integrations',
   'created_at',
   'updated_at'
 ]);
 
 export async function updateUserProfileInSupabase(userId: string, updateData: Partial<UserProfile>): Promise<{ success: boolean; error?: string }> {
   const local = loadStoredProfile();
-  if (local && (local.id === userId || local.username === (updateData as any).username)) {
-    saveStoredProfile({ ...local, ...updateData });
+  if (local && (local.id === userId || local.username === (updateData as any).username || !local.id)) {
+    const updatedUser = { ...local, ...updateData };
+    saveStoredProfile(updatedUser);
   }
 
   // Map frontend fields to PostgreSQL table column names
@@ -2013,10 +2135,35 @@ export function subscribeToConversationMessages(
     onUpdate(merged);
   };
 
+  const removeAndEmit = (messageId: string) => {
+    const current = loadStoredMessages(conversationId);
+    const filtered = current.filter((m) => m.id !== messageId);
+    saveStoredMessages(conversationId, filtered);
+    onUpdate(filtered);
+  };
+
+  const updateAndEmit = (messageId: string, updatedFields: Partial<ChatMessage>) => {
+    const current = loadStoredMessages(conversationId);
+    const updated = current.map((m) => (m.id === messageId ? { ...m, ...updatedFields } : m));
+    saveStoredMessages(conversationId, updated);
+    onUpdate(updated);
+  };
+
   // Same-window broadcast event listener
   const handleCustomEvent = (e: any) => {
-    if (e.detail && e.detail.conversation_id === conversationId) {
-      mergeAndEmit([e.detail]);
+    if (e.detail) {
+      if (e.detail.action === 'delete_msg' && e.detail.conversation_id === conversationId) {
+        removeAndEmit(e.detail.messageId);
+      } else if (e.detail.action === 'edit_msg' && e.detail.conversation_id === conversationId) {
+        updateAndEmit(e.detail.messageId, {
+          content: e.detail.content,
+          decrypted_text: e.detail.decrypted_text,
+          is_edited: true,
+          updated_at: new Date().toISOString()
+        });
+      } else if (e.detail.conversation_id === conversationId && !e.detail.action) {
+        mergeAndEmit([e.detail]);
+      }
     }
   };
   window.addEventListener('c4e_message_broadcast', handleCustomEvent);
@@ -2060,6 +2207,21 @@ export function subscribeToConversationMessages(
         mergeAndEmit([payload as ChatMessage]);
       }
     })
+    .on('broadcast', { event: 'edit_msg' }, ({ payload }) => {
+      if (payload && payload.conversation_id === conversationId && payload.messageId) {
+        updateAndEmit(payload.messageId, {
+          content: payload.content,
+          decrypted_text: payload.decrypted_text,
+          is_edited: true,
+          updated_at: new Date().toISOString()
+        });
+      }
+    })
+    .on('broadcast', { event: 'delete_msg' }, ({ payload }) => {
+      if (payload && payload.conversation_id === conversationId && payload.messageId) {
+        removeAndEmit(payload.messageId);
+      }
+    })
     .on(
       'postgres_changes',
       {
@@ -2084,7 +2246,21 @@ export function subscribeToConversationMessages(
       },
       (payload) => {
         if (payload.new) {
-          mergeAndEmit([payload.new as ChatMessage]);
+          updateAndEmit(payload.new.id, payload.new as Partial<ChatMessage>);
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'messages',
+        filter: `conversation_id=eq.${conversationId}`
+      },
+      (payload) => {
+        if (payload.old && payload.old.id) {
+          removeAndEmit(payload.old.id);
         }
       }
     )
@@ -2284,6 +2460,110 @@ export async function markMessagesAsReadService(conversationId: string, readerUs
       } catch (err) {
         console.warn('Supabase mark read error:', err);
       }
+    }
+  }
+}
+
+export async function editMessageService(
+  conversationId: string,
+  messageId: string,
+  newContent: string,
+  decryptedText?: string
+): Promise<void> {
+  const current = loadStoredMessages(conversationId);
+  const updated = current.map((m) => {
+    if (m.id === messageId) {
+      return {
+        ...m,
+        content: newContent,
+        decrypted_text: decryptedText !== undefined ? decryptedText : m.decrypted_text,
+        is_edited: true,
+        updated_at: new Date().toISOString()
+      };
+    }
+    return m;
+  });
+  saveStoredMessages(conversationId, updated);
+
+  // Broadcast window event for local instant reactivity
+  window.dispatchEvent(
+    new CustomEvent('c4e_message_broadcast', {
+      detail: {
+        action: 'edit_msg',
+        conversation_id: conversationId,
+        messageId,
+        content: newContent,
+        decrypted_text: decryptedText
+      }
+    })
+  );
+
+  const client = getSupabaseClient();
+  if (client) {
+    // Broadcast via ephemeral channel
+    const roomChannel = client.channel(`edit_room_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+    roomChannel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        roomChannel.send({
+          type: 'broadcast',
+          event: 'edit_msg',
+          payload: { conversation_id: conversationId, messageId, content: newContent, decrypted_text: decryptedText }
+        }).finally(() => {
+          client.removeChannel(roomChannel);
+        });
+      }
+    });
+
+    try {
+      await client
+        .from('messages')
+        .update({
+          content: newContent,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', messageId);
+    } catch (err) {
+      console.warn('Supabase message edit error:', err);
+    }
+  }
+}
+
+export async function deleteMessageService(conversationId: string, messageId: string): Promise<void> {
+  const current = loadStoredMessages(conversationId);
+  const updated = current.filter((m) => m.id !== messageId);
+  saveStoredMessages(conversationId, updated);
+
+  // Broadcast window event for local instant reactivity
+  window.dispatchEvent(
+    new CustomEvent('c4e_message_broadcast', {
+      detail: {
+        action: 'delete_msg',
+        conversation_id: conversationId,
+        messageId
+      }
+    })
+  );
+
+  const client = getSupabaseClient();
+  if (client) {
+    // Broadcast via ephemeral channel
+    const roomChannel = client.channel(`del_room_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+    roomChannel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        roomChannel.send({
+          type: 'broadcast',
+          event: 'delete_msg',
+          payload: { conversation_id: conversationId, messageId }
+        }).finally(() => {
+          client.removeChannel(roomChannel);
+        });
+      }
+    });
+
+    try {
+      await client.from('messages').delete().eq('id', messageId);
+    } catch (err) {
+      console.warn('Supabase message delete error:', err);
     }
   }
 }

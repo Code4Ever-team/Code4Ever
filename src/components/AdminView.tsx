@@ -211,24 +211,24 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const pendingBetaUsers = useMemo(() => {
     return allUsers.filter(
       (u) =>
-        u.username.toLowerCase() !== 'nylithra' &&
+        (u.username || '').toLowerCase() !== 'nylithra' &&
         (u.betaStatus === 'pending' || (u.betaContact && u.betaStatus !== 'approved' && u.betaStatus !== 'rejected'))
     );
   }, [allUsers]);
 
   const approvedBetaUsers = useMemo(() => {
     return allUsers.filter(
-      (u) => u.username.toLowerCase() !== 'nylithra' && u.betaStatus === 'approved'
+      (u) => (u.username || '').toLowerCase() !== 'nylithra' && u.betaStatus === 'approved'
     );
   }, [allUsers]);
 
   const filteredUsers = useMemo(() => {
-    const cleanSearch = searchTerm.toLowerCase().trim();
+    const cleanSearch = (searchTerm || '').toLowerCase().trim();
     if (!cleanSearch) return allUsers;
     return allUsers.filter(
       (u) =>
-        u.username.toLowerCase().includes(cleanSearch) ||
-        u.display_name.toLowerCase().includes(cleanSearch)
+        (u.username || '').toLowerCase().includes(cleanSearch) ||
+        (u.display_name || '').toLowerCase().includes(cleanSearch)
     );
   }, [allUsers, searchTerm]);
 
@@ -318,12 +318,13 @@ export const AdminView: React.FC<AdminViewProps> = ({
     badgeId: string
   ) => {
     const existingBadges = user.badges || [];
+    const cleanBadgeLabel = (badgeLabel || '').toLowerCase();
     const hasBadge = existingBadges.some(
-      (b) => b.id === badgeId || b.label?.toLowerCase() === badgeLabel.toLowerCase()
+      (b) => b.id === badgeId || (b.label || '').toLowerCase() === cleanBadgeLabel
     );
 
     const updatedBadges = hasBadge
-      ? existingBadges.filter((b) => b.id !== badgeId && b.label?.toLowerCase() !== badgeLabel.toLowerCase())
+      ? existingBadges.filter((b) => b.id !== badgeId && (b.label || '').toLowerCase() !== cleanBadgeLabel)
       : [
           ...existingBadges,
           {
@@ -463,12 +464,13 @@ export const AdminView: React.FC<AdminViewProps> = ({
     let updatedBadges = targetUser.badges || [];
     if (targetPlan.badgeLabel) {
       const bId = targetPlan.badgeId || `sub_${targetPlan.id}`;
-      const badgeColor = (bId === 'c4e_dev' || targetPlan.badgeLabel.toLowerCase().includes('developer'))
+      const badgeColor = (bId === 'c4e_dev' || (targetPlan.badgeLabel || '').toLowerCase().includes('developer'))
         ? '#ef4444'
         : (targetPlan.badgeColor || '#3b82f6');
       const badgeDesc = `${targetPlan.name} aboneliği kapsamında kullanıcıya verilen özel ${targetPlan.badgeLabel} rozetidir.`;
 
-      const existingIndex = updatedBadges.findIndex((b) => b.id === bId || b.label?.toLowerCase() === targetPlan.badgeLabel?.toLowerCase());
+      const targetBadgeLower = (targetPlan.badgeLabel || '').toLowerCase();
+      const existingIndex = updatedBadges.findIndex((b) => b.id === bId || (b.label || '').toLowerCase() === targetBadgeLower);
       if (existingIndex >= 0) {
         updatedBadges[existingIndex] = {
           id: bId,
@@ -516,10 +518,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const handleRemoveSupporterRole = (user: UserProfile) => {
     const existingBadges = user.badges || [];
     const updatedBadges = existingBadges.filter(
-      (b) => b.id !== 'spark' && b.id !== 'c4e_spark' && !b.label?.toLowerCase().includes('spark')
+      (b) => b.id !== 'spark' && b.id !== 'c4e_spark' && !(b.label || '').toLowerCase().includes('spark')
     );
 
-    const isCurrentRoleSpark = user.role?.toLowerCase() === 'spark';
+    const isCurrentRoleSpark = (user.role || '').toLowerCase() === 'spark';
     const newRole = isCurrentRoleSpark ? 'Developer' : user.role;
 
     onUpdateUser(user.id, {
@@ -1338,10 +1340,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
               </div>
 
               {/* Supporter / Spark Role Removal Box */}
-              {(selectedUserForBadges.role?.toLowerCase() === 'spark' ||
+              {((selectedUserForBadges.role || '').toLowerCase() === 'spark' ||
                 selectedUserForBadges.subscription?.planId === 'spark' ||
                 selectedUserForBadges.badges?.some(
-                  (b) => b.id === 'spark' || b.id === 'c4e_spark' || b.label?.toLowerCase().includes('spark')
+                  (b) => b.id === 'spark' || b.id === 'c4e_spark' || (b.label || '').toLowerCase().includes('spark')
                 )) && (
                 <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 animate-in fade-in">
                   <div className="flex items-center gap-2.5">
@@ -1555,10 +1557,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   {
                     allUsers.filter(
                       (u) =>
-                        u.role?.toLowerCase() === 'spark' ||
+                        (u.role || '').toLowerCase() === 'spark' ||
                         u.subscription?.planId === 'spark' ||
                         u.badges?.some(
-                          (b) => b.id === 'spark' || b.id === 'c4e_spark' || b.label?.toLowerCase().includes('spark')
+                          (b) => b.id === 'spark' || b.id === 'c4e_spark' || (b.label || '').toLowerCase().includes('spark')
                         ) ||
                         Boolean(u.subscription?.isActive)
                     ).length
@@ -1571,10 +1573,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
             {(() => {
               const activeSupporters = allUsers.filter(
                 (u) =>
-                  u.role?.toLowerCase() === 'spark' ||
+                  (u.role || '').toLowerCase() === 'spark' ||
                   u.subscription?.planId === 'spark' ||
                   u.badges?.some(
-                    (b) => b.id === 'spark' || b.id === 'c4e_spark' || b.label?.toLowerCase().includes('spark')
+                    (b) => b.id === 'spark' || b.id === 'c4e_spark' || (b.label || '').toLowerCase().includes('spark')
                   ) ||
                   Boolean(u.subscription?.isActive)
               );
@@ -1591,9 +1593,9 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {activeSupporters.map((supporter) => {
                     const isSpark =
-                      supporter.role?.toLowerCase() === 'spark' ||
+                      (supporter.role || '').toLowerCase() === 'spark' ||
                       supporter.badges?.some(
-                        (b) => b.id === 'spark' || b.id === 'c4e_spark' || b.label?.toLowerCase().includes('spark')
+                        (b) => b.id === 'spark' || b.id === 'c4e_spark' || (b.label || '').toLowerCase().includes('spark')
                       );
 
                     return (

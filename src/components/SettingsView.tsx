@@ -559,6 +559,43 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 />
               </button>
             </div>
+
+            {/* Liked Posts Visibility Toggle */}
+            <div className="flex items-center justify-between p-3.5 rounded-xl bg-zinc-950 border border-zinc-800/80">
+              <div className="space-y-0.5">
+                <p className="text-xs font-bold text-white">
+                  {language === 'tr' ? 'Beğenilen Paylaşımların Görünürlüğü' : 'Liked Posts Visibility'}
+                </p>
+                <p className="text-[11px] text-zinc-400 font-mono">
+                  {formData.show_liked_posts !== false
+                    ? language === 'tr'
+                      ? 'Açık: Profilinizde beğendiğiniz gönderiler herkese görünür'
+                      : 'Public: Your liked posts are visible on your profile'
+                    : language === 'tr'
+                    ? 'Kapalı: Beğendiğiniz gönderiler sizden başkasına gizlidir'
+                    : 'Private: Only you can see your liked posts'}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const newVal = formData.show_liked_posts === false ? true : false;
+                  const updated = { ...formData, show_liked_posts: newVal };
+                  setFormData(updated);
+                  onUpdateProfile(updated);
+                }}
+                className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
+                  formData.show_liked_posts !== false ? 'bg-emerald-600' : 'bg-zinc-800'
+                }`}
+              >
+                <span
+                  className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
+                    formData.show_liked_posts !== false ? 'left-7' : 'left-1'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
         )}
 

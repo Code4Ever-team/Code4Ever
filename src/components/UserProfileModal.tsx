@@ -100,7 +100,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
         const cachedUsers = loadStoredAllUsers();
         const foundCached = cachedUsers.find(
-          (u) => u.username.toLowerCase() === cleanUsername
+          (u) => (u.username || '').toLowerCase() === cleanUsername
         );
         if (foundCached) {
           setProfileData(foundCached);
@@ -137,8 +137,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
         // 4. If not a user, check if a Community exists with this handle or name
         const matchedComm = communities.find((c) => {
-          const commHandle = c.handle.replace(/^@/, '').toLowerCase().trim();
-          const commName = c.name.toLowerCase().trim();
+          if (!c) return false;
+          const commHandle = (c.handle || '').replace(/^@/, '').toLowerCase().trim();
+          const commName = (c.name || '').toLowerCase().trim();
           return commHandle === cleanUsername || commName === cleanUsername;
         });
 

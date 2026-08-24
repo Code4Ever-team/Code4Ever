@@ -64,6 +64,7 @@ export interface UserProfile {
   subscription?: UserSubscriptionInfo;
   saved_post_ids?: string[];
   allow_group_invites?: boolean; // Privacy setting: allow group invites
+  show_liked_posts?: boolean; // Privacy setting: visibility of liked posts on profile
   is_online?: boolean;
   last_seen_at?: string;
   integrations?: WebhookIntegrationSettings;
@@ -128,6 +129,8 @@ export interface ChatMessage {
   media_name?: string;
   status: 'sending' | 'sent' | 'delivered' | 'read';
   created_at: string;
+  is_edited?: boolean;
+  updated_at?: string;
   encryption_duration_ms?: number;
   reply_to?: {
     id: string;

@@ -30,7 +30,11 @@ import {
   ShieldCheck,
   Camera,
   Upload,
-  AlertTriangle
+  AlertTriangle,
+  Edit2,
+  Reply,
+  CornerUpLeft,
+  Video
 } from 'lucide-react';
 import {
   UserProfile,
@@ -49,6 +53,8 @@ import {
   subscribeToUserIncomingMessages,
   sendMessageService,
   markMessagesAsReadService,
+  editMessageService,
+  deleteMessageService,
   loadStoredGroups,
   saveStoredGroups,
   subscribeToGroupsService,
@@ -107,14 +113,14 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
   // Handle external initial target user (e.g. from user profile or message button)
   useEffect(() => {
-    if (initialTargetUser && initialTargetUser.username) {
-      const sortedUsernames = [user.username.toLowerCase(), initialTargetUser.username.toLowerCase()].sort();
+    if (initialTargetUser && initialTargetUser.username && user?.username) {
+      const sortedUsernames = [(user.username || '').toLowerCase(), (initialTargetUser.username || '').toLowerCase()].sort();
       const convId = `dm_${sortedUsernames.join('_')}`;
       setSelectedConversationId(convId);
       setSelectedTargetUser(initialTargetUser);
       setSelectedGroup(null);
     }
-  }, [initialTargetUser, user.username]);
+  }, [initialTargetUser, user?.username]);
 
   // Realtime Presence (Set of online usernames)
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
@@ -131,6 +137,19 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   const [groupInvites, setGroupInvites] = useState<GroupInvite[]>([]);
   const [inputText, setInputText] = useState('');
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
+  const [messageContextMenu, setMessageContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    message: ChatMessage | null;
+  }>({ visible: false, x: 0, y: 0, message: null });
+
+  // Swipe & Touch Tracking for Mobile Swipe to Reply
+  const touchStartXRef = useRef<number>(0);
+  const touchStartYRef = useRef<number>(0);
+  const [swipedMessageId, setSwipedMessageId] = useState<string | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState<number>(0);
 
   // Modals & Panels
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
@@ -274,10 +293,13 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
       if (memberContextMenu.visible) {
         setMemberContextMenu({ visible: false, x: 0, y: 0, member: null });
       }
+      if (messageContextMenu.visible) {
+        setMessageContextMenu({ visible: false, x: 0, y: 0, message: null });
+      }
     };
     window.addEventListener('click', handleGlobalClick);
     return () => window.removeEventListener('click', handleGlobalClick);
-  }, [memberContextMenu.visible]);
+  }, [memberContextMenu.visible, messageContextMenu.visible]);
 
   // Compute unified conversation list (Direct Messages + Groups) sorted by latest message
   const unifiedConversations = React.useMemo(() => {
@@ -287,7 +309,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     Object.entries(activeDirectMap).forEach(([convId, rawData]) => {
       const data = rawData as { lastMessage: ChatMessage; otherUsername: string };
       if (!data || !data.otherUsername) return;
-      const target = allUsers.find((u) => u.username?.toLowerCase() === data.otherUsername.toLowerCase()) || {
+      const target = allUsers.find((u) => (u.username || '').toLowerCase() === (data.otherUsername || '').toLowerCase()) || {
         id: `usr_${data.otherUsername}`,
         username: data.otherUsername,
         display_name:
@@ -308,7 +330,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
         updated_at: new Date().toISOString()
       };
 
-      const isOnline = onlineUsers.has(data.otherUsername.toLowerCase());
+      const isOnline = Boolean(data.otherUsername && onlineUsers.has(data.otherUsername.toLowerCase()));
       let previewText = data.lastMessage?.decrypted_text || data.lastMessage?.content || '';
       if (previewText.startsWith('e2ee:')) {
         previewText = language === 'tr' ? 'Mesaj' : 'Message';
@@ -334,8 +356,8 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     });
 
     // If a direct chat was actively opened in UI (e.g. from New Chat Modal), keep it visible
-    if (selectedTargetUser) {
-      const sorted = [user.username.toLowerCase(), selectedTargetUser.username.toLowerCase()].sort();
+    if (selectedTargetUser && selectedTargetUser.username) {
+      const sorted = [(user?.username || '').toLowerCase(), (selectedTargetUser.username || '').toLowerCase()].sort();
       const convId = `dm_${sorted.join('_')}`;
       if (!list.some((item) => item.id === convId)) {
         list.unshift({
@@ -345,32 +367,33 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
           avatar: selectedTargetUser.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
           lastMessageText: language === 'tr' ? 'Sohbet başlatıldı' : 'Chat started',
           lastMessageTimestamp: new Date().toISOString(),
-          isOnline: onlineUsers.has(selectedTargetUser.username.toLowerCase()),
+          isOnline: Boolean(selectedTargetUser.username && onlineUsers.has(selectedTargetUser.username.toLowerCase())),
           targetUser: selectedTargetUser
         });
       }
     }
 
     // B. Groups where user is a member
+    const currentUsername = (user?.username || '').toLowerCase();
     const userGroups = groups.filter((g) =>
-      g.members?.some((m) => m.username.toLowerCase() === user.username.toLowerCase())
+      g.members?.some((m) => (m.username || '').toLowerCase() === currentUsername)
     );
 
     userGroups.forEach((g) => {
       let previewText = g.last_message
         ? g.last_message.text
-        : `${g.members.length} ${language === 'tr' ? 'üye' : 'members'}`;
+        : `${g.members?.length || 0} ${language === 'tr' ? 'üye' : 'members'}`;
       list.push({
         id: g.id,
         type: 'group',
-        title: g.name,
+        title: g.name || 'Grup',
         avatar: g.avatar_url || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150',
         lastMessageText: previewText,
         lastMessageSender: g.last_message?.sender_name,
         lastMessageTimestamp: g.last_message?.timestamp || g.created_at || new Date().toISOString(),
         isOnline: false,
         group: g,
-        membersCount: g.members.length
+        membersCount: g.members?.length || 0
       });
     });
 
@@ -380,7 +403,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     );
 
     return list;
-  }, [activeDirectMap, allUsers, onlineUsers, language, user.username, selectedTargetUser, groups]);
+  }, [activeDirectMap, allUsers, onlineUsers, language, user?.username, selectedTargetUser, groups]);
 
   // Filtered list based on active tab and search query
   const displayedConversations = React.useMemo(() => {
@@ -395,8 +418,8 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
       const q = searchQuery.toLowerCase().trim();
       filtered = filtered.filter(
         (c) =>
-          c.title.toLowerCase().includes(q) ||
-          c.lastMessageText.toLowerCase().includes(q) ||
+          (c.title || '').toLowerCase().includes(q) ||
+          (c.lastMessageText || '').toLowerCase().includes(q) ||
           (c.targetUser?.username && c.targetUser.username.toLowerCase().includes(q))
       );
     }
@@ -405,7 +428,8 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
   // Handle opening a direct message
   const handleOpenDirectChat = (targetUser: UserProfile) => {
-    const sortedUsernames = [user.username.toLowerCase(), targetUser.username.toLowerCase()].sort();
+    if (!targetUser || !targetUser.username) return;
+    const sortedUsernames = [(user?.username || '').toLowerCase(), (targetUser.username || '').toLowerCase()].sort();
     const convId = `dm_${sortedUsernames.join('_')}`;
 
     setSelectedConversationId(convId);
@@ -421,9 +445,90 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     setSelectedTargetUser(null);
   };
 
-  // Handle Send Message (E2EE)
+  // Handle Message Edit, Delete, Reply
+  const handleStartEdit = (msg: ChatMessage) => {
+    const rawText = decryptedTextMap[msg.id] || msg.content || '';
+    setEditingMessage({ id: msg.id, text: rawText });
+    setInputText(rawText);
+    setReplyingTo(null);
+    setMessageContextMenu({ visible: false, x: 0, y: 0, message: null });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessage(null);
+    setInputText('');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingMessage || !selectedConversationId || !inputText.trim()) return;
+    const newText = inputText.trim();
+    const { encrypted } = await encryptE2EEMessage(newText, selectedConversationId);
+    await editMessageService(selectedConversationId, editingMessage.id, encrypted, newText);
+    setDecryptedTextMap((prev) => ({ ...prev, [editingMessage.id]: newText }));
+    setMessages((prev) =>
+      prev.map((m) => (m.id === editingMessage.id ? { ...m, is_edited: true, decrypted_text: newText } : m))
+    );
+    setEditingMessage(null);
+    setInputText('');
+  };
+
+  const handleDeleteMessage = async (msg: ChatMessage) => {
+    if (!selectedConversationId) return;
+    await deleteMessageService(selectedConversationId, msg.id);
+    setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+    setMessageContextMenu({ visible: false, x: 0, y: 0, message: null });
+  };
+
+  const handleReplyMessage = (msg: ChatMessage) => {
+    setReplyingTo(msg);
+    setEditingMessage(null);
+    setMessageContextMenu({ visible: false, x: 0, y: 0, message: null });
+  };
+
+  const handleMessageTouchStart = (e: React.TouchEvent, msg: ChatMessage) => {
+    touchStartXRef.current = e.touches[0].clientX;
+    touchStartYRef.current = e.touches[0].clientY;
+  };
+
+  const handleMessageTouchMove = (e: React.TouchEvent, msg: ChatMessage) => {
+    const diffX = e.touches[0].clientX - touchStartXRef.current;
+    const diffY = Math.abs(e.touches[0].clientY - touchStartYRef.current);
+    if (diffX > 0 && diffX < 80 && diffY < 35) {
+      setSwipedMessageId(msg.id);
+      setSwipeOffset(diffX);
+    }
+  };
+
+  const handleMessageTouchEnd = (e: React.TouchEvent, msg: ChatMessage) => {
+    const diffX = e.changedTouches[0].clientX - touchStartXRef.current;
+    const diffY = Math.abs(e.changedTouches[0].clientY - touchStartYRef.current);
+    if (diffX > 45 && diffY < 40) {
+      handleReplyMessage(msg);
+    }
+    setSwipedMessageId(null);
+    setSwipeOffset(0);
+  };
+
+  const openMsgContextMenu = (e: React.MouseEvent, msg: ChatMessage) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMessageContextMenu({
+      visible: true,
+      x: Math.min(e.clientX, window.innerWidth - 200),
+      y: Math.min(e.clientY, window.innerHeight - 220),
+      message: msg
+    });
+  };
+
+  // Handle Send Message (E2EE) / Save Edited Message
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+
+    if (editingMessage) {
+      await handleSaveEdit();
+      return;
+    }
+
     if (!inputText.trim() && !codeSnippet) return;
     if (!selectedConversationId) return;
 
@@ -478,7 +583,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     }
   };
 
-  // Handle Image / File Upload
+  // Handle Image / Video / File Upload
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedConversationId) return;
@@ -493,9 +598,11 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     reader.onload = async () => {
       const dataUrl = reader.result as string;
       const isImg = file.type.startsWith('image/');
+      const isVid = file.type.startsWith('video/');
+      const mediaType = isImg ? 'image' : isVid ? 'video' : 'file';
 
       const { encrypted, durationMs } = await encryptE2EEMessage(
-        `[MEDIA:${isImg ? 'IMAGE' : 'FILE'}] ${file.name}`,
+        `[MEDIA:${mediaType.toUpperCase()}] ${file.name}`,
         selectedConversationId
       );
 
@@ -510,7 +617,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
         sender_avatar: user.avatar_url,
         content: encrypted,
         media_url: dataUrl,
-        media_type: isImg ? 'image' : 'file',
+        media_type: mediaType,
         media_name: file.name,
         status: 'delivered',
         created_at: new Date().toISOString(),
@@ -519,7 +626,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
       setDecryptedTextMap((prev) => ({
         ...prev,
-        [messageId]: `[MEDIA:${isImg ? 'IMAGE' : 'FILE'}] ${file.name}`
+        [messageId]: (isImg || isVid) ? '' : file.name
       }));
       await sendMessageService(newMsg);
     };
@@ -648,8 +755,9 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     }
 
     // Check if already in group
+    const targetUsernameClean = (targetUser.username || '').toLowerCase();
     const isAlreadyMember = selectedGroup.members.some(
-      (m) => m.username.toLowerCase() === targetUser.username.toLowerCase()
+      (m) => (m.username || '').toLowerCase() === targetUsernameClean
     );
     if (isAlreadyMember) {
       setInviteFeedback({
@@ -803,7 +911,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
         ref={fileInputRef}
         onChange={handleFileUpload}
         className="hidden"
-        accept="image/*,.pdf,.txt,.json,.zip,.ts,.js,.py"
+        accept="image/*,video/*,.pdf,.txt,.json,.zip,.ts,.js,.py"
       />
 
       {/* Top Header */}
@@ -974,6 +1082,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                     const isTargetOnline =
                       conv.type === 'direct' &&
                       conv.targetUser &&
+                      conv.targetUser.username &&
                       onlineUsers.has(conv.targetUser.username.toLowerCase());
 
                     return (
@@ -1071,18 +1180,21 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
         {/* RIGHT COLUMN: Active Chat Panel (Cols 5-12) */}
         <div
           className={`md:col-span-8 flex flex-col bg-[#09090b] ${
-            !selectedConversationId ? 'hidden md:flex' : 'flex'
+            !selectedConversationId
+              ? 'hidden md:flex'
+              : 'fixed inset-0 z-40 md:static md:z-auto flex h-[100dvh] md:h-[calc(100vh-65px)] overflow-hidden'
           }`}
         >
           {selectedConversationId ? (
             <>
               {/* Active Chat Header */}
-              <div className="p-3.5 border-b border-zinc-800/40 bg-[#0c0c0e] flex items-center justify-between backdrop-blur-md">
+              <div className="sticky top-0 z-20 flex-shrink-0 p-3.5 border-b border-zinc-800/40 bg-[#0c0c0e]/95 backdrop-blur-md flex items-center justify-between shadow-sm">
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
                     onClick={() => setSelectedConversationId(null)}
-                    className="md:hidden p-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:text-white"
+                    className="md:hidden p-2 rounded-xl bg-zinc-800 text-zinc-300 hover:text-white cursor-pointer active:scale-95 transition-transform"
+                    title={language === 'tr' ? 'Geri Dön' : 'Back'}
                   >
                     <ChevronLeft className="w-5 h-5" />
                   </button>
@@ -1103,7 +1215,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                     {selectedTargetUser && (
                       <span
                         className={`w-2.5 h-2.5 rounded-full absolute -bottom-0.5 -right-0.5 border-2 border-[#0c0c0e] ${
-                          onlineUsers.has(selectedTargetUser.username.toLowerCase())
+                          selectedTargetUser.username && onlineUsers.has(selectedTargetUser.username.toLowerCase())
                             ? 'bg-emerald-500 ring-2 ring-emerald-500/20'
                             : 'bg-zinc-600'
                         }`}
@@ -1163,7 +1275,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
               {/* Group Info Drawer (If toggled) */}
               {isGroupInfoOpen && selectedGroup && (
-                <div className="p-4 bg-zinc-950 border-b border-zinc-800/80 space-y-4 animate-in slide-in-from-top duration-200">
+                <div className="p-4 bg-zinc-950 border-b border-zinc-800/80 space-y-4 animate-in slide-in-from-top duration-200 flex-shrink-0">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
                       <div className="relative group">
@@ -1311,7 +1423,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
               )}
 
               {/* Message Feed Area */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3.5 min-h-[400px]">
+              <div className="flex-1 overflow-y-auto p-4 space-y-3.5 min-h-0">
                 {/* E2EE Banner */}
                 <div className="flex justify-center my-2">
                   <div className="px-3.5 py-1.5 rounded-full bg-zinc-900/90 border border-zinc-800 text-[11px] text-zinc-400 flex items-center gap-2 font-mono shadow-sm">
@@ -1333,15 +1445,31 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                   </div>
                 ) : (
                   messages.map((msg) => {
-                    const isMe = msg.sender_username.toLowerCase() === user.username.toLowerCase();
-                    const text = decryptedTextMap[msg.id] || msg.content;
+                    const isMe = (msg.sender_username || '').toLowerCase() === (user?.username || '').toLowerCase();
+                    const text = decryptedTextMap[msg.id] ?? (msg.decrypted_text || msg.content);
                     const isCodeSnippet = text.startsWith('[CODE_SNIPPET]');
+                    const isSwiped = swipedMessageId === msg.id;
 
                     return (
                       <div
                         key={msg.id}
-                        className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} space-y-1`}
+                        onTouchStart={(e) => handleMessageTouchStart(e, msg)}
+                        onTouchMove={(e) => handleMessageTouchMove(e, msg)}
+                        onTouchEnd={(e) => handleMessageTouchEnd(e, msg)}
+                        onContextMenu={(e) => openMsgContextMenu(e, msg)}
+                        style={{
+                          transform: isSwiped ? `translateX(${Math.min(swipeOffset, 60)}px)` : undefined,
+                          transition: isSwiped ? 'none' : 'transform 0.2s ease-out'
+                        }}
+                        className={`flex flex-col group relative ${isMe ? 'items-end' : 'items-start'} space-y-1`}
                       >
+                        {/* Swipe to reply visual indicator on mobile */}
+                        {isSwiped && swipeOffset > 20 && (
+                          <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-blue-400 text-xs font-bold pointer-events-none">
+                            <CornerUpLeft className="w-4 h-4 animate-pulse" />
+                          </div>
+                        )}
+
                         {/* Group sender name */}
                         {selectedGroup && !isMe && (
                           <div className="flex items-center gap-1.5 pl-1 text-[11px] text-zinc-400 font-bold">
@@ -1352,112 +1480,186 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                           </div>
                         )}
 
-                        <div
-                          className={`max-w-[85%] md:max-w-[70%] rounded-2xl p-3 relative space-y-1.5 shadow-md ${
-                            isMe
-                              ? 'bg-blue-600 text-white rounded-br-none'
-                              : 'bg-zinc-800/90 text-zinc-100 rounded-bl-none border border-zinc-750'
-                          }`}
-                        >
-                          {/* Reply preview */}
-                          {msg.reply_to && (
-                            <div
-                              className={`p-2 rounded-xl text-xs border-l-2 mb-1.5 ${
-                                isMe
-                                  ? 'bg-blue-700/50 border-white/60 text-white/90'
-                                  : 'bg-zinc-900 border-blue-500 text-zinc-300'
-                              }`}
-                            >
-                              <p className="font-bold text-[10px] opacity-80">
-                                @{msg.reply_to.sender_username}
-                              </p>
-                              <p className="line-clamp-1 text-[11px]">{msg.reply_to.text}</p>
+                        <div className="relative group/bubble flex items-center gap-1.5 max-w-full">
+                          {/* Desktop Quick Actions (Hover on Left for 'isMe', Hover on Right for others) */}
+                          {isMe && (
+                            <div className="opacity-0 group-hover/bubble:opacity-100 transition-opacity flex items-center gap-1 bg-zinc-900/90 border border-zinc-800 rounded-xl px-1.5 py-1 text-zinc-400 shadow-md">
+                              <button
+                                type="button"
+                                onClick={() => handleReplyMessage(msg)}
+                                title="Yanıtla"
+                                className="p-1 hover:text-blue-400 transition-colors cursor-pointer"
+                              >
+                                <Reply className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleStartEdit(msg)}
+                                title="Düzenle"
+                                className="p-1 hover:text-amber-400 transition-colors cursor-pointer"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteMessage(msg)}
+                                title="Sil"
+                                className="p-1 hover:text-red-400 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           )}
 
-                          {/* Media Image */}
-                          {msg.media_type === 'image' && msg.media_url && (
-                            <div className="rounded-xl overflow-hidden max-h-64 my-1 border border-black/10">
-                              <img
-                                src={msg.media_url}
-                                alt="Encrypted attachment"
-                                className="w-full h-auto object-cover cursor-pointer hover:opacity-95 transition-opacity"
-                              />
-                            </div>
-                          )}
-
-                          {/* Media File */}
-                          {msg.media_type === 'file' && (
-                            <div
-                              className={`p-2.5 rounded-xl flex items-center gap-2.5 ${
-                                isMe ? 'bg-blue-700/60' : 'bg-zinc-900'
-                              }`}
-                            >
-                              <FileText className="w-5 h-5 opacity-80" />
-                              <div className="min-w-0 flex-1">
-                                <p className="text-xs font-bold truncate">{msg.media_name || 'Dosya'}</p>
-                                <p className="text-[10px] opacity-70">Belge</p>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Code Snippet */}
-                          {isCodeSnippet ? (
-                            <div className="rounded-xl overflow-hidden bg-[#0d1117] text-zinc-100 p-3 font-mono text-xs border border-zinc-700/50 my-1">
-                              <div className="flex items-center justify-between pb-2 mb-2 border-b border-zinc-800 text-[10px] text-zinc-400">
-                                <span className="flex items-center gap-1">
-                                  <Code className="w-3 h-3 text-blue-400" />
-                                  <span>Kod Bloğu</span>
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    navigator.clipboard.writeText(
-                                      text.replace('[CODE_SNIPPET]\n', '')
-                                    )
-                                  }
-                                  className="p-1 hover:text-white transition-colors"
-                                  title="Kopyala"
-                                >
-                                  <Copy className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                              <pre className="overflow-x-auto whitespace-pre-wrap">
-                                {text.replace('[CODE_SNIPPET]\n', '')}
-                              </pre>
-                            </div>
-                          ) : (
-                            <p className="text-xs leading-relaxed break-words select-text">
-                              {text}
-                            </p>
-                          )}
-
-                          {/* Message Footer: Time + E2EE tag + Status Checkmarks */}
                           <div
-                            className={`flex items-center justify-end gap-1.5 pt-0.5 text-[10px] font-mono ${
-                              isMe ? 'text-blue-200' : 'text-zinc-400'
+                            className={`max-w-[85%] md:max-w-[70%] rounded-2xl p-3 relative space-y-1.5 shadow-md ${
+                              isMe
+                                ? 'bg-blue-600 text-white rounded-br-none'
+                                : 'bg-zinc-800/90 text-zinc-100 rounded-bl-none border border-zinc-750'
                             }`}
                           >
-                            <span>
-                              {msg.created_at
-                                ? new Date(msg.created_at).toLocaleTimeString([], {
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                  })
-                                : ''}
-                            </span>
-                            {isMe && (
-                              <span>
-                                {msg.status === 'read' ? (
-                                  <CheckCheck className="w-3.5 h-3.5 text-cyan-300 stroke-[2.5px]" />
-                                ) : msg.status === 'delivered' ? (
-                                  <CheckCheck className="w-3.5 h-3.5 opacity-80" />
-                                ) : (
-                                  <Check className="w-3.5 h-3.5 opacity-80" />
-                                )}
-                              </span>
+                            {/* Reply preview */}
+                            {msg.reply_to && (
+                              <div
+                                className={`p-2 rounded-xl text-xs border-l-2 mb-1.5 ${
+                                  isMe
+                                    ? 'bg-blue-700/50 border-white/60 text-white/90'
+                                    : 'bg-zinc-900 border-blue-500 text-zinc-300'
+                                }`}
+                              >
+                                <p className="font-bold text-[10px] opacity-80">
+                                  @{msg.reply_to.sender_username}
+                                </p>
+                                <p className="line-clamp-1 text-[11px]">{msg.reply_to.text}</p>
+                              </div>
                             )}
+
+                            {/* Media Image */}
+                            {msg.media_type === 'image' && msg.media_url && (
+                              <div className="rounded-xl overflow-hidden max-h-64 my-1 border border-black/10">
+                                <img
+                                  src={msg.media_url}
+                                  alt="Media preview"
+                                  className="w-full h-auto object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                                />
+                              </div>
+                            )}
+
+                            {/* Media Video Player (Inline playback without download) */}
+                            {msg.media_type === 'video' && msg.media_url && (
+                              <div className="rounded-xl overflow-hidden max-h-72 my-1 border border-black/10 bg-black">
+                                <video
+                                  src={msg.media_url}
+                                  controls
+                                  playsInline
+                                  preload="metadata"
+                                  className="w-full max-h-72 object-contain"
+                                />
+                              </div>
+                            )}
+
+                            {/* Media File */}
+                            {msg.media_type === 'file' && (
+                              <div
+                                className={`p-2.5 rounded-xl flex items-center gap-2.5 ${
+                                  isMe ? 'bg-blue-700/60' : 'bg-zinc-900'
+                                }`}
+                              >
+                                <FileText className="w-5 h-5 opacity-80" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-bold truncate">{msg.media_name || 'Dosya'}</p>
+                                  <p className="text-[10px] opacity-70">Belge</p>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Code Snippet */}
+                            {isCodeSnippet ? (
+                              <div className="rounded-xl overflow-hidden bg-[#0d1117] text-zinc-100 p-3 font-mono text-xs border border-zinc-700/50 my-1">
+                                <div className="flex items-center justify-between pb-2 mb-2 border-b border-zinc-800 text-[10px] text-zinc-400">
+                                  <span className="flex items-center gap-1">
+                                    <Code className="w-3 h-3 text-blue-400" />
+                                    <span>Kod Bloğu</span>
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      navigator.clipboard.writeText(
+                                        text.replace('[CODE_SNIPPET]\n', '')
+                                      )
+                                    }
+                                    className="p-1 hover:text-white transition-colors"
+                                    title="Kopyala"
+                                  >
+                                    <Copy className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                                <pre className="overflow-x-auto whitespace-pre-wrap">
+                                  {text.replace('[CODE_SNIPPET]\n', '')}
+                                </pre>
+                              </div>
+                            ) : text && !text.startsWith('[MEDIA:') ? (
+                              <p className="text-xs leading-relaxed break-words select-text">
+                                {text}
+                              </p>
+                            ) : null}
+
+                            {/* Message Footer: Time + Edited Indicator + Status Checkmarks */}
+                            <div
+                              className={`flex items-center justify-end gap-1.5 pt-0.5 text-[10px] font-mono ${
+                                isMe ? 'text-blue-200' : 'text-zinc-400'
+                              }`}
+                            >
+                              {msg.is_edited && (
+                                <span className="opacity-75 italic text-[9px]">
+                                  ({language === 'tr' ? 'düzenlendi' : 'edited'})
+                                </span>
+                              )}
+                              <span>
+                                {msg.created_at
+                                  ? new Date(msg.created_at).toLocaleTimeString([], {
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    })
+                                  : ''}
+                              </span>
+                              {isMe && (
+                                <span>
+                                  {msg.status === 'read' ? (
+                                    <CheckCheck className="w-3.5 h-3.5 text-cyan-300 stroke-[2.5px]" />
+                                  ) : msg.status === 'delivered' ? (
+                                    <CheckCheck className="w-3.5 h-3.5 opacity-80" />
+                                  ) : (
+                                    <Check className="w-3.5 h-3.5 opacity-80" />
+                                  )}
+                                </span>
+                              )}
+                            </div>
                           </div>
+
+                          {/* Desktop Quick Actions for Received Messages */}
+                          {!isMe && (
+                            <div className="opacity-0 group-hover/bubble:opacity-100 transition-opacity flex items-center gap-1 bg-zinc-900/90 border border-zinc-800 rounded-xl px-1.5 py-1 text-zinc-400 shadow-md">
+                              <button
+                                type="button"
+                                onClick={() => handleReplyMessage(msg)}
+                                title="Yanıtla"
+                                className="p-1 hover:text-blue-400 transition-colors cursor-pointer"
+                              >
+                                <Reply className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (text) navigator.clipboard.writeText(text);
+                                }}
+                                title="Kopyala"
+                                className="p-1 hover:text-zinc-200 transition-colors cursor-pointer"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -1466,10 +1668,29 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                 <div ref={messagesEndRef} />
               </div>
 
+              {/* Editing Banner */}
+              {editingMessage && (
+                <div className="px-4 py-2 bg-amber-500/10 border-t border-amber-500/30 flex items-center justify-between text-xs text-amber-300 flex-shrink-0">
+                  <div className="flex items-center gap-2 truncate">
+                    <Edit2 className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                    <span className="font-bold">{language === 'tr' ? 'Mesaj Düzenleniyor' : 'Editing Message'}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="p-1 text-amber-400 hover:text-white cursor-pointer"
+                    title={language === 'tr' ? 'Vazgeç' : 'Cancel'}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
               {/* Reply Preview Bar */}
               {replyingTo && (
-                <div className="px-4 py-2 bg-zinc-900 border-t border-zinc-800 flex items-center justify-between text-xs text-zinc-300">
+                <div className="px-4 py-2 bg-zinc-900 border-t border-zinc-800 flex items-center justify-between text-xs text-zinc-300 flex-shrink-0">
                   <div className="flex items-center gap-2 truncate">
+                    <CornerUpLeft className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
                     <span className="font-bold text-blue-400">@{replyingTo.sender_username}</span>
                     <span className="text-zinc-500">yanıtlanıyor:</span>
                     <span className="truncate max-w-xs text-zinc-400">
@@ -1479,7 +1700,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setReplyingTo(null)}
-                    className="p-1 text-zinc-400 hover:text-white"
+                    className="p-1 text-zinc-400 hover:text-white cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -1488,7 +1709,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
               {/* Code Snippet Attachment Bar */}
               {isAttachCodeOpen && (
-                <div className="p-3 bg-zinc-950 border-t border-zinc-800 space-y-2">
+                <div className="p-3 bg-zinc-950 border-t border-zinc-800 space-y-2 flex-shrink-0">
                   <div className="flex items-center justify-between text-xs text-zinc-400">
                     <span className="font-bold text-white flex items-center gap-1.5">
                       <Code className="w-3.5 h-3.5 text-blue-400" />
@@ -1497,7 +1718,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setIsAttachCodeOpen(false)}
-                      className="p-1 text-zinc-400 hover:text-white"
+                      className="p-1 text-zinc-400 hover:text-white cursor-pointer"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -1515,13 +1736,13 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
               {/* Message Input Box */}
               <form
                 onSubmit={handleSendMessage}
-                className="p-3 border-t border-zinc-800/60 bg-[#0c0c0e] flex items-center gap-2"
+                className="p-3 border-t border-zinc-800/60 bg-[#0c0c0e] flex items-center gap-2 flex-shrink-0"
               >
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   className="p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors cursor-pointer"
-                  title="Fotoğraf veya Dosya Ekle"
+                  title="Fotoğraf, Video veya Dosya Ekle"
                 >
                   <Paperclip className="w-4 h-4" />
                 </button>
@@ -1540,11 +1761,15 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   placeholder={
-                    selectedGroup
+                    editingMessage
+                      ? language === 'tr'
+                        ? 'Mesajı düzenleyin...'
+                        : 'Edit message...'
+                      : selectedGroup
                       ? `${selectedGroup.name} grubuna mesaj yaz...`
                       : language === 'tr'
                       ? 'mesaj yaz...'
-                      : 'Type an message...'
+                      : 'Type a message...'
                   }
                   className="flex-1 bg-zinc-900/90 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-colors"
                 />
@@ -1552,9 +1777,12 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                 <button
                   type="submit"
                   disabled={!inputText.trim() && !codeSnippet}
-                  className="p-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer flex items-center justify-center"
+                  className={`p-2.5 rounded-xl text-white text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:pointer-events-none ${
+                    editingMessage ? 'bg-amber-600 hover:bg-amber-500' : 'bg-blue-600 hover:bg-blue-500'
+                  }`}
+                  title={editingMessage ? (language === 'tr' ? 'Kaydet' : 'Save') : (language === 'tr' ? 'Gönder' : 'Send')}
                 >
-                  <Send className="w-4 h-4" />
+                  {editingMessage ? <Check className="w-4 h-4" /> : <Send className="w-4 h-4" />}
                 </button>
               </form>
             </>
@@ -1656,6 +1884,64 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
         </div>
       )}
 
+      {/* MESSAGE CONTEXT MENU (Right Click on PC / Context Menu) */}
+      {messageContextMenu.visible && messageContextMenu.message && (
+        <div
+          style={{ top: `${messageContextMenu.y}px`, left: `${messageContextMenu.x}px` }}
+          className="fixed z-50 w-48 rounded-2xl bg-zinc-900 border border-zinc-750 shadow-2xl p-1.5 space-y-1 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150 select-none"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => handleReplyMessage(messageContextMenu.message!)}
+            className="w-full text-left px-3 py-2 rounded-xl hover:bg-zinc-800 text-xs text-zinc-200 flex items-center gap-2 cursor-pointer transition-colors"
+          >
+            <CornerUpLeft className="w-3.5 h-3.5 text-blue-400" />
+            <span>{language === 'tr' ? 'Yanıtla' : 'Reply'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const msg = messageContextMenu.message!;
+              const text = decryptedTextMap[msg.id] ?? (msg.decrypted_text || msg.content);
+              if (text && !text.startsWith('[MEDIA:')) {
+                navigator.clipboard.writeText(text);
+              }
+              setMessageContextMenu({ visible: false, x: 0, y: 0, message: null });
+            }}
+            className="w-full text-left px-3 py-2 rounded-xl hover:bg-zinc-800 text-xs text-zinc-200 flex items-center gap-2 cursor-pointer transition-colors"
+          >
+            <Copy className="w-3.5 h-3.5 text-zinc-400" />
+            <span>{language === 'tr' ? 'Kopyala' : 'Copy'}</span>
+          </button>
+
+          {(messageContextMenu.message?.sender_username || '').toLowerCase() === (user?.username || '').toLowerCase() && (
+            <>
+              <button
+                type="button"
+                onClick={() => handleStartEdit(messageContextMenu.message!)}
+                className="w-full text-left px-3 py-2 rounded-xl hover:bg-zinc-800 text-xs text-amber-300 flex items-center gap-2 cursor-pointer transition-colors"
+              >
+                <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+                <span>{language === 'tr' ? 'Düzenle' : 'Edit'}</span>
+              </button>
+
+              <div className="border-t border-zinc-800 my-1" />
+
+              <button
+                type="button"
+                onClick={() => handleDeleteMessage(messageContextMenu.message!)}
+                className="w-full text-left px-3 py-2 rounded-xl hover:bg-red-500/10 text-xs text-red-400 flex items-center gap-2 cursor-pointer transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                <span>{language === 'tr' ? 'Sil' : 'Delete'}</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {/* NEW CHAT MODAL */}
       {isNewChatModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1695,15 +1981,17 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
             <div className="max-h-72 overflow-y-auto divide-y divide-zinc-800/50 space-y-1">
               {allUsers
                 .filter(
-                  (u) =>
-                    u.username &&
-                    u.username.toLowerCase() !== user.username.toLowerCase() &&
-                    (newChatSearchQuery.trim() === '' ||
-                      u.display_name.toLowerCase().includes(newChatSearchQuery.toLowerCase()) ||
-                      u.username.toLowerCase().includes(newChatSearchQuery.toLowerCase()))
+                  (u) => {
+                    if (!u || !u.username) return false;
+                    const uName = (u.username || '').toLowerCase();
+                    const selfName = (user?.username || '').toLowerCase();
+                    const dName = (u.display_name || '').toLowerCase();
+                    const q = (newChatSearchQuery || '').toLowerCase().trim();
+                    return uName !== selfName && (q === '' || dName.includes(q) || uName.includes(q));
+                  }
                 )
                 .map((u) => {
-                  const isUserOnline = onlineUsers.has(u.username.toLowerCase());
+                  const isUserOnline = Boolean(u.username && onlineUsers.has(u.username.toLowerCase()));
                   return (
                     <div
                       key={u.id || u.username}
@@ -1748,12 +2036,14 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                 })}
 
               {allUsers.filter(
-                (u) =>
-                  u.username &&
-                  u.username.toLowerCase() !== user.username.toLowerCase() &&
-                  (newChatSearchQuery.trim() === '' ||
-                    u.display_name.toLowerCase().includes(newChatSearchQuery.toLowerCase()) ||
-                    u.username.toLowerCase().includes(newChatSearchQuery.toLowerCase()))
+                (u) => {
+                  if (!u || !u.username) return false;
+                  const uName = (u.username || '').toLowerCase();
+                  const selfName = (user?.username || '').toLowerCase();
+                  const dName = (u.display_name || '').toLowerCase();
+                  const q = (newChatSearchQuery || '').toLowerCase().trim();
+                  return uName !== selfName && (q === '' || dName.includes(q) || uName.includes(q));
+                }
               ).length === 0 && (
                 <div className="p-6 text-center text-zinc-500 text-xs font-mono">
                   {language === 'tr' ? 'Kullanıcı bulunamadı.' : 'No users found.'}
@@ -2043,16 +2333,18 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
             <div className="max-h-60 overflow-y-auto divide-y divide-zinc-800/40">
               {allUsers
-                .filter(
-                  (u) =>
-                    u.username &&
-                    u.username.toLowerCase() !== user.username.toLowerCase() &&
-                    (u.username.toLowerCase().includes(memberSearchQuery.toLowerCase()) ||
-                      u.display_name.toLowerCase().includes(memberSearchQuery.toLowerCase()))
-                )
+                .filter((u) => {
+                  if (!u || !u.username) return false;
+                  const uName = (u.username || '').toLowerCase();
+                  const selfName = (user?.username || '').toLowerCase();
+                  const dName = (u.display_name || '').toLowerCase();
+                  const q = (memberSearchQuery || '').toLowerCase().trim();
+                  return uName !== selfName && (q === '' || uName.includes(q) || dName.includes(q));
+                })
                 .map((candidate) => {
-                  const isAlreadyIn = selectedGroup.members.some(
-                    (m) => m.username.toLowerCase() === candidate.username.toLowerCase()
+                  const candidateName = (candidate.username || '').toLowerCase();
+                  const isAlreadyIn = selectedGroup.members?.some(
+                    (m) => (m.username || '').toLowerCase() === candidateName
                   );
 
                   return (
