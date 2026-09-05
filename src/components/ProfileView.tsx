@@ -595,7 +595,7 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
                     : (allUsers.find(
                         (u) =>
                           (u.username && u.username.toLowerCase() === post.author.username?.toLowerCase()) ||
-                          (u.id && u.id === post.author.id)
+                          (u.id && (post.author as any)?.id && u.id === (post.author as any).id)
                       ) || post.author);
 
                 const isLiked = Boolean(

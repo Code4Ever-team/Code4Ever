@@ -194,7 +194,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
           </div>
         ) : (
           filtered.map((item) => {
-            const actorName = item.actor?.display_name || item.actor?.username || item.actor_username;
+            const actorName = item.actor?.display_name || item.actor?.username || (item as any).actor_username;
             const actorAvatar = item.actor?.avatar_url;
 
             return (
@@ -234,7 +234,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
                   <p className="text-xs text-zinc-200 leading-snug">
                     {actorName && (
                       <span className="font-bold text-white mr-1.5">
-                        {item.actor?.display_name || `@${item.actor?.username || item.actor_username}`}
+                        {item.actor?.display_name || `@${item.actor?.username || (item as any).actor_username}`}
                       </span>
                     )}
                     <span>{item.content}</span>

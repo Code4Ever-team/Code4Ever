@@ -595,9 +595,10 @@ export default function App() {
     if (!targetPost) return;
 
     // Strict Authorization Verification
+    const authorId = (targetPost.author as any)?.id;
     const isAuthor =
       (targetPost.author?.username || '').toLowerCase() === (user.username || '').toLowerCase() ||
-      (targetPost.author?.id && user.id && targetPost.author.id === user.id);
+      (Boolean(authorId && user.id && authorId === user.id));
     const isAdmin = verifyAdminAccess(user);
 
     if (!isAuthor && !isAdmin) {

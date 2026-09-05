@@ -739,14 +739,15 @@ export const FeedView: React.FC<FeedViewProps> = ({
           </div>
         ) : (
           filteredPosts.map((post) => {
+            const postAuthorId = (post.author as any)?.id;
             const authorProfile =
               user &&
-              (post.author.id === user.id ||
+              ((postAuthorId && postAuthorId === user.id) ||
                 post.author.username?.toLowerCase() === user.username?.toLowerCase())
                 ? { ...post.author, ...user }
                 : allUsers.find(
                     (u) =>
-                      (u.id && u.id === post.author.id) ||
+                      (u.id && postAuthorId && u.id === postAuthorId) ||
                       (u.username &&
                         u.username.toLowerCase() === post.author.username?.toLowerCase())
                   ) || post.author;

@@ -146,109 +146,137 @@ export const CommunitiesView: React.FC<CommunitiesViewProps> = ({
             {language === 'tr' ? 'Henüz hiçbir topluluk oluşturulmamış.' : 'No communities created yet.'}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3">
+          <div className="grid grid-cols-1 gap-3.5">
             {communities.map((comm) => {
               const hasManagePerm = canManageCommunity(comm);
               return (
                 <div
                   key={comm.id}
-                  className="p-4 bg-[#0c0c0e] border border-zinc-800/50 rounded-2xl flex items-center justify-between gap-4 hover:border-zinc-700 transition-all group"
+                  className="overflow-hidden bg-[#0c0c0e] border border-zinc-800/60 rounded-2xl hover:border-zinc-700 transition-all group shadow-sm flex flex-col"
                 >
-                  <div
-                    onClick={() => onSelectCommunity && onSelectCommunity(comm)}
-                    className="flex items-center gap-3 overflow-hidden cursor-pointer flex-1 min-w-0"
-                  >
-                    <img
-                      src={comm.avatar_url}
-                      alt={comm.name}
-                      className="w-12 h-12 rounded-2xl object-cover ring-1 ring-zinc-800 flex-shrink-0 group-hover:scale-105 transition-transform"
-                    />
-                    <div className="truncate">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-bold text-white truncate group-hover:text-blue-400 transition-colors">
-                          {comm.name}
-                        </h3>
-                        {comm.created_by === user?.id && (
-                          <span className="px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-[10px] text-zinc-300 font-mono flex items-center gap-1">
-                            <Crown className="w-2.5 h-2.5 text-amber-400" />
-                            {language === 'tr' ? 'Kurucu' : 'Founder'}
+                  {/* Subtle Community Banner Strip if available */}
+                  {comm.banner_url && (
+                    <div className="h-16 sm:h-14 w-full overflow-hidden relative bg-zinc-900 cursor-pointer" onClick={() => onSelectCommunity && onSelectCommunity(comm)}>
+                      <img
+                        src={comm.banner_url}
+                        alt={comm.name}
+                        className="w-full h-full object-cover opacity-45 group-hover:opacity-65 transition-opacity"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c0e] via-[#0c0c0e]/50 to-transparent" />
+                    </div>
+                  )}
+
+                  <div className={`p-4 sm:p-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${comm.banner_url ? '-mt-7 sm:-mt-6 relative z-10' : ''}`}>
+                    {/* Community Avatar & Info */}
+                    <div
+                      onClick={() => onSelectCommunity && onSelectCommunity(comm)}
+                      className="flex items-start sm:items-center gap-3.5 sm:gap-4 overflow-hidden cursor-pointer flex-1 min-w-0"
+                    >
+                      <div className="relative flex-shrink-0">
+                        <img
+                          src={comm.avatar_url}
+                          alt={comm.name}
+                          className="w-20 h-20 sm:w-16 sm:h-16 rounded-2xl object-cover ring-2 ring-zinc-800 shadow-xl group-hover:scale-105 transition-transform bg-zinc-900"
+                        />
+                        <div className="absolute -bottom-1 -right-1 bg-purple-600/95 text-white p-1 rounded-lg border-2 border-[#0c0c0e] shadow-md">
+                          <Users className="w-3 h-3" />
+                        </div>
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-base sm:text-sm font-bold text-white truncate group-hover:text-blue-400 transition-colors">
+                            {comm.name}
+                          </h3>
+                          {comm.created_by === user?.id && (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-300 font-mono flex items-center gap-1">
+                              <Crown className="w-2.5 h-2.5 text-amber-400" />
+                              {language === 'tr' ? 'Kurucu' : 'Founder'}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <span className="text-xs text-purple-400 font-mono font-medium truncate">
+                            /c/@{comm.handle.replace(/^@/, '')}
                           </span>
+                          <span className="text-zinc-600 text-xs hidden sm:inline">•</span>
+                          <span className="text-[11px] sm:text-xs text-zinc-400 font-mono flex items-center gap-1">
+                            <Users className="w-3 h-3 text-zinc-500" />
+                            {comm.members_count.toLocaleString()} {language === 'tr' ? 'Üye' : 'Members'}
+                          </span>
+                        </div>
+
+                        {comm.description && (
+                          <p className="text-xs text-zinc-400 line-clamp-2 mt-1.5 max-w-xl leading-relaxed">
+                            {comm.description}
+                          </p>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-xs text-purple-400 font-mono block truncate font-medium">
-                          /c/@{comm.handle.replace(/^@/, '')}
-                        </span>
-                      </div>
-                      {comm.description && (
-                        <p className="text-xs text-zinc-400 truncate mt-0.5 max-w-md">{comm.description}</p>
-                      )}
-                      <span className="text-[11px] text-zinc-500 font-mono mt-0.5 block">
-                        {comm.members_count.toLocaleString()} {language === 'tr' ? 'Üye' : 'Members'}
-                      </span>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <button
-                      type="button"
-                      onClick={(e) => handleCopyLink(e, comm)}
-                      className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center gap-1 text-xs font-mono ${
-                        copiedId === comm.id
-                          ? 'bg-emerald-950/40 text-emerald-300 border-emerald-700/60 shadow-md'
-                          : 'bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800 border-zinc-800'
-                      }`}
-                      title={copiedId === comm.id ? (language === 'tr' ? 'Bağlantı kopyalandı!' : 'Link copied!') : (language === 'tr' ? 'Topluluk Linkini Kopyala (/c/@name)' : 'Copy Community Link (/c/@name)')}
-                    >
-                      {copiedId === comm.id ? <Check className="w-4 h-4 text-emerald-400" /> : <Link2 className="w-4 h-4" />}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setApiCommunity(comm)}
-                      className="px-2.5 py-1.5 rounded-xl bg-amber-950/30 text-amber-400 hover:text-amber-300 hover:bg-amber-900/40 border border-amber-800/40 transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-mono"
-                      title={language === 'tr' ? 'Topluluk HTTP API (Beta - Yakında)' : 'Community HTTP API (Beta - Coming Soon)'}
-                    >
-                      <Terminal className="w-3.5 h-3.5" />
-                      <span className="font-bold">API</span>
-                      <span className="text-[9px] px-1.5 py-0.2 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded font-bold uppercase tracking-wider">
-                        BETA
-                      </span>
-                    </button>
-
-                    {hasManagePerm && (
+                    {/* Community Actions */}
+                    <div className="flex items-center gap-2 flex-shrink-0 self-end sm:self-center pt-3 sm:pt-0 border-t border-zinc-800/40 sm:border-t-0 w-full sm:w-auto justify-end">
                       <button
                         type="button"
-                        onClick={() => setEditingCommunity(comm)}
-                        className="p-2 rounded-xl bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800 border border-zinc-800 transition-colors cursor-pointer"
-                        title={language === 'tr' ? 'Topluluk Ayarları' : 'Community Settings'}
+                        onClick={(e) => handleCopyLink(e, comm)}
+                        className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center gap-1 text-xs font-mono ${
+                          copiedId === comm.id
+                            ? 'bg-emerald-950/40 text-emerald-300 border-emerald-700/60 shadow-md'
+                            : 'bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800 border-zinc-800'
+                        }`}
+                        title={copiedId === comm.id ? (language === 'tr' ? 'Bağlantı kopyalandı!' : 'Link copied!') : (language === 'tr' ? 'Topluluk Linkini Kopyala (/c/@name)' : 'Copy Community Link (/c/@name)')}
                       >
-                        <Settings className="w-4 h-4" />
+                        {copiedId === comm.id ? <Check className="w-4 h-4 text-emerald-400" /> : <Link2 className="w-4 h-4" />}
                       </button>
-                    )}
 
-                    <button
-                      type="button"
-                      disabled={pendingJoinIds.has(comm.id)}
-                      onClick={() => handleJoinClick(comm.id)}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed active:scale-95 ${
-                        comm.is_joined
-                          ? 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800 border border-zinc-800'
-                          : 'bg-zinc-100 hover:bg-white text-zinc-950 shadow-md'
-                      }`}
-                    >
-                      {comm.is_joined ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>{language === 'tr' ? 'Katılındı' : 'Joined'}</span>
-                        </>
-                      ) : (
-                        <>
-                          <UserPlus className="w-3.5 h-3.5" />
-                          <span>{language === 'tr' ? 'Katıl' : 'Join'}</span>
-                        </>
+                      <button
+                        type="button"
+                        onClick={() => setApiCommunity(comm)}
+                        className="px-2.5 py-1.5 rounded-xl bg-amber-950/30 text-amber-400 hover:text-amber-300 hover:bg-amber-900/40 border border-amber-800/40 transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-mono"
+                        title={language === 'tr' ? 'Topluluk HTTP API (Beta - Yakında)' : 'Community HTTP API (Beta - Coming Soon)'}
+                      >
+                        <Terminal className="w-3.5 h-3.5" />
+                        <span className="font-bold">API</span>
+                        <span className="text-[9px] px-1.5 py-0.2 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded font-bold uppercase tracking-wider">
+                          BETA
+                        </span>
+                      </button>
+
+                      {hasManagePerm && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingCommunity(comm)}
+                          className="p-2 rounded-xl bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800 border border-zinc-800 transition-colors cursor-pointer"
+                          title={language === 'tr' ? 'Topluluk Ayarları' : 'Community Settings'}
+                        >
+                          <Settings className="w-4 h-4" />
+                        </button>
                       )}
-                    </button>
+
+                      <button
+                        type="button"
+                        disabled={pendingJoinIds.has(comm.id)}
+                        onClick={() => handleJoinClick(comm.id)}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed active:scale-95 ${
+                          comm.is_joined
+                            ? 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800 border border-zinc-800'
+                            : 'bg-zinc-100 hover:bg-white text-zinc-950 shadow-md'
+                        }`}
+                      >
+                        {comm.is_joined ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>{language === 'tr' ? 'Katılındı' : 'Joined'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <UserPlus className="w-3.5 h-3.5" />
+                            <span>{language === 'tr' ? 'Katıl' : 'Join'}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

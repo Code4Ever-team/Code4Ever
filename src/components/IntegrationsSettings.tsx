@@ -93,7 +93,7 @@ export const IntegrationsSettings: React.FC<IntegrationsSettingsProps> = ({ lang
         logs: logsJson,
         reporter_username: user.username || 'anonim',
         reporter_display_name: user.display_name || 'Kullanıcı',
-        reporter_avatar: user.avatar_url
+        reporter_avatar: (user as any)?.avatar_url
       });
       setReportedSuccess(true);
       setTimeout(() => setReportedSuccess(false), 4000);
@@ -637,7 +637,7 @@ export const IntegrationsSettings: React.FC<IntegrationsSettingsProps> = ({ lang
       <ReportErrorModal
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
-        currentUser={currentUser || { id: 'anon', username: 'anonim', display_name: 'Geliştirici', email: '', role: 'user', created_at: '' }}
+        currentUser={(currentUser || { id: 'anon', username: 'anonim', display_name: 'Geliştirici', email: '', role: 'user', created_at: '', avatar_url: '', banner_url: '', bio: '' }) as UserProfile}
         initialErrorType="webhook_failure"
         initialLocation={modalLocation}
         initialDescription={modalDescription}

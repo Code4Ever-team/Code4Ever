@@ -9,6 +9,7 @@ interface ReportPostModalProps {
   post: Post | null;
   currentUser: UserProfile;
   language: 'tr' | 'en';
+  onSuccess?: () => void;
 }
 
 export const ReportPostModal: React.FC<ReportPostModalProps> = ({
@@ -16,7 +17,8 @@ export const ReportPostModal: React.FC<ReportPostModalProps> = ({
   onClose,
   post,
   currentUser,
-  language
+  language,
+  onSuccess
 }) => {
   const [reason, setReason] = useState<PostReport['reason']>('violation');
   const [details, setDetails] = useState('');
@@ -24,6 +26,12 @@ export const ReportPostModal: React.FC<ReportPostModalProps> = ({
   const [isSuccess, setIsSuccess] = useState(false);
 
   if (!isOpen || !post) return null;
+
+  const getSnippetCode = () => {
+    if (!post.code_snippet) return '';
+    if (typeof post.code_snippet === 'string') return post.code_snippet;
+    return (post.code_snippet as any).code || '';
+  };
 
   const reportReasons: { id: PostReport['reason']; label_tr: string; label_en: string; icon: string }[] = [
     { id: 'violation', label_tr: 'Topluluk & Kod Kuralları İhlali', label_en: 'Rules Violation', icon: '🚨' },
@@ -42,10 +50,11 @@ export const ReportPostModal: React.FC<ReportPostModalProps> = ({
       const selectedItem = reportReasons.find((r) => r.id === reason);
       const reasonLabel = language === 'tr' ? (selectedItem?.label_tr || 'İhlal') : (selectedItem?.label_en || 'Violation');
 
+      const snippetText = getSnippetCode();
       await reportPostInSupabase({
         post_id: post.id,
         post_author_username: post.author.username,
-        post_content: post.content || (post.code_snippet ? `[Kod Paylaşımı: ${post.code_snippet.substring(0, 80)}]` : '[Gönderi İçeriği]'),
+        post_content: post.content || (snippetText ? `[Kod Paylaşımı: ${snippetText.substring(0, 80)}]` : '[Gönderi İçeriği]'),
         reporter_username: currentUser.username || 'anonim',
         reporter_display_name: currentUser.display_name || 'Kullanıcı',
         reason,
@@ -54,6 +63,7 @@ export const ReportPostModal: React.FC<ReportPostModalProps> = ({
       });
 
       setIsSuccess(true);
+      if (onSuccess) onSuccess();
       setTimeout(() => {
         setIsSuccess(false);
         onClose();
@@ -96,7 +106,7 @@ export const ReportPostModal: React.FC<ReportPostModalProps> = ({
         <div className="p-4 bg-zinc-950/40 border-b border-zinc-800/60 text-xs text-zinc-300">
           <div className="text-[10px] text-zinc-500 font-mono mb-1">Bildirilen İçerik Önizlemesi:</div>
           <p className="line-clamp-2 italic text-zinc-400">
-            "{post.content || post.code_snippet?.substring(0, 100) || 'Görsel / Medya paylaşımı'}"
+            "{post.content || (getSnippetCode() ? getSnippetCode().substring(0, 100) : 'Görsel / Medya paylaşımı')}"
           </p>
         </div>
 

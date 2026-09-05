@@ -112,7 +112,10 @@ export const JobApplicantsModal: React.FC<JobApplicantsModalProps> = ({
                           display_name: app.name || app.applicant_display_name || app.applicant_username,
                           avatar_url: app.applicant_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
                           role: 'Geliştirici',
-                          email: ''
+                          email: '',
+                          bio: '',
+                          banner_url: '',
+                          created_at: ''
                         });
                         onClose();
                       }}

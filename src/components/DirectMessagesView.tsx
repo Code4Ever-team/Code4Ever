@@ -129,7 +129,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   // Active Direct Chats Map (tracks conversations with actual messages)
   const [activeDirectMap, setActiveDirectMap] = useState<
     Record<string, { lastMessage: ChatMessage; otherUsername: string }>
-  >(() => getActiveConversationsMap(user.username));
+  >(() => getActiveConversationsMap(user?.username || ''));
 
   // Messages & Groups Realtime State
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -202,6 +202,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
   // 1. Subscribe to Online Presence
   useEffect(() => {
+    if (!user?.username) return;
     const unsubPresence = subscribeToOnlinePresence(user, (onlineSet) => {
       setOnlineUsers(new Set(onlineSet));
     });
@@ -209,25 +210,27 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     return () => {
       unsubPresence();
     };
-  }, [user.username]);
+  }, [user?.username]);
 
   // 2. Track & Sync Active Direct Chats Map in Realtime
   useEffect(() => {
+    if (!user?.username) return;
+    const currentUsername = user.username;
     const refreshMap = () => {
-      setActiveDirectMap(getActiveConversationsMap(user.username));
+      setActiveDirectMap(getActiveConversationsMap(currentUsername));
     };
     refreshMap();
 
     // Also asynchronously fetch from Supabase to load threads from other devices/sessions
-    fetchUserConversationsFromSupabase(user.username).then((remoteMap) => {
-      setActiveDirectMap(remoteMap);
+    fetchUserConversationsFromSupabase(currentUsername).then((remoteMap) => {
+      if (remoteMap) setActiveDirectMap(remoteMap);
     });
 
     const handleCustom = () => refreshMap();
     window.addEventListener('c4e_message_broadcast', handleCustom);
     window.addEventListener('storage', handleCustom);
 
-    const unsubIncoming = subscribeToUserIncomingMessages(user.username, () => {
+    const unsubIncoming = subscribeToUserIncomingMessages(currentUsername, () => {
       refreshMap();
     });
 
@@ -236,57 +239,66 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
       window.removeEventListener('storage', handleCustom);
       unsubIncoming();
     };
-  }, [user.username]);
+  }, [user?.username]);
 
   // 3. Subscribe to Groups & Group Invites
   useEffect(() => {
-    const unsubGroups = subscribeToGroupsService(user.username, (loadedGroups) => {
-      setGroups(loadedGroups);
+    if (!user?.username) return;
+    const currentUsername = user.username;
+    const unsubGroups = subscribeToGroupsService(currentUsername, (loadedGroups) => {
+      setGroups(loadedGroups || []);
       if (selectedGroup) {
-        const currentG = loadedGroups.find((g) => g.id === selectedGroup.id);
+        const currentG = (loadedGroups || []).find((g) => g?.id === selectedGroup.id);
         if (currentG) setSelectedGroup(currentG);
       }
     });
 
-    const unsubInvites = subscribeToGroupInvitesService(user.username, (loadedInvites) => {
-      setGroupInvites(loadedInvites);
+    const unsubInvites = subscribeToGroupInvitesService(currentUsername, (loadedInvites) => {
+      setGroupInvites(loadedInvites || []);
     });
 
     return () => {
       unsubGroups();
       unsubInvites();
     };
-  }, [user.username, selectedGroup?.id]);
+  }, [user?.username, selectedGroup?.id]);
 
   // 4. Subscribe to Active Conversation Messages in Realtime
   useEffect(() => {
-    if (!selectedConversationId) {
+    if (!selectedConversationId || !user?.username) {
       setMessages([]);
       return;
     }
+    const currentUsername = user.username;
 
     const unsub = subscribeToConversationMessages(selectedConversationId, async (loadedMessages) => {
-      setMessages(loadedMessages);
+      const safeMessages = Array.isArray(loadedMessages) ? loadedMessages.filter(Boolean) : [];
+      setMessages(safeMessages);
 
-      // Decrypt all messages instantly in background
+      // Decrypt all messages safely in background
       const decMap: Record<string, string> = {};
-      for (const msg of loadedMessages) {
-        if (msg.content && msg.content.startsWith('e2ee:')) {
-          decMap[msg.id] = await decryptE2EEMessage(msg.content, selectedConversationId);
+      for (const msg of safeMessages) {
+        if (!msg) continue;
+        if (msg.content && typeof msg.content === 'string' && msg.content.startsWith('e2ee:')) {
+          try {
+            decMap[msg.id] = await decryptE2EEMessage(msg.content, selectedConversationId);
+          } catch {
+            decMap[msg.id] = msg.content;
+          }
         } else {
-          decMap[msg.id] = msg.content || '';
+          decMap[msg.id] = typeof msg.content === 'string' ? msg.content : (msg.content != null ? String(msg.content) : '');
         }
       }
       setDecryptedTextMap(decMap);
 
       // Mark messages as read
-      await markMessagesAsReadService(selectedConversationId, user.username);
+      await markMessagesAsReadService(selectedConversationId, currentUsername);
     });
 
     return () => {
       unsub();
     };
-  }, [selectedConversationId, user.username]);
+  }, [selectedConversationId, user?.username]);
 
   // Scroll to bottom when messages update
   useEffect(() => {
@@ -337,7 +349,8 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
       };
 
       const isOnline = Boolean(data.otherUsername && onlineUsers.has(data.otherUsername.toLowerCase()));
-      let previewText = data.lastMessage?.decrypted_text || data.lastMessage?.content || '';
+      let rawPreview = data.lastMessage?.decrypted_text || data.lastMessage?.content || '';
+      let previewText = typeof rawPreview === 'string' ? rawPreview : (rawPreview != null ? String(rawPreview) : '');
       if (previewText.startsWith('e2ee:')) {
         previewText = language === 'tr' ? 'Mesaj' : 'Message';
       } else if (previewText.startsWith('[CODE_SNIPPET]')) {
@@ -381,14 +394,16 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
     // B. Groups where user is a member
     const currentUsername = (user?.username || '').toLowerCase();
-    const userGroups = groups.filter((g) =>
-      g.members?.some((m) => (m.username || '').toLowerCase() === currentUsername)
+    const userGroups = (Array.isArray(groups) ? groups : []).filter((g) =>
+      Array.isArray(g?.members) && g.members.some((m) => (m?.username || '').toLowerCase() === currentUsername)
     );
 
     userGroups.forEach((g) => {
-      let previewText = g.last_message
+      if (!g) return;
+      let rawText = g.last_message
         ? g.last_message.text
         : `${g.members?.length || 0} ${language === 'tr' ? 'üye' : 'members'}`;
+      let previewText = typeof rawText === 'string' ? rawText : (rawText != null ? String(rawText) : '');
       list.push({
         id: g.id,
         type: 'group',
@@ -876,17 +891,19 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
   // Group Admin Actions: Toggle Admin
   const handleToggleAdmin = async (targetMember: GroupMember) => {
-    if (!selectedGroup) return;
-    const isCurrentUserAdmin = selectedGroup.admins.includes(user.username);
+    if (!selectedGroup || !user?.username) return;
+    const groupAdmins = Array.isArray(selectedGroup.admins) ? selectedGroup.admins : [];
+    const isCurrentUserAdmin = groupAdmins.includes(user.username);
     if (!isCurrentUserAdmin) return;
 
     const willBeAdmin = targetMember.role !== 'admin';
-    const updatedMembers = selectedGroup.members.map((m) =>
+    const groupMembers = Array.isArray(selectedGroup.members) ? selectedGroup.members : [];
+    const updatedMembers = groupMembers.map((m) =>
       m.username === targetMember.username ? { ...m, role: willBeAdmin ? ('admin' as const) : ('member' as const) } : m
     );
     const updatedAdmins = willBeAdmin
-      ? [...selectedGroup.admins.filter((a) => a !== targetMember.username), targetMember.username]
-      : selectedGroup.admins.filter((a) => a !== targetMember.username);
+      ? [...groupAdmins.filter((a) => a !== targetMember.username), targetMember.username]
+      : groupAdmins.filter((a) => a !== targetMember.username);
 
     await updateGroupService(selectedGroup.id, {
       members: updatedMembers,
@@ -897,12 +914,14 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
   // Group Admin Actions: Kick Member
   const handleKickMember = async (targetMember: GroupMember) => {
-    if (!selectedGroup) return;
-    const isCurrentUserAdmin = selectedGroup.admins.includes(user.username);
+    if (!selectedGroup || !user?.username) return;
+    const groupAdmins = Array.isArray(selectedGroup.admins) ? selectedGroup.admins : [];
+    const isCurrentUserAdmin = groupAdmins.includes(user.username);
     if (!isCurrentUserAdmin) return;
 
-    const updatedMembers = selectedGroup.members.filter((m) => m.username !== targetMember.username);
-    const updatedAdmins = selectedGroup.admins.filter((a) => a !== targetMember.username);
+    const groupMembers = Array.isArray(selectedGroup.members) ? selectedGroup.members : [];
+    const updatedMembers = groupMembers.filter((m) => m.username !== targetMember.username);
+    const updatedAdmins = groupAdmins.filter((a) => a !== targetMember.username);
 
     await updateGroupService(selectedGroup.id, {
       members: updatedMembers,
@@ -911,7 +930,12 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     setMemberContextMenu({ visible: false, x: 0, y: 0, member: null });
   };
 
-  const isCurrentGroupAdmin = selectedGroup ? selectedGroup.admins.includes(user.username) : false;
+  const isCurrentGroupAdmin = Boolean(
+    selectedGroup &&
+    Array.isArray(selectedGroup.admins) &&
+    user?.username &&
+    selectedGroup.admins.includes(user.username)
+  );
 
   return (
     <div className="flex-1 min-w-0 w-full border-r border-zinc-800/60 min-h-screen bg-[#09090b] flex flex-col select-none">
@@ -1225,7 +1249,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                     {selectedTargetUser && (
                       <span
                         className={`w-2.5 h-2.5 rounded-full absolute -bottom-0.5 -right-0.5 border-2 border-[#0c0c0e] ${
-                          selectedTargetUser.username && onlineUsers.has(selectedTargetUser.username.toLowerCase())
+                          Boolean(selectedTargetUser.username && onlineUsers.has(selectedTargetUser.username.toLowerCase()))
                             ? 'bg-emerald-500 ring-2 ring-emerald-500/20'
                             : 'bg-zinc-600'
                         }`}
@@ -1235,7 +1259,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
                   <div className="min-w-0">
                     <h3 className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-                      <span>{selectedGroup ? selectedGroup.name : selectedTargetUser?.display_name}</span>
+                      <span>{selectedGroup ? selectedGroup.name : (selectedTargetUser?.display_name || selectedTargetUser?.username || 'Sohbet')}</span>
                       {selectedGroup && (
                         <span className="px-1.5 py-0.2 bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[10px] rounded font-mono">
                           Grup
@@ -1244,8 +1268,8 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                     </h3>
                     <p className="text-[11px] text-zinc-400 font-mono truncate">
                       {selectedGroup
-                        ? `${selectedGroup.members.length} üye`
-                        : onlineUsers.has(selectedTargetUser?.username.toLowerCase() || '')
+                        ? `${selectedGroup.members?.length || 0} üye`
+                        : Boolean(selectedTargetUser?.username && onlineUsers.has(selectedTargetUser.username.toLowerCase()))
                         ? '● Çevrim içi'
                         : formatLastSeen(
                             selectedTargetUser?.last_seen_at,
@@ -1346,7 +1370,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs text-zinc-400">
                       <span className="font-bold text-white">
-                        {language === 'tr' ? 'Üyeler' : 'Members'} ({selectedGroup.members.length})
+                        {language === 'tr' ? 'Üyeler' : 'Members'} ({selectedGroup.members?.length || 0})
                       </span>
                       <span className="text-[10px] text-zinc-500 font-mono">
                         {language === 'tr'
@@ -1356,7 +1380,8 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                     </div>
 
                     <div className="max-h-48 overflow-y-auto divide-y divide-zinc-900 border border-zinc-800/80 rounded-xl bg-zinc-900/40">
-                      {selectedGroup.members.map((member) => {
+                      {(Array.isArray(selectedGroup.members) ? selectedGroup.members : []).map((member) => {
+                        if (!member) return null;
                         const isMemberAdmin = member.role === 'admin';
                         const isMemberCreator = selectedGroup.creator_username === member.username;
 
@@ -1455,8 +1480,10 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                   </div>
                 ) : (
                   messages.map((msg) => {
+                    if (!msg || !msg.id) return null;
                     const isMe = (msg.sender_username || '').toLowerCase() === (user?.username || '').toLowerCase();
-                    const text = decryptedTextMap[msg.id] ?? (msg.decrypted_text || msg.content);
+                    const rawText = decryptedTextMap[msg.id] ?? (msg.decrypted_text || msg.content);
+                    const text = typeof rawText === 'string' ? rawText : (rawText != null ? String(rawText) : '');
                     const isCodeSnippet = text.startsWith('[CODE_SNIPPET]');
                     const isSwiped = swipedMessageId === msg.id;
 
@@ -1538,9 +1565,11 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                                 }`}
                               >
                                 <p className="font-bold text-[10px] opacity-80">
-                                  @{msg.reply_to.sender_username}
+                                  @{typeof msg.reply_to === 'object' ? (msg.reply_to.sender_username || 'kullanıcı') : 'yanıt'}
                                 </p>
-                                <p className="line-clamp-1 text-[11px]">{msg.reply_to.text}</p>
+                                <p className="line-clamp-1 text-[11px]">
+                                  {typeof msg.reply_to === 'object' ? (msg.reply_to.text || '') : String(msg.reply_to)}
+                                </p>
                               </div>
                             )}
 
@@ -1914,7 +1943,8 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
             type="button"
             onClick={() => {
               const msg = messageContextMenu.message!;
-              const text = decryptedTextMap[msg.id] ?? (msg.decrypted_text || msg.content);
+              const rawText = decryptedTextMap[msg.id] ?? (msg.decrypted_text || msg.content);
+              const text = typeof rawText === 'string' ? rawText : (rawText != null ? String(rawText) : '');
               if (text && !text.startsWith('[MEDIA:')) {
                 navigator.clipboard.writeText(text);
               }
