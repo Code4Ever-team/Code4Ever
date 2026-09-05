@@ -1568,6 +1568,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   )
                 </h3>
               </div>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px] font-mono text-zinc-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>ByNoGame Stream ID: 5595ad22...</span>
+              </div>
             </div>
 
             {(() => {

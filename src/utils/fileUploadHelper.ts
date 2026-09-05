@@ -3,6 +3,10 @@ import { UserProfile } from '../types';
 export const MAX_NORMAL_FILE_SIZE_BYTES = 15 * 1024 * 1024; // 15 MB
 export const MAX_SPARK_FILE_SIZE_BYTES = 250 * 1024 * 1024; // 250 MB
 
+// Post Character Limits (200 for regular users, 1000 for Spark supporters)
+export const MAX_NORMAL_POST_LENGTH = 200;
+export const MAX_SPARK_POST_LENGTH = 1000;
+
 // Allowed Safe MIME types
 export const ALLOWED_IMAGE_TYPES = new Set([
   'image/jpeg',
@@ -58,6 +62,13 @@ export function isUserSpark(user?: Partial<UserProfile> | null): boolean {
   }
 
   return false;
+}
+
+/**
+ * Returns the maximum post character limit (200 for regular, 1000 for Spark supporters).
+ */
+export function getMaxPostLength(user?: Partial<UserProfile> | null): number {
+  return isUserSpark(user) ? MAX_SPARK_POST_LENGTH : MAX_NORMAL_POST_LENGTH;
 }
 
 /**

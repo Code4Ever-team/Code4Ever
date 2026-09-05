@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 
 const app = express();
@@ -667,6 +668,263 @@ app.post('/api/license/validate', rateLimiterMiddleware, (req: Request, res: Res
     tier: licenseKey.includes('PRO') ? 'Pro' : 'Developer',
     rate_limit: licenseKey.includes('PRO') ? 5000 : 1000,
     expires_at: '2027-12-31T23:59:59Z'
+  });
+});
+
+// -------------------------------------------------------------
+// BYNOGAME STREAM DONATION INTEGRATION & VERIFICATION
+// -------------------------------------------------------------
+const BYNOGAME_STREAM_ID = '5595ad22-dd5a-47c2-93ba-d7bf9a3f85ed';
+const BYNOGAME_DONATE_URL = 'https://donate.bynogame.com/nylithra';
+const BYNOGAME_DONATIONS_FILE = path.join(process.cwd(), 'data', 'bynogame_donations.json');
+
+interface ByNoGameDonationRecord {
+  id: string;
+  streamId: string;
+  username: string; // The username entered by donor on ByNoGame
+  usernameNormalized: string;
+  amount?: number | string;
+  currency?: string;
+  message?: string;
+  timestamp: string;
+  verified: boolean;
+  claimedAt?: string;
+}
+
+function loadByNoGameDonations(): ByNoGameDonationRecord[] {
+  try {
+    if (fs.existsSync(BYNOGAME_DONATIONS_FILE)) {
+      const content = fs.readFileSync(BYNOGAME_DONATIONS_FILE, 'utf-8');
+      return JSON.parse(content);
+    }
+  } catch (e) {
+    console.error('ByNoGame donations load error:', e);
+  }
+  return [];
+}
+
+function saveByNoGameDonations(donations: ByNoGameDonationRecord[]) {
+  try {
+    const dir = path.dirname(BYNOGAME_DONATIONS_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(BYNOGAME_DONATIONS_FILE, JSON.stringify(donations, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('ByNoGame donations save error:', e);
+  }
+}
+
+// 1. ByNoGame Public Configuration
+app.get('/api/bynogame/config', (req: Request, res: Response) => {
+  res.json({
+    streamId: BYNOGAME_STREAM_ID,
+    donateUrl: BYNOGAME_DONATE_URL,
+    streamer: 'nylithra',
+    rewardRole: 'Spark',
+    rewardBadge: 'Spark Destekçi',
+    storageMaxMB: 250
+  });
+});
+
+// 2. Check ByNoGame Donations for a specific user and stream ID
+app.post('/api/bynogame/check-donation', async (req: Request, res: Response) => {
+  try {
+    const { username, streamId } = req.body || {};
+    if (!username || typeof username !== 'string') {
+      res.status(400).json({ success: false, error: 'Kullanıcı adı gereklidir.' });
+      return;
+    }
+
+    const targetStreamId = (streamId || BYNOGAME_STREAM_ID).trim();
+    const cleanUsername = username.replace(/^@/, '').trim().toLowerCase();
+
+    // 1) Check local persisted donations database
+    const donations = loadByNoGameDonations();
+    const matched = donations.find(
+      (d) =>
+        d.streamId.toLowerCase() === targetStreamId.toLowerCase() &&
+        (d.usernameNormalized === cleanUsername || d.username.trim().toLowerCase() === cleanUsername)
+    );
+
+    if (matched) {
+      // Mark as claimed if not already
+      if (!matched.claimedAt) {
+        matched.claimedAt = new Date().toISOString();
+        matched.verified = true;
+        saveByNoGameDonations(donations);
+      }
+
+      res.json({
+        success: true,
+        hasDonation: true,
+        donation: matched,
+        streamId: targetStreamId,
+        message: 'ByNoGame bağışınız doğrulandı! Spark Destekçisi rozetiniz ve 250MB yükleme yetkiniz tanımlandı.'
+      });
+      return;
+    }
+
+    // 2) Try querying ByNoGame stream overlay / API endpoints directly
+    // ByNoGame stream endpoints format attempt
+    const streamEndpoints = [
+      `https://stream.bynogame.com/api/v1/stream/${targetStreamId}`,
+      `https://stream.bynogame.com/stream/${targetStreamId}/donations`,
+      `https://stream.bynogame.com/overlay/${targetStreamId}`
+    ];
+
+    let remoteFound: any = null;
+
+    for (const url of streamEndpoints) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2500);
+
+        const response = await fetch(url, {
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            Accept: 'application/json, text/plain, */*'
+          }
+        });
+        clearTimeout(timeout);
+
+        if (response.ok) {
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const data: any = await response.json();
+            const list = Array.isArray(data) ? data : data.donations || data.items || [];
+            const foundInList = list.find((item: any) => {
+              const name = (item.user || item.username || item.donor || item.name || '').toString().toLowerCase();
+              return name.includes(cleanUsername) || cleanUsername.includes(name);
+            });
+            if (foundInList) {
+              remoteFound = foundInList;
+              break;
+            }
+          }
+        }
+      } catch (fetchErr) {
+        // Continue to next endpoint or fallback
+      }
+    }
+
+    if (remoteFound) {
+      const newRecord: ByNoGameDonationRecord = {
+        id: 'bng_' + Date.now(),
+        streamId: targetStreamId,
+        username: cleanUsername,
+        usernameNormalized: cleanUsername,
+        amount: remoteFound.amount || 'ByNoGame Bağışı',
+        currency: remoteFound.currency || 'TL',
+        message: remoteFound.message || '',
+        timestamp: new Date().toISOString(),
+        verified: true,
+        claimedAt: new Date().toISOString()
+      };
+      donations.push(newRecord);
+      saveByNoGameDonations(donations);
+
+      res.json({
+        success: true,
+        hasDonation: true,
+        donation: newRecord,
+        streamId: targetStreamId,
+        message: 'ByNoGame akışından bağışınız otomatik olarak tespit edildi ve doğrulandı!'
+      });
+      return;
+    }
+
+    // Not found yet
+    res.json({
+      success: true,
+      hasDonation: false,
+      streamId: targetStreamId,
+      username: cleanUsername,
+      message:
+        'ByNoGame Stream ID (5595ad22-dd5a-47c2-93ba-d7bf9a3f85ed) üzerinde henüz @' +
+        cleanUsername +
+        ' kullanıcı adıyla kayıtlı bir bağış tespit edilemedi. Bağışınızı yeni yaptıysanız lütfen birkaç saniye bekleyip tekrar deneyiniz.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Bağış kontrol edilirken hata oluştu.' });
+  }
+});
+
+// 3. ByNoGame Webhook / External Notification Handler
+app.post('/api/bynogame/webhook', (req: Request, res: Response) => {
+  try {
+    const payload = req.body || {};
+    const streamId = (payload.streamId || payload.stream_id || BYNOGAME_STREAM_ID).toString();
+    const donor = (payload.username || payload.donor || payload.user_name || payload.name || '').toString().trim();
+
+    if (!donor) {
+      res.status(400).json({ error: 'Donor username is required' });
+      return;
+    }
+
+    const donations = loadByNoGameDonations();
+    const newDonation: ByNoGameDonationRecord = {
+      id: 'bng_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+      streamId,
+      username: donor,
+      usernameNormalized: donor.replace(/^@/, '').toLowerCase(),
+      amount: payload.amount || payload.total || '0',
+      currency: payload.currency || 'TL',
+      message: payload.message || payload.note || '',
+      timestamp: new Date().toISOString(),
+      verified: true
+    };
+
+    donations.push(newDonation);
+    saveByNoGameDonations(donations);
+
+    res.json({ success: true, recorded: newDonation });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Webhook işlenemedi' });
+  }
+});
+
+// 4. Manual / Admin Verification or Simulation of ByNoGame Donation
+app.post('/api/bynogame/register-donation', (req: Request, res: Response) => {
+  try {
+    const { username, amount, message, secretKey } = req.body || {};
+    if (!username) {
+      res.status(400).json({ error: 'Username is required' });
+      return;
+    }
+
+    const donations = loadByNoGameDonations();
+    const cleanUsername = username.replace(/^@/, '').trim().toLowerCase();
+
+    const record: ByNoGameDonationRecord = {
+      id: 'bng_reg_' + Date.now(),
+      streamId: BYNOGAME_STREAM_ID,
+      username: cleanUsername,
+      usernameNormalized: cleanUsername,
+      amount: amount || 'Destek',
+      currency: 'TL',
+      message: message || 'ByNoGame Bağışı',
+      timestamp: new Date().toISOString(),
+      verified: true
+    };
+
+    donations.push(record);
+    saveByNoGameDonations(donations);
+
+    res.json({ success: true, donation: record });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Kayıt başarısız' });
+  }
+});
+
+// 5. Get recent donations list for streamer
+app.get('/api/bynogame/donations', (req: Request, res: Response) => {
+  const donations = loadByNoGameDonations();
+  res.json({
+    streamId: BYNOGAME_STREAM_ID,
+    total: donations.length,
+    donations: donations.slice(-50).reverse()
   });
 });
 

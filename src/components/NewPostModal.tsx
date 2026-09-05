@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { X, Code, Send, Image as ImageIcon, Video, Trash2, Loader2, Users } from 'lucide-react';
+import { X, Code, Send, Image as ImageIcon, Video, Trash2, Loader2, Users, Sparkles } from 'lucide-react';
 import { UserProfile, Community } from '../types';
-import { validateFileSize, notifyFileSizeExceeded } from '../utils/fileUploadHelper';
+import { validateFileSize, notifyFileSizeExceeded, isUserSpark, getMaxPostLength } from '../utils/fileUploadHelper';
 import { CategorySelector } from './CategorySelector';
 
 interface NewPostModalProps {
@@ -46,7 +46,8 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const MAX_CONTENT_LENGTH = 200;
+  const isSpark = isUserSpark(user);
+  const MAX_CONTENT_LENGTH = getMaxPostLength(user);
   const MAX_CODE_LENGTH = 5000;
 
   const isContentOver = content.length > MAX_CONTENT_LENGTH;
@@ -207,18 +208,23 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
               className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-3.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-600 resize-none pb-7"
             />
             {/* Character counter */}
-            <div className="absolute right-3 bottom-3">
+            <div className="absolute right-3 bottom-3 flex items-center gap-1.5">
+              {isSpark && (
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 flex items-center gap-1 shadow-sm">
+                  <Sparkles className="w-2.5 h-2.5" /> 1000 Spark
+                </span>
+              )}
               <span
                 className={`text-[10px] font-mono px-2 py-0.5 rounded-md transition-all shadow-sm ${
                   content.length > MAX_CONTENT_LENGTH
                     ? 'bg-red-500/20 text-red-400 border border-red-500/50 font-bold animate-pulse'
-                    : content.length >= 150
+                    : content.length >= MAX_CONTENT_LENGTH * 0.8
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 font-semibold'
                     : 'bg-zinc-900/80 text-zinc-400 border border-zinc-800'
                 }`}
                 title={
                   content.length > MAX_CONTENT_LENGTH
-                    ? (language === 'tr' ? 'Karakter sınırı aşıldı! Maksimum 200 karakter.' : 'Character limit exceeded! Max 200 chars.')
+                    ? (language === 'tr' ? `Karakter sınırı aşıldı! Maksimum ${MAX_CONTENT_LENGTH} karakter.` : `Character limit exceeded! Max ${MAX_CONTENT_LENGTH} chars.`)
                     : undefined
                 }
               >
