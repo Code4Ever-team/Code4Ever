@@ -65,6 +65,7 @@ interface FeedViewProps {
   ) => Promise<boolean> | boolean | void;
   onAddComment: (postId: string, commentText: string) => void;
   onSelectUser: (username: string) => void;
+  onSelectCommunity?: (community: Community | string) => void;
 }
 
 export const FeedView: React.FC<FeedViewProps> = ({
@@ -82,7 +83,8 @@ export const FeedView: React.FC<FeedViewProps> = ({
   onDeletePost,
   onCreatePost,
   onAddComment,
-  onSelectUser
+  onSelectUser,
+  onSelectCommunity
 }) => {
   const [content, setContent] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('genel');
@@ -843,7 +845,13 @@ export const FeedView: React.FC<FeedViewProps> = ({
                           <>
                             <span className="text-xs text-zinc-600">·</span>
                             <span
-                              onClick={() => onSelectUser(post.community_handle || post.community_name!)}
+                              onClick={() => {
+                                if (onSelectCommunity) {
+                                  onSelectCommunity(post.community_handle || post.community_name!);
+                                } else {
+                                  onSelectUser(post.community_handle || post.community_name!);
+                                }
+                              }}
                               className="px-2 py-0.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[10px] font-mono flex items-center gap-1 cursor-pointer hover:bg-purple-500/20 transition-colors"
                             >
                               <Users className="w-3 h-3" />

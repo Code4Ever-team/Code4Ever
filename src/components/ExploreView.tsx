@@ -141,7 +141,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                     />
                     <div>
                       <h4 className="text-xs font-bold text-white">{comm.name}</h4>
-                      <span className="text-[10px] text-zinc-500 font-mono">{comm.handle}</span>
+                      <span className="text-[10px] text-purple-400 font-mono">/c/@{comm.handle.replace(/^@/, '')}</span>
                     </div>
                   </div>
                   <span className="text-[10px] text-zinc-400 font-mono bg-zinc-900 px-2 py-1 rounded-lg">

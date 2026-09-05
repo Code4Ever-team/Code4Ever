@@ -22,6 +22,7 @@ import {
   INITIAL_CATEGORIES
 } from '../types';
 import { sanitizeText, sanitizeUrl } from '../utils/securityHelper';
+import { encryptE2EEMessage } from '../utils/e2eeHelper';
 import { sendJobApplicationWebhook } from './webhookService';
 
 // Local Storage Cache Keys
@@ -1309,6 +1310,51 @@ export async function fetchJobListingsFromSupabase(): Promise<JobListing[]> {
           }
         });
       }
+
+      // Also merge incoming records from job_applications table to guarantee all applicant submissions are present
+      try {
+        const { data: appsData } = await client
+          .from('job_applications')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (Array.isArray(appsData) && appsData.length > 0) {
+          appsData.forEach((appItem: any) => {
+            if (appItem && appItem.job_id && listingsMap.has(appItem.job_id)) {
+              const target = listingsMap.get(appItem.job_id)!;
+              const existingApps = target.applications || [];
+              const alreadyExists = existingApps.some(
+                (a) => a.id === appItem.id || (a.applicant_username === appItem.applicant_username && a.job_id === appItem.job_id)
+              );
+              if (!alreadyExists) {
+                const formattedApp: JobApplication = {
+                  id: appItem.id,
+                  job_id: appItem.job_id,
+                  job_title: target.title || appItem.job_title || 'İlan',
+                  applicant_user_id: appItem.applicant_id || `usr_${appItem.applicant_username}`,
+                  applicant_username: appItem.applicant_username,
+                  applicant_display_name: appItem.name || appItem.applicant_username,
+                  name: appItem.name,
+                  age: Number(appItem.age) || 20,
+                  experience: appItem.experience || '',
+                  languages: appItem.languages || '',
+                  description: appItem.description || '',
+                  status: appItem.status || 'pending',
+                  created_at: appItem.created_at || new Date().toISOString()
+                };
+                existingApps.push(formattedApp);
+                target.applications = existingApps;
+                target.applications_count = existingApps.length;
+                if (!target.applied_by?.includes(appItem.applicant_username)) {
+                  target.applied_by = [...(target.applied_by || []), appItem.applicant_username];
+                }
+              }
+            }
+          });
+        }
+      } catch (appErr) {
+        console.warn('Fallback merging job_applications table:', appErr);
+      }
     } catch (e) {
       console.warn('Error fetching job listings from Supabase:', e);
     }
@@ -1390,6 +1436,15 @@ export function subscribeToJobListings(onUpdate: (listings: JobListing[]) => voi
         onUpdate(updated);
       }
     })
+    .on('broadcast', { event: 'update_job' }, ({ payload }) => {
+      if (payload?.id) {
+        const item = payload as JobListing;
+        const current = loadStoredJobListings();
+        const updated = current.map((j) => (j.id === item.id ? item : j));
+        saveStoredJobListings(updated);
+        onUpdate(updated);
+      }
+    })
     .on('broadcast', { event: 'delete_job' }, ({ payload }) => {
       if (payload?.id) {
         const current = loadStoredJobListings().filter((j) => j.id !== payload.id);
@@ -1411,6 +1466,13 @@ export function subscribeToJobListings(onUpdate: (listings: JobListing[]) => voi
         refreshAndNotify();
       } catch (e) {
         console.warn('Realtime job refresh error:', e);
+      }
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'job_applications' }, async () => {
+      try {
+        refreshAndNotify();
+      } catch (e) {
+        console.warn('Realtime job applications refresh error:', e);
       }
     })
     .subscribe();
@@ -1580,8 +1642,9 @@ export async function submitJobApplication(
   } catch {}
 
   const notification: NotificationItem = {
-    id: `notif_app_${Date.now()}`,
+    id: `notif_app_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     type: 'job_application',
+    recipient_id: targetJob.author.username,
     actor: {
       username: application.applicant_username,
       display_name: application.applicant_display_name || application.name || application.applicant_username,
@@ -1590,11 +1653,44 @@ export async function submitJobApplication(
     content: `"${targetJob.title}" başlıklı ${targetJob.type === 'team' ? 'ekip' : 'iş'} ilanınıza başvurdu.`,
     time_ago: 'Az önce',
     is_read: false,
-    target_id: targetJob.id
+    target_id: targetJob.id,
+    created_at: new Date().toISOString()
   };
 
   if (onNotifyAuthor && targetJob.author.username !== application.applicant_username) {
     onNotifyAuthor(notification);
+  }
+
+  // Send real-time and database persistent notification to job author
+  await sendNotificationService(notification);
+
+  // Send an automatic DM to the job author so they can view applicant details and chat directly
+  try {
+    const authorUser = (targetJob.author?.username || '').toLowerCase();
+    const applicantUser = (application.applicant_username || '').toLowerCase();
+    if (authorUser && applicantUser && authorUser !== applicantUser) {
+      const sorted = [applicantUser, authorUser].sort();
+      const convId = `dm_${sorted.join('_')}`;
+      const introText = `💼 Merhaba! "${targetJob.title}" başlıklı ${targetJob.type === 'team' ? 'ekip' : 'iş'} ilanınıza başvuru yaptım.\n\n👤 Başvuran: ${cleanApp.name}\n🎂 Yaş: ${cleanApp.age}\n💼 Deneyim: ${cleanApp.experience}\n🛠️ Diller/Teknolojiler: ${cleanApp.languages}\n📝 Açıklama: ${cleanApp.description}`;
+      const { encrypted, durationMs } = await encryptE2EEMessage(introText, convId);
+      const directMsg: ChatMessage = {
+        id: `msg_app_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        conversation_id: convId,
+        is_group: false,
+        sender_id: application.applicant_user_id || `usr_${applicantUser}`,
+        sender_username: application.applicant_username,
+        sender_display_name: application.applicant_display_name || application.name || application.applicant_username,
+        sender_avatar: application.applicant_avatar,
+        content: encrypted,
+        decrypted_text: introText,
+        status: 'delivered',
+        created_at: new Date().toISOString(),
+        encryption_duration_ms: durationMs
+      };
+      await sendMessageService(directMsg);
+    }
+  } catch (dmErr) {
+    console.warn('Auto job application DM error:', dmErr);
   }
 
   // Also push to local stored notifications if target author matches local user
@@ -1629,11 +1725,23 @@ export async function submitJobApplication(
         description: cleanApp.description,
         created_at: cleanApp.created_at
       });
-      await resilientSupabaseUpsert('job_listings', {
-        id: targetJob.id,
-        applications: updatedApps,
-        applied_by: appliedBy
-      });
+
+      // Direct update on job_listings row
+      const { error: updateErr } = await client
+        .from('job_listings')
+        .update({
+          applications: updatedApps,
+          applied_by: appliedBy
+        })
+        .eq('id', targetJob.id);
+
+      if (updateErr) {
+        await resilientSupabaseUpsert('job_listings', {
+          id: targetJob.id,
+          applications: updatedApps,
+          applied_by: appliedBy
+        });
+      }
 
       // Broadcast update to real-time channel
       const jobChan = client.channel('public:job_listings');
@@ -1655,7 +1763,7 @@ export async function submitJobApplication(
 }
 
 // -------------------------------------------------------------
-// NOTIFICATIONS PERSISTENCE
+// NOTIFICATIONS PERSISTENCE & REAL-TIME
 // -------------------------------------------------------------
 
 export function loadStoredNotifications(): NotificationItem[] {
@@ -1673,6 +1781,176 @@ export function saveStoredNotifications(notifications: NotificationItem[]): void
   try {
     localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
   } catch {}
+}
+
+export async function fetchNotificationsFromSupabase(currentUsername: string): Promise<NotificationItem[]> {
+  const cleanUser = (currentUsername || '').toLowerCase().trim();
+  const local = loadStoredNotifications();
+  const client = getSupabaseClient();
+  if (!client || !cleanUser) return local;
+
+  try {
+    const { data, error } = await client
+      .from('notifications')
+      .select('*')
+      .ilike('recipient_id', cleanUser)
+      .order('created_at', { ascending: false })
+      .limit(60);
+
+    if (!error && Array.isArray(data)) {
+      const map = new Map<string, NotificationItem>();
+      local.forEach((n) => map.set(n.id, n));
+      data.forEach((item: any) => {
+        let actor = item.actor;
+        if (typeof actor === 'string') {
+          try {
+            actor = JSON.parse(actor);
+          } catch {}
+        }
+        map.set(item.id, {
+          id: item.id,
+          recipient_id: item.recipient_id,
+          type: item.type,
+          actor: actor || { username: 'anonim', display_name: 'Biri' },
+          content: item.content,
+          is_read: Boolean(item.is_read),
+          target_id: item.target_id,
+          created_at: item.created_at || new Date().toISOString(),
+          time_ago: 'Az önce'
+        });
+      });
+      const merged = Array.from(map.values()).sort(
+        (a, b) => new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime()
+      );
+      saveStoredNotifications(merged);
+      return merged;
+    }
+  } catch (err) {
+    console.warn('Supabase notifications fetch error:', err);
+  }
+  return local;
+}
+
+export async function sendNotificationService(notification: NotificationItem): Promise<void> {
+  const recipient = (notification.recipient_id || '').toLowerCase().trim();
+  if (!recipient) return;
+
+  // 1. Same-window local event
+  try {
+    window.dispatchEvent(new CustomEvent('c4e_notification_broadcast', { detail: notification }));
+  } catch {}
+
+  const client = getSupabaseClient();
+  if (client) {
+    // 2. Realtime Broadcast to recipient
+    const notifyChan = client.channel(`c4e_notify_${recipient}`);
+    notifyChan.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        notifyChan.send({
+          type: 'broadcast',
+          event: 'new_notification',
+          payload: notification
+        }).finally(() => {
+          client.removeChannel(notifyChan);
+        });
+      }
+    });
+
+    // 3. Insert into Supabase notifications table
+    try {
+      await client.from('notifications').insert({
+        id: notification.id,
+        recipient_id: recipient,
+        type: notification.type,
+        actor: notification.actor,
+        content: notification.content,
+        is_read: Boolean(notification.is_read),
+        target_id: notification.target_id || null,
+        created_at: notification.created_at || new Date().toISOString()
+      });
+    } catch (err) {
+      console.warn('Supabase notification insert error:', err);
+    }
+  }
+}
+
+export function subscribeToUserNotifications(
+  currentUsername: string,
+  onUpdate: (notifications: NotificationItem[]) => void,
+  onNewNotification?: (notif: NotificationItem) => void
+): () => void {
+  const cleanUser = (currentUsername || '').toLowerCase().trim();
+  if (!cleanUser) return () => {};
+
+  // Initial load
+  onUpdate(loadStoredNotifications());
+  fetchNotificationsFromSupabase(cleanUser).then((list) => {
+    onUpdate(list);
+  });
+
+  const handleNewNotif = (notif: NotificationItem) => {
+    if (!notif || !notif.id) return;
+    const current = loadStoredNotifications();
+    if (!current.some((n) => n.id === notif.id)) {
+      const updated = [notif, ...current];
+      saveStoredNotifications(updated);
+      onUpdate(updated);
+      if (onNewNotification) onNewNotification(notif);
+    }
+  };
+
+  const handleCustomEvent = (e: any) => {
+    if (e.detail) {
+      handleNewNotif(e.detail);
+    }
+  };
+  window.addEventListener('c4e_notification_broadcast', handleCustomEvent);
+
+  const client = getSupabaseClient();
+  let channel: any = null;
+  if (client) {
+    channel = client
+      .channel(`c4e_notify_${cleanUser}`)
+      .on('broadcast', { event: 'new_notification' }, ({ payload }) => {
+        if (payload) handleNewNotif(payload as NotificationItem);
+      })
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `recipient_id=eq.${cleanUser}`
+        },
+        (payload) => {
+          if (payload.new) {
+            let actor = payload.new.actor;
+            if (typeof actor === 'string') {
+              try { actor = JSON.parse(actor); } catch {}
+            }
+            handleNewNotif({
+              id: payload.new.id,
+              recipient_id: payload.new.recipient_id,
+              type: payload.new.type,
+              actor: actor || { username: 'biri', display_name: 'Biri' },
+              content: payload.new.content,
+              is_read: Boolean(payload.new.is_read),
+              target_id: payload.new.target_id,
+              created_at: payload.new.created_at || new Date().toISOString(),
+              time_ago: 'Az önce'
+            });
+          }
+        }
+      )
+      .subscribe();
+  }
+
+  return () => {
+    window.removeEventListener('c4e_notification_broadcast', handleCustomEvent);
+    if (channel && client) {
+      client.removeChannel(channel);
+    }
+  };
 }
 
 // -------------------------------------------------------------
@@ -2065,12 +2343,36 @@ export function subscribeToOnlinePresence(
 // REAL-TIME E2EE MESSAGES & GROUPS ENGINE
 // -------------------------------------------------------------
 
+const activeChatChannels = new Map<string, any>();
+
+function getOrCreateChatChannel(conversationId: string) {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  const cleanId = (conversationId || 'general').trim().toLowerCase();
+  const topic = `c4e_room_${cleanId}`;
+
+  if (activeChatChannels.has(cleanId)) {
+    const existing = activeChatChannels.get(cleanId);
+    if (existing && existing.state !== 'closed') {
+      return existing;
+    }
+  }
+
+  const channel = client.channel(topic);
+  activeChatChannels.set(cleanId, channel);
+  return channel;
+}
+
 export function loadStoredMessages(conversationId: string): ChatMessage[] {
   try {
     const raw = localStorage.getItem(`${STORAGE_KEYS.MESSAGES}_${conversationId}`);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (m) => m && typeof m === 'object' && m.id && m.sender_username && !(m as any).action
+        );
+      }
     }
   } catch {}
   return [];
@@ -2078,7 +2380,10 @@ export function loadStoredMessages(conversationId: string): ChatMessage[] {
 
 export function saveStoredMessages(conversationId: string, messages: ChatMessage[]): void {
   try {
-    localStorage.setItem(`${STORAGE_KEYS.MESSAGES}_${conversationId}`, JSON.stringify(messages));
+    const valid = (messages || []).filter(
+      (m) => m && typeof m === 'object' && m.id && m.sender_username && !(m as any).action
+    );
+    localStorage.setItem(`${STORAGE_KEYS.MESSAGES}_${conversationId}`, JSON.stringify(valid));
   } catch {}
 }
 
@@ -2109,6 +2414,65 @@ export function getActiveConversationsMap(currentUsername: string): Record<strin
       }
     }
   } catch {}
+
+  return map;
+}
+
+/**
+ * Fetches user's conversation threads from Supabase messages table and synchronizes with local storage.
+ */
+export async function fetchUserConversationsFromSupabase(
+  currentUsername: string
+): Promise<Record<string, { lastMessage: ChatMessage; otherUsername: string }>> {
+  const cleanUser = (currentUsername || '').toLowerCase().trim();
+  const map = getActiveConversationsMap(cleanUser);
+  const client = getSupabaseClient();
+  if (!client || !cleanUser) return map;
+
+  try {
+    const { data, error } = await client
+      .from('messages')
+      .select('*')
+      .or(`sender_username.ilike.${cleanUser},conversation_id.ilike.%${cleanUser}%`)
+      .order('created_at', { ascending: true })
+      .limit(400);
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const convMap = new Map<string, ChatMessage[]>();
+      data.forEach((item: any) => {
+        if (item && item.conversation_id && item.id) {
+          const cid = item.conversation_id;
+          const list = convMap.get(cid) || [];
+          list.push(item as ChatMessage);
+          convMap.set(cid, list);
+        }
+      });
+
+      convMap.forEach((msgs, convId) => {
+        const localMsgs = loadStoredMessages(convId);
+        const idMap = new Map<string, ChatMessage>();
+        localMsgs.forEach((m) => idMap.set(m.id, m));
+        msgs.forEach((m) => idMap.set(m.id, m));
+        const merged = Array.from(idMap.values()).sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        saveStoredMessages(convId, merged);
+
+        if (convId.startsWith('dm_')) {
+          const parts = convId.replace('dm_', '').split('_');
+          const other = parts.find((p) => p.toLowerCase() !== cleanUser) || parts[0];
+          if (merged.length > 0) {
+            map[convId] = {
+              lastMessage: merged[merged.length - 1],
+              otherUsername: other
+            };
+          }
+        }
+      });
+    }
+  } catch (err) {
+    console.warn('fetchUserConversationsFromSupabase error:', err);
+  }
 
   return map;
 }
@@ -2161,7 +2525,7 @@ export function subscribeToConversationMessages(
           is_edited: true,
           updated_at: new Date().toISOString()
         });
-      } else if (e.detail.conversation_id === conversationId && !e.detail.action) {
+      } else if (e.detail.conversation_id === conversationId && !e.detail.action && e.detail.id && e.detail.sender_username) {
         mergeAndEmit([e.detail]);
       }
     }
@@ -2199,77 +2563,87 @@ export function subscribeToConversationMessages(
     );
 
   // Realtime Broadcast Channel & Postgres Changes
-  const channelTopic = `room_msg_${conversationId}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const channel = client
-    .channel(channelTopic)
-    .on('broadcast', { event: 'new_msg' }, ({ payload }) => {
-      if (payload && (payload as ChatMessage).conversation_id === conversationId) {
-        mergeAndEmit([payload as ChatMessage]);
-      }
-    })
-    .on('broadcast', { event: 'edit_msg' }, ({ payload }) => {
-      if (payload && payload.conversation_id === conversationId && payload.messageId) {
-        updateAndEmit(payload.messageId, {
-          content: payload.content,
-          decrypted_text: payload.decrypted_text,
-          is_edited: true,
-          updated_at: new Date().toISOString()
-        });
-      }
-    })
-    .on('broadcast', { event: 'delete_msg' }, ({ payload }) => {
-      if (payload && payload.conversation_id === conversationId && payload.messageId) {
-        removeAndEmit(payload.messageId);
-      }
-    })
-    .on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `conversation_id=eq.${conversationId}`
-      },
-      (payload) => {
-        if (payload.new) {
-          mergeAndEmit([payload.new as ChatMessage]);
+  const channel = getOrCreateChatChannel(conversationId);
+  if (channel) {
+    channel
+      .on('broadcast', { event: 'new_msg' }, ({ payload }: any) => {
+        if (payload && (payload as ChatMessage).conversation_id?.toLowerCase() === conversationId.toLowerCase()) {
+          mergeAndEmit([payload as ChatMessage]);
         }
-      }
-    )
-    .on(
-      'postgres_changes',
-      {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'messages',
-        filter: `conversation_id=eq.${conversationId}`
-      },
-      (payload) => {
-        if (payload.new) {
-          updateAndEmit(payload.new.id, payload.new as Partial<ChatMessage>);
+      })
+      .on('broadcast', { event: 'edit_msg' }, ({ payload }: any) => {
+        if (payload && payload.conversation_id?.toLowerCase() === conversationId.toLowerCase() && payload.messageId) {
+          updateAndEmit(payload.messageId, {
+            content: payload.content,
+            decrypted_text: payload.decrypted_text,
+            is_edited: true,
+            updated_at: new Date().toISOString()
+          });
         }
-      }
-    )
-    .on(
-      'postgres_changes',
-      {
-        event: 'DELETE',
-        schema: 'public',
-        table: 'messages',
-        filter: `conversation_id=eq.${conversationId}`
-      },
-      (payload) => {
-        if (payload.old && payload.old.id) {
-          removeAndEmit(payload.old.id);
+      })
+      .on('broadcast', { event: 'delete_msg' }, ({ payload }: any) => {
+        if (payload && payload.conversation_id?.toLowerCase() === conversationId.toLowerCase() && payload.messageId) {
+          removeAndEmit(payload.messageId);
         }
-      }
-    )
-    .subscribe();
+      })
+      .on('broadcast', { event: 'mark_read' }, ({ payload }: any) => {
+        if (payload && payload.conversation_id?.toLowerCase() === conversationId.toLowerCase()) {
+          const current = loadStoredMessages(conversationId);
+          const updated = current.map((m) =>
+            m.sender_username !== payload.readerUsername ? { ...m, status: 'read' as const } : m
+          );
+          saveStoredMessages(conversationId, updated);
+          onUpdate(updated);
+        }
+      })
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`
+        },
+        (payload: any) => {
+          if (payload.new) {
+            mergeAndEmit([payload.new as ChatMessage]);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`
+        },
+        (payload: any) => {
+          if (payload.new) {
+            updateAndEmit(payload.new.id, payload.new as Partial<ChatMessage>);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`
+        },
+        (payload: any) => {
+          if (payload.old && payload.old.id) {
+            removeAndEmit(payload.old.id);
+          }
+        }
+      )
+      .subscribe();
+  }
 
   return () => {
     window.removeEventListener('c4e_message_broadcast', handleCustomEvent);
     window.removeEventListener('storage', handleStorage);
-    client.removeChannel(channel);
   };
 }
 
@@ -2295,7 +2669,10 @@ export function subscribeToUserIncomingMessages(
   subscribers.add(onIncomingMessage);
 
   const handleIncoming = (newMsg: ChatMessage) => {
-    if (!newMsg || newMsg.sender_username?.toLowerCase() === cleanUser) {
+    if (!newMsg || (newMsg as any).action || !newMsg.id || !newMsg.sender_username) {
+      return;
+    }
+    if (newMsg.sender_username.toLowerCase() === cleanUser) {
       return; // Ignore own messages
     }
 
@@ -2304,7 +2681,7 @@ export function subscribeToUserIncomingMessages(
     const isUserDM = convId.startsWith('dm_') && convId.includes(cleanUser);
     const groups = loadStoredGroups();
     const isUserGroup = groups.some(
-      (g) => g.id === newMsg.conversation_id && g.members?.some((m) => m.username?.toLowerCase() === cleanUser)
+      (g) => g.id === newMsg.conversation_id && g.members?.some((m) => (m.username || '').toLowerCase() === cleanUser)
     );
 
     if (isUserDM || isUserGroup) {
@@ -2328,13 +2705,15 @@ export function subscribeToUserIncomingMessages(
 
   // Same-window broadcast listener
   const handleCustom = (e: any) => {
-    if (e.detail) handleIncoming(e.detail);
+    if (e.detail && !e.detail.action && e.detail.id && e.detail.sender_username) {
+      handleIncoming(e.detail);
+    }
   };
   window.addEventListener('c4e_message_broadcast', handleCustom);
 
   const client = getSupabaseClient();
   if (client && !userIncomingMessageChannels.has(cleanUser)) {
-    const channelTopic = `global_feed_${cleanUser}_${Date.now()}`;
+    const channelTopic = `c4e_user_${cleanUser}`;
     const channel = client
       .channel(channelTopic)
       .on('broadcast', { event: 'incoming_msg' }, ({ payload }) => {
@@ -2351,6 +2730,14 @@ export function subscribeToUserIncomingMessages(
           if (payload.new) handleIncoming(payload.new as ChatMessage);
         }
       )
+      .subscribe();
+
+    // Global message broadcast subscriber as reliable network fallback
+    const globalChannel = client
+      .channel(`c4e_global_feed_sub_${cleanUser}`)
+      .on('broadcast', { event: 'incoming_msg' }, ({ payload }) => {
+        if (payload) handleIncoming(payload as ChatMessage);
+      })
       .subscribe();
 
     userIncomingMessageChannels.set(cleanUser, channel);
@@ -2383,23 +2770,51 @@ export async function sendMessageService(message: ChatMessage): Promise<void> {
 
   const client = getSupabaseClient();
   if (client) {
-    // 1. Broadcast to specific room channel via ephemeral sender channel
-    const roomChannel = client.channel(`send_room_${Date.now()}_${Math.random().toString(36).slice(2)}`);
-    roomChannel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
+    // 1. Broadcast to deterministic room channel
+    const roomChannel = getOrCreateChatChannel(message.conversation_id);
+    if (roomChannel) {
+      if (roomChannel.state === 'joined' || roomChannel.state === 'subscribed') {
         roomChannel.send({
           type: 'broadcast',
           event: 'new_msg',
           payload: message
-        }).finally(() => {
-          client.removeChannel(roomChannel);
+        });
+      } else {
+        roomChannel.subscribe((status: string) => {
+          if (status === 'SUBSCRIBED') {
+            roomChannel.send({
+              type: 'broadcast',
+              event: 'new_msg',
+              payload: message
+            });
+          }
         });
       }
-    });
+    }
 
-    // 2. Broadcast globally for background recipient notifications via ephemeral sender channel
-    const globalChannel = client.channel(`send_global_${Date.now()}_${Math.random().toString(36).slice(2)}`);
-    globalChannel.subscribe((status) => {
+    // 2. Broadcast to recipient notification channel if direct message
+    if (message.conversation_id.toLowerCase().startsWith('dm_')) {
+      const parts = message.conversation_id.replace('dm_', '').split('_');
+      const otherUsername = parts.find((p) => p.toLowerCase() !== message.sender_username.toLowerCase());
+      if (otherUsername) {
+        const userNotifyChan = client.channel(`c4e_user_${otherUsername.toLowerCase()}`);
+        userNotifyChan.subscribe((status: string) => {
+          if (status === 'SUBSCRIBED') {
+            userNotifyChan.send({
+              type: 'broadcast',
+              event: 'incoming_msg',
+              payload: message
+            }).finally(() => {
+              client.removeChannel(userNotifyChan);
+            });
+          }
+        });
+      }
+    }
+
+    // Global broadcast channel fallback
+    const globalChannel = client.channel('c4e_global_msg_feed');
+    globalChannel.subscribe((status: string) => {
       if (status === 'SUBSCRIBED') {
         globalChannel.send({
           type: 'broadcast',
@@ -2411,9 +2826,9 @@ export async function sendMessageService(message: ChatMessage): Promise<void> {
       }
     });
 
-    // 3. Database persistence
+    // 3. Database persistence with resilient payload fallback
     try {
-      await client.from('messages').insert({
+      const dbPayload: Record<string, any> = {
         id: message.id,
         conversation_id: message.conversation_id,
         is_group: Boolean(message.is_group),
@@ -2427,9 +2842,18 @@ export async function sendMessageService(message: ChatMessage): Promise<void> {
         media_name: message.media_name || null,
         status: message.status || 'delivered',
         created_at: message.created_at,
-        encryption_duration_ms: message.encryption_duration_ms || 0,
-        reply_to: message.reply_to || null
-      });
+        encryption_duration_ms: message.encryption_duration_ms || 0
+      };
+      if (message.reply_to) {
+        dbPayload.reply_to = message.reply_to;
+      }
+
+      const { error } = await client.from('messages').insert(dbPayload);
+      if (error) {
+        delete dbPayload.reply_to;
+        delete dbPayload.encryption_duration_ms;
+        await client.from('messages').insert(dbPayload);
+      }
     } catch (err) {
       console.warn('Supabase message insert fallback:', err);
     }
@@ -2451,6 +2875,15 @@ export async function markMessagesAsReadService(conversationId: string, readerUs
     saveStoredMessages(conversationId, updated);
     const client = getSupabaseClient();
     if (client) {
+      const roomChannel = getOrCreateChatChannel(conversationId);
+      if (roomChannel) {
+        roomChannel.send({
+          type: 'broadcast',
+          event: 'mark_read',
+          payload: { conversation_id: conversationId, readerUsername }
+        });
+      }
+
       try {
         await client
           .from('messages')
@@ -2500,19 +2933,14 @@ export async function editMessageService(
 
   const client = getSupabaseClient();
   if (client) {
-    // Broadcast via ephemeral channel
-    const roomChannel = client.channel(`edit_room_${Date.now()}_${Math.random().toString(36).slice(2)}`);
-    roomChannel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        roomChannel.send({
-          type: 'broadcast',
-          event: 'edit_msg',
-          payload: { conversation_id: conversationId, messageId, content: newContent, decrypted_text: decryptedText }
-        }).finally(() => {
-          client.removeChannel(roomChannel);
-        });
-      }
-    });
+    const roomChannel = getOrCreateChatChannel(conversationId);
+    if (roomChannel) {
+      roomChannel.send({
+        type: 'broadcast',
+        event: 'edit_msg',
+        payload: { conversation_id: conversationId, messageId, content: newContent, decrypted_text: decryptedText }
+      });
+    }
 
     try {
       await client
@@ -2546,19 +2974,14 @@ export async function deleteMessageService(conversationId: string, messageId: st
 
   const client = getSupabaseClient();
   if (client) {
-    // Broadcast via ephemeral channel
-    const roomChannel = client.channel(`del_room_${Date.now()}_${Math.random().toString(36).slice(2)}`);
-    roomChannel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        roomChannel.send({
-          type: 'broadcast',
-          event: 'delete_msg',
-          payload: { conversation_id: conversationId, messageId }
-        }).finally(() => {
-          client.removeChannel(roomChannel);
-        });
-      }
-    });
+    const roomChannel = getOrCreateChatChannel(conversationId);
+    if (roomChannel) {
+      roomChannel.send({
+        type: 'broadcast',
+        event: 'delete_msg',
+        payload: { conversation_id: conversationId, messageId }
+      });
+    }
 
     try {
       await client.from('messages').delete().eq('id', messageId);

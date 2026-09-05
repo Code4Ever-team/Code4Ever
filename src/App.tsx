@@ -58,7 +58,9 @@ import {
   submitJobApplication as submitJobApplicationService,
   subscribeToUserIncomingMessages,
   loadStoredNotifications,
-  saveStoredNotifications
+  saveStoredNotifications,
+  subscribeToUserNotifications,
+  fetchNotificationsFromSupabase
 } from './services/supabaseClient';
 import { decryptE2EEMessage } from './utils/e2eeHelper';
 import {
@@ -195,7 +197,16 @@ export default function App() {
   const checkUrlRoute = (currentUser?: UserProfile) => {
     const path = window.location.pathname;
     if (path && path.length > 1) {
-      const match = path.match(/^\/?@?([a-zA-Z0-9_]+)$/);
+      // 1. Check if community route: /c/@handle or /c/handle
+      const commMatch = path.match(/^\/c\/?@?([a-zA-Z0-9_\-]+)$/i);
+      if (commMatch) {
+        const commHandle = commMatch[1].toLowerCase();
+        setSelectedModalUsername(`/c/@${commHandle}`);
+        return;
+      }
+
+      // 2. Check tab or user profile route
+      const match = path.match(/^\/?@?([a-zA-Z0-9_\-]+)$/);
       if (match) {
         const routeUser = match[1].toLowerCase();
         if (routeUser === 'admin') {
@@ -206,7 +217,7 @@ export default function App() {
           setActiveTab('subscriptions');
           return;
         }
-        const systemTabs = ['feed', 'explore', 'notifications', 'messages', 'everychat', 'projects', 'communities', 'bookmarks', 'settings', 'profile', 'admin', 'abonelik', 'subscriptions'];
+        const systemTabs = ['feed', 'explore', 'notifications', 'messages', 'everychat', 'projects', 'communities', 'bookmarks', 'settings', 'profile', 'admin', 'abonelik', 'subscriptions', 'support', 'jobs'];
         if (!systemTabs.includes(routeUser)) {
           const activeUser = currentUser || user;
           if (activeUser.username && activeUser.username.toLowerCase() === routeUser) {
@@ -348,8 +359,27 @@ export default function App() {
       }
     );
 
+    // Global Notifications Realtime Listener (Job applications, mentions, etc.)
+    const unsubscribeNotifications = subscribeToUserNotifications(
+      user.username,
+      (realtimeNotifs) => {
+        setNotifications(realtimeNotifs);
+      },
+      (newNotif) => {
+        const sender = newNotif.actor?.display_name || newNotif.actor?.username || 'Code4Ever';
+        sendNativeNotification({
+          title: `Code4Ever • @${sender}`,
+          body: newNotif.content,
+          icon: newNotif.actor?.avatar_url || '/logo.png',
+          playSound: true,
+          vibrate: true
+        });
+      }
+    );
+
     return () => {
       unsubscribeMessages();
+      unsubscribeNotifications();
     };
   }, [user.username, language]);
 
@@ -409,7 +439,30 @@ export default function App() {
   };
 
   const handleSelectUser = (targetUsername: string) => {
-    setSelectedModalUsername(targetUsername);
+    const clean = (targetUsername || '').replace(/^@/, '').trim().toLowerCase();
+    if (!clean) return;
+    if (window.location.pathname !== `/@${clean}`) {
+      window.history.pushState(null, '', `/@${clean}`);
+    }
+    setSelectedModalUsername(clean);
+  };
+
+  const handleSelectCommunity = (commOrHandle: Community | string) => {
+    const handle = typeof commOrHandle === 'string' ? commOrHandle : commOrHandle.handle;
+    const clean = (handle || '').replace(/^\/?c\/?@?/, '').replace(/^@/, '').trim().toLowerCase();
+    if (!clean) return;
+    if (window.location.pathname !== `/c/@${clean}`) {
+      window.history.pushState(null, '', `/c/@${clean}`);
+    }
+    setSelectedModalUsername(`/c/@${clean}`);
+  };
+
+  const handleCloseProfileModal = () => {
+    setSelectedModalUsername(null);
+    const tabPath = activeTab === 'feed' ? '/' : `/${activeTab}`;
+    if (window.location.pathname !== tabPath) {
+      window.history.pushState(null, '', tabPath);
+    }
   };
 
   const handleSelectHashtag = (tag: string) => {
@@ -1049,6 +1102,7 @@ export default function App() {
               onCreatePost={handleCreatePost}
               onAddComment={handleAddComment}
               onSelectUser={handleSelectUser}
+              onSelectCommunity={handleSelectCommunity}
             />
           )}
 
@@ -1059,7 +1113,11 @@ export default function App() {
               trends={dynamicTrends}
               language={language}
               onLikePost={handleLikePost}
-              onSelectCommunity={() => setActiveTab('communities')}
+              onSelectCommunity={(id) => {
+                const found = displayCommunities.find((c) => c.id === id || c.handle.toLowerCase() === id.toLowerCase());
+                if (found) handleSelectCommunity(found);
+                else handleSelectCommunity(id);
+              }}
             />
           )}
 
@@ -1072,6 +1130,7 @@ export default function App() {
               onDeleteListing={handleDeleteJobListing}
               onSubmitApplication={handleSubmitJobApplication}
               onSelectUser={handleSelectUser}
+              onStartDirectChat={handleStartDirectChat}
             />
           )}
 
@@ -1091,7 +1150,7 @@ export default function App() {
               allUsers={allUsers}
               language={language}
               initialTargetUser={directChatTargetUser}
-              onSelectUser={(u) => setSelectedModalUsername(u)}
+              onSelectUser={(u) => handleSelectUser(u)}
               onTriggerNotification={triggerNotification}
             />
           )}
@@ -1120,6 +1179,7 @@ export default function App() {
               onCreateCommunity={handleCreateCommunity}
               onUpdateCommunity={handleUpdateCommunity}
               onDeleteCommunity={handleDeleteCommunity}
+              onSelectCommunity={handleSelectCommunity}
             />
           )}
 
@@ -1145,13 +1205,13 @@ export default function App() {
               language={language}
               communities={displayCommunities}
               onUpdateProfile={handleUpdateProfile}
-              onSelectCommunity={(comm) => setSelectedModalUsername(comm.handle)}
+              onSelectCommunity={(comm) => handleSelectCommunity(comm)}
               onLikePost={handleLikePost}
               onRepostPost={handleRepostPost}
               onBookmarkPost={handleBookmarkPost}
               onDeletePost={handleDeletePost}
               onAddComment={handleAddComment}
-              onSelectUser={(uname) => setSelectedModalUsername(uname)}
+              onSelectUser={(uname) => handleSelectUser(uname)}
               onStartDirectChat={handleStartDirectChat}
             />
           )}
@@ -1213,6 +1273,7 @@ export default function App() {
             platformSettings={platformSettings}
             language={language}
             onToggleJoinCommunity={handleToggleJoinCommunity}
+            onSelectCommunity={handleSelectCommunity}
             onSelectTrend={(trend) => handleSelectHashtag(trend.topic || trend.tag)}
           />
         </main>
@@ -1232,7 +1293,7 @@ export default function App() {
       <UserProfileModal
         isOpen={!!selectedModalUsername}
         username={selectedModalUsername}
-        onClose={() => setSelectedModalUsername(null)}
+        onClose={handleCloseProfileModal}
         currentUser={user}
         communities={displayCommunities}
         language={language}

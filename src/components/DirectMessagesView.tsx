@@ -50,6 +50,7 @@ import {
   subscribeToConversationMessages,
   subscribeToOnlinePresence,
   getActiveConversationsMap,
+  fetchUserConversationsFromSupabase,
   subscribeToUserIncomingMessages,
   sendMessageService,
   markMessagesAsReadService,
@@ -216,6 +217,11 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
       setActiveDirectMap(getActiveConversationsMap(user.username));
     };
     refreshMap();
+
+    // Also asynchronously fetch from Supabase to load threads from other devices/sessions
+    fetchUserConversationsFromSupabase(user.username).then((remoteMap) => {
+      setActiveDirectMap(remoteMap);
+    });
 
     const handleCustom = () => refreshMap();
     window.addEventListener('c4e_message_broadcast', handleCustom);
@@ -466,7 +472,11 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     await editMessageService(selectedConversationId, editingMessage.id, encrypted, newText);
     setDecryptedTextMap((prev) => ({ ...prev, [editingMessage.id]: newText }));
     setMessages((prev) =>
-      prev.map((m) => (m.id === editingMessage.id ? { ...m, is_edited: true, decrypted_text: newText } : m))
+      prev.map((m) =>
+        m.id === editingMessage.id
+          ? { ...m, content: encrypted, is_edited: true, decrypted_text: newText, updated_at: new Date().toISOString() }
+          : m
+      )
     );
     setEditingMessage(null);
     setInputText('');

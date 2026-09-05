@@ -107,8 +107,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                     <span className="text-xs font-bold text-white truncate block hover:text-zinc-200">
                       {comm.name}
                     </span>
-                    <span className="text-[10px] text-zinc-500 font-mono truncate block">
-                      {comm.members_count} {language === 'tr' ? 'üye' : 'members'}
+                    <span className="text-[10px] text-purple-400 font-mono truncate block">
+                      /c/@{comm.handle.replace(/^@/, '')}
                     </span>
                   </div>
                 </div>

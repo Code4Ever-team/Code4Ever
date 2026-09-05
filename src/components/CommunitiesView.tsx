@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, Plus, Check, UserPlus, AlertTriangle, Settings, Shield, Crown, Code2, Terminal } from 'lucide-react';
+import { Users, Plus, Check, UserPlus, AlertTriangle, Settings, Shield, Crown, Code2, Terminal, Share2, Link2 } from 'lucide-react';
 import { Community, UserProfile } from '../types';
 import { verifyAdminAccess } from '../utils/securityHelper';
 import { CommunitySettingsModal } from './CommunitySettingsModal';
@@ -14,6 +14,7 @@ interface CommunitiesViewProps {
   onCreateCommunity: (newComm: { name: string; handle: string; description?: string; avatar_url: string; banner_url?: string }) => void;
   onUpdateCommunity?: (updated: Community) => void;
   onDeleteCommunity?: (communityId: string) => void;
+  onSelectCommunity?: (comm: Community) => void;
 }
 
 export const CommunitiesView: React.FC<CommunitiesViewProps> = ({
@@ -24,11 +25,13 @@ export const CommunitiesView: React.FC<CommunitiesViewProps> = ({
   onToggleJoin,
   onCreateCommunity,
   onUpdateCommunity,
-  onDeleteCommunity
+  onDeleteCommunity,
+  onSelectCommunity
 }) => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingCommunity, setEditingCommunity] = useState<Community | null>(null);
   const [apiCommunity, setApiCommunity] = useState<Community | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [handle, setHandle] = useState('');
   const [description, setDescription] = useState('');
@@ -36,6 +39,15 @@ export const CommunitiesView: React.FC<CommunitiesViewProps> = ({
   const [bannerUrl, setBannerUrl] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pendingJoinIds, setPendingJoinIds] = useState<Set<string>>(new Set());
+
+  const handleCopyLink = (e: React.MouseEvent, comm: Community) => {
+    e.stopPropagation();
+    const cleanHandle = (comm.handle || '').replace(/^@/, '').trim().toLowerCase();
+    const fullUrl = `${window.location.origin}/c/@${cleanHandle}`;
+    navigator.clipboard.writeText(fullUrl);
+    setCopiedId(comm.id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   const handleJoinClick = (commId: string) => {
     if (pendingJoinIds.has(commId)) return;
@@ -142,15 +154,20 @@ export const CommunitiesView: React.FC<CommunitiesViewProps> = ({
                   key={comm.id}
                   className="p-4 bg-[#0c0c0e] border border-zinc-800/50 rounded-2xl flex items-center justify-between gap-4 hover:border-zinc-700 transition-all group"
                 >
-                  <div className="flex items-center gap-3 overflow-hidden">
+                  <div
+                    onClick={() => onSelectCommunity && onSelectCommunity(comm)}
+                    className="flex items-center gap-3 overflow-hidden cursor-pointer flex-1 min-w-0"
+                  >
                     <img
                       src={comm.avatar_url}
                       alt={comm.name}
-                      className="w-12 h-12 rounded-2xl object-cover ring-1 ring-zinc-800 flex-shrink-0"
+                      className="w-12 h-12 rounded-2xl object-cover ring-1 ring-zinc-800 flex-shrink-0 group-hover:scale-105 transition-transform"
                     />
                     <div className="truncate">
                       <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-bold text-white truncate">{comm.name}</h3>
+                        <h3 className="text-sm font-bold text-white truncate group-hover:text-blue-400 transition-colors">
+                          {comm.name}
+                        </h3>
                         {comm.created_by === user?.id && (
                           <span className="px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-[10px] text-zinc-300 font-mono flex items-center gap-1">
                             <Crown className="w-2.5 h-2.5 text-amber-400" />
@@ -158,17 +175,34 @@ export const CommunitiesView: React.FC<CommunitiesViewProps> = ({
                           </span>
                         )}
                       </div>
-                      <span className="text-xs text-zinc-500 font-mono block truncate">{comm.handle}</span>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-xs text-purple-400 font-mono block truncate font-medium">
+                          /c/@{comm.handle.replace(/^@/, '')}
+                        </span>
+                      </div>
                       {comm.description && (
                         <p className="text-xs text-zinc-400 truncate mt-0.5 max-w-md">{comm.description}</p>
                       )}
-                      <span className="text-[11px] text-zinc-400 font-mono mt-0.5 block">
+                      <span className="text-[11px] text-zinc-500 font-mono mt-0.5 block">
                         {comm.members_count.toLocaleString()} {language === 'tr' ? 'Üye' : 'Members'}
                       </span>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => handleCopyLink(e, comm)}
+                      className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center gap-1 text-xs font-mono ${
+                        copiedId === comm.id
+                          ? 'bg-emerald-950/40 text-emerald-300 border-emerald-700/60 shadow-md'
+                          : 'bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800 border-zinc-800'
+                      }`}
+                      title={copiedId === comm.id ? (language === 'tr' ? 'Bağlantı kopyalandı!' : 'Link copied!') : (language === 'tr' ? 'Topluluk Linkini Kopyala (/c/@name)' : 'Copy Community Link (/c/@name)')}
+                    >
+                      {copiedId === comm.id ? <Check className="w-4 h-4 text-emerald-400" /> : <Link2 className="w-4 h-4" />}
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => setApiCommunity(comm)}

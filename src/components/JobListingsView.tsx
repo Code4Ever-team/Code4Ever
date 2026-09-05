@@ -27,6 +27,7 @@ interface JobListingsViewProps {
   onDeleteListing: (id: string) => void;
   onSubmitApplication: (application: JobApplication) => void;
   onSelectUser?: (username: string) => void;
+  onStartDirectChat?: (targetUser: UserProfile) => void;
 }
 
 export const JobListingsView: React.FC<JobListingsViewProps> = ({
@@ -36,7 +37,8 @@ export const JobListingsView: React.FC<JobListingsViewProps> = ({
   onCreateListing,
   onDeleteListing,
   onSubmitApplication,
-  onSelectUser
+  onSelectUser,
+  onStartDirectChat
 }) => {
   const [filterType, setFilterType] = useState<'all' | 'job' | 'team' | 'mine'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -347,6 +349,7 @@ export const JobListingsView: React.FC<JobListingsViewProps> = ({
         listing={selectedListingForApplicants}
         language={language}
         onSelectUser={onSelectUser}
+        onStartDirectChat={onStartDirectChat}
       />
     </div>
   );

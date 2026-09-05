@@ -1,6 +1,6 @@
 import React from 'react';
 import { X, Users, User, Calendar, Code, FileText, CheckCircle2, MessageSquare } from 'lucide-react';
-import { JobListing, JobApplication } from '../types';
+import { JobListing, JobApplication, UserProfile } from '../types';
 
 interface JobApplicantsModalProps {
   isOpen: boolean;
@@ -8,6 +8,7 @@ interface JobApplicantsModalProps {
   listing: JobListing | null;
   language: 'tr' | 'en';
   onSelectUser?: (username: string) => void;
+  onStartDirectChat?: (targetUser: UserProfile) => void;
 }
 
 export const JobApplicantsModal: React.FC<JobApplicantsModalProps> = ({
@@ -15,7 +16,8 @@ export const JobApplicantsModal: React.FC<JobApplicantsModalProps> = ({
   onClose,
   listing,
   language,
-  onSelectUser
+  onSelectUser,
+  onStartDirectChat
 }) => {
   if (!isOpen || !listing) return null;
 
@@ -99,6 +101,27 @@ export const JobApplicantsModal: React.FC<JobApplicantsModalProps> = ({
                       <span className="text-[10px] text-zinc-500 font-mono">{app.time_ago || 'Az önce'}</span>
                     </div>
                   </div>
+
+                  {onStartDirectChat && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onStartDirectChat({
+                          id: app.applicant_user_id || `usr_${app.applicant_username}`,
+                          username: app.applicant_username,
+                          display_name: app.name || app.applicant_display_name || app.applicant_username,
+                          avatar_url: app.applicant_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+                          role: 'Geliştirici',
+                          email: ''
+                        });
+                        onClose();
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-semibold text-xs flex items-center gap-1.5 transition-all border border-zinc-700 cursor-pointer"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5 text-zinc-300" />
+                      <span>{language === 'tr' ? 'Mesaj Gönder' : 'Direct Message'}</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Details Grid */}

@@ -13,7 +13,10 @@ import {
   Users,
   Check,
   AlertCircle,
-  Mail
+  Mail,
+  Share2,
+  Link2,
+  Crown
 } from 'lucide-react';
 import { UserProfile, Community } from '../types';
 import { UserBadges } from './UserBadges';
@@ -49,6 +52,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isTogglingJoin, setIsTogglingJoin] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
 
   const handleToggleJoin = (commId: string) => {
     if (isTogglingJoin || !onToggleJoinCommunity) return;
@@ -57,15 +61,26 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     onToggleJoinCommunity(commId);
   };
 
+  const handleCopyCommunityLink = (comm: Community) => {
+    const cleanHandle = (comm.handle || '').replace(/^@/, '').trim().toLowerCase();
+    const fullUrl = `${window.location.origin}/c/@${cleanHandle}`;
+    navigator.clipboard.writeText(fullUrl);
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2000);
+  };
+
   useEffect(() => {
     if (!isOpen || !username) {
       setProfileData(null);
       setCommunityData(null);
       setNotFound(false);
+      setIsCopied(false);
       return;
     }
 
-    const cleanUsername = username.replace(/^@/, '').trim().toLowerCase();
+    const raw = username.trim();
+    const isExplicitCommunity = raw.startsWith('/c/') || raw.startsWith('c/');
+    const cleanUsername = raw.replace(/^\/?c\/?@?/, '').replace(/^@/, '').trim().toLowerCase();
 
     const fetchUserOrCommunity = async () => {
       setLoading(true);
@@ -74,8 +89,39 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       setCommunityData(null);
 
       try {
+        // If query was explicitly for a community (/c/@name or c/name), check community FIRST
+        if (isExplicitCommunity) {
+          const matchedComm = communities.find((c) => {
+            if (!c) return false;
+            const commHandle = (c.handle || '').replace(/^@/, '').toLowerCase().trim();
+            const commName = (c.name || '').toLowerCase().trim();
+            return commHandle === cleanUsername || commName === cleanUsername;
+          });
+
+          if (matchedComm) {
+            setCommunityData(matchedComm);
+            setLoading(false);
+            return;
+          }
+
+          const client = getSupabaseClient();
+          if (client) {
+            const { data: cData } = await client
+              .from('communities')
+              .select('*')
+              .or(`handle.ilike.%${cleanUsername}%,name.ilike.%${cleanUsername}%`)
+              .limit(1)
+              .maybeSingle();
+            if (cData) {
+              setCommunityData(cData as Community);
+              setLoading(false);
+              return;
+            }
+          }
+        }
+
         // 1. Check if currentUser matches
-        if (currentUser.username?.toLowerCase() === cleanUsername) {
+        if (!isExplicitCommunity && currentUser.username?.toLowerCase() === cleanUsername) {
           setProfileData(currentUser);
           setLoading(false);
           return;
@@ -83,7 +129,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
         // 2. Query Supabase 'profiles' table or cached users
         const client = getSupabaseClient();
-        if (client) {
+        if (!isExplicitCommunity && client) {
           const { data } = await client
             .from('profiles')
             .select('*')
@@ -98,40 +144,44 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           }
         }
 
-        const cachedUsers = loadStoredAllUsers();
-        const foundCached = cachedUsers.find(
-          (u) => (u.username || '').toLowerCase() === cleanUsername
-        );
-        if (foundCached) {
-          setProfileData(foundCached);
-          setLoading(false);
-          return;
+        if (!isExplicitCommunity) {
+          const cachedUsers = loadStoredAllUsers();
+          const foundCached = cachedUsers.find(
+            (u) => (u.username || '').toLowerCase() === cleanUsername
+          );
+          if (foundCached) {
+            setProfileData(foundCached);
+            setLoading(false);
+            return;
+          }
         }
 
         // 3. Check if GitHub user exists
-        const ghRes = await fetch(`https://api.github.com/users/${encodeURIComponent(cleanUsername)}`);
-        if (ghRes.ok) {
-          const ghData = await ghRes.json();
-          if (ghData && ghData.login) {
-            const constructedProfile: UserProfile = {
-              id: `gh_${ghData.id || cleanUsername}`,
-              username: cleanUsername,
-              display_name: ghData.name || cleanUsername,
-              avatar_url: ghData.avatar_url || `https://unavatar.io/github/${cleanUsername}`,
-              banner_url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&auto=format&fit=crop&q=80',
-              bio: ghData.bio || (language === 'tr' ? 'Code4Ever Geliştirici Üyesi' : 'Code4Ever Developer Member'),
-              role: ghData.company || (language === 'tr' ? 'Geliştirici' : 'Developer'),
-              verified: false,
-              custom_fields: {
-                github: `github.com/${cleanUsername}`,
-                location: ghData.location || (language === 'tr' ? 'Türkiye' : 'Global')
-              },
-              created_at: ghData.created_at || new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            };
-            setProfileData(constructedProfile);
-            setLoading(false);
-            return;
+        if (!isExplicitCommunity) {
+          const ghRes = await fetch(`https://api.github.com/users/${encodeURIComponent(cleanUsername)}`);
+          if (ghRes.ok) {
+            const ghData = await ghRes.json();
+            if (ghData && ghData.login) {
+              const constructedProfile: UserProfile = {
+                id: `gh_${ghData.id || cleanUsername}`,
+                username: cleanUsername,
+                display_name: ghData.name || cleanUsername,
+                avatar_url: ghData.avatar_url || `https://unavatar.io/github/${cleanUsername}`,
+                banner_url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&auto=format&fit=crop&q=80',
+                bio: ghData.bio || (language === 'tr' ? 'Code4Ever Geliştirici Üyesi' : 'Code4Ever Developer Member'),
+                role: ghData.company || (language === 'tr' ? 'Geliştirici' : 'Developer'),
+                verified: false,
+                custom_fields: {
+                  github: `github.com/${cleanUsername}`,
+                  location: ghData.location || (language === 'tr' ? 'Türkiye' : 'Global')
+                },
+                created_at: ghData.created_at || new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              };
+              setProfileData(constructedProfile);
+              setLoading(false);
+              return;
+            }
           }
         }
 
@@ -224,17 +274,17 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         ) : currentComm ? (
           /* COMMUNITY CARD VIEW */
           <div>
-            <div className="h-28 w-full relative bg-zinc-900 overflow-hidden">
+            <div className="h-32 w-full relative bg-zinc-900 overflow-hidden">
               <img
-                src={currentComm.avatar_url}
+                src={currentComm.banner_url || currentComm.avatar_url}
                 alt={currentComm.name}
-                className="w-full h-full object-cover opacity-80 blur-sm scale-110"
+                className="w-full h-full object-cover opacity-75 blur-sm scale-110"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#121215] via-transparent to-black/40" />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#121215] via-[#121215]/50 to-black/40" />
             </div>
 
             <div className="px-5 pb-5 relative">
-              <div className="flex justify-between items-end -mt-12 mb-3">
+              <div className="flex justify-between items-end -mt-14 mb-3">
                 <div className="relative">
                   <img
                     src={currentComm.avatar_url}
@@ -246,41 +296,79 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   </div>
                 </div>
 
-                {onToggleJoinCommunity && (
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    disabled={isTogglingJoin}
-                    onClick={() => handleToggleJoin(currentComm.id)}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md disabled:opacity-60 disabled:cursor-not-allowed active:scale-95 cursor-pointer ${
-                      currentComm.is_joined
-                        ? 'bg-zinc-800 hover:bg-zinc-700 text-emerald-400 border border-zinc-700'
-                        : 'bg-blue-600 hover:bg-blue-500 text-white'
+                    onClick={() => handleCopyCommunityLink(currentComm)}
+                    className={`px-3 py-2 rounded-xl text-xs font-mono font-medium transition-all flex items-center gap-1.5 shadow-md border cursor-pointer ${
+                      isCopied
+                        ? 'bg-emerald-950/40 text-emerald-300 border-emerald-700/60'
+                        : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border-zinc-800'
                     }`}
+                    title={language === 'tr' ? 'Topluluk Bağlantısını Kopyala (/c/@name)' : 'Copy Community URL (/c/@name)'}
                   >
-                    {currentComm.is_joined ? (
+                    {isCopied ? (
                       <>
                         <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>{language === 'tr' ? 'Katılındı' : 'Joined'}</span>
+                        <span className="text-emerald-400 font-bold">{language === 'tr' ? 'Kopyalandı' : 'Copied'}</span>
                       </>
                     ) : (
                       <>
-                        <UserPlus className="w-3.5 h-3.5" />
-                        <span>{language === 'tr' ? 'Topluluğa Katıl' : 'Join Community'}</span>
+                        <Link2 className="w-3.5 h-3.5 text-zinc-400" />
+                        <span>{language === 'tr' ? 'Bağlantıyı Kopyala' : 'Copy Link'}</span>
                       </>
                     )}
                   </button>
-                )}
+
+                  {onToggleJoinCommunity && (
+                    <button
+                      type="button"
+                      disabled={isTogglingJoin}
+                      onClick={() => handleToggleJoin(currentComm.id)}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md disabled:opacity-60 disabled:cursor-not-allowed active:scale-95 cursor-pointer ${
+                        currentComm.is_joined
+                          ? 'bg-zinc-800 hover:bg-zinc-700 text-emerald-400 border border-zinc-700'
+                          : 'bg-blue-600 hover:bg-blue-500 text-white'
+                      }`}
+                    >
+                      {currentComm.is_joined ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>{language === 'tr' ? 'Katılındı' : 'Joined'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus className="w-3.5 h-3.5" />
+                          <span>{language === 'tr' ? 'Topluluğa Katıl' : 'Join Community'}</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div>
-                  <h3 className="text-base font-extrabold text-white flex items-center gap-2">
-                    <span>{currentComm.name}</span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400 font-normal">
-                      Topluluk
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                      <span>{currentComm.name}</span>
+                    </h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400 font-semibold">
+                      {language === 'tr' ? 'Topluluk' : 'Community'}
                     </span>
-                  </h3>
-                  <span className="text-xs text-zinc-400 font-mono">{currentComm.handle}</span>
+                    {currentComm.created_by === currentUser.id && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-300 flex items-center gap-1">
+                        <Crown className="w-2.5 h-2.5 text-amber-400" />
+                        {language === 'tr' ? 'Kurucusunuz' : 'Founder'}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs font-mono font-medium text-purple-400 bg-purple-950/30 px-2 py-0.5 rounded-md border border-purple-800/30">
+                      /c/@{currentComm.handle.replace(/^@/, '')}
+                    </span>
+                  </div>
                 </div>
 
                 {currentComm.description && (
@@ -289,10 +377,14 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   </p>
                 )}
 
-                <div className="pt-2 flex items-center gap-4 text-xs font-mono text-zinc-400">
-                  <span className="flex items-center gap-1.5 text-blue-400">
+                <div className="pt-2 flex items-center justify-between text-xs font-mono text-zinc-400 border-t border-zinc-900/80">
+                  <span className="flex items-center gap-1.5 text-blue-400 font-medium">
                     <Users className="w-4 h-4" />
                     <span>{currentComm.members_count.toLocaleString()} {language === 'tr' ? 'Üye' : 'Members'}</span>
+                  </span>
+
+                  <span className="text-[11px] text-zinc-500">
+                    {language === 'tr' ? 'Topluluk Profili' : 'Community Profile'}
                   </span>
                 </div>
               </div>
