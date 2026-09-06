@@ -37,7 +37,8 @@ export const getBadgeDetails = (
       (label && d.label.toLowerCase() === label) ||
       (id === 'verified_system' && d.id === 'verified_dev') ||
       (id === 'gitplus' && d.id === 'git_plus') ||
-      (id === 'c4e_spark' && d.id === 'spark')
+      (id === 'c4e_spark' && d.id === 'spark') ||
+      ((id === 'beta' || id === 'beta_home' || id === 'beta_user' || id === 'closed_beta' || label.includes('beta')) && (d.id === 'beta_home' || d.id === 'beta'))
   );
 
   if (matchedDef) {
@@ -45,7 +46,7 @@ export const getBadgeDetails = (
       id: matchedDef.id,
       label: badgeInput.label && !matchedDef.isDefault ? badgeInput.label : matchedDef.label,
       description: matchedDef.description || badgeInput.description || `${matchedDef.label} rozetidir.`,
-      weight: matchedDef.weight || 5,
+      weight: matchedDef.weight || 6,
       color: badgeInput.color && badgeInput.color !== '#3b82f6' ? badgeInput.color : matchedDef.color,
       icon: matchedDef.icon as any
     };
@@ -111,13 +112,24 @@ export const getBadgeDetails = (
     };
   }
 
-  // 6. Kapalı Beta Katılımcısı / Yeşil Ev (Weight: 5)
-  if (id === 'beta_home' || label === 'kapalı beta katılımcısı' || label === 'yeşil ev') {
+  // 6. Kapalı Beta Katılımcısı / Yeşil Ev (Weight: 6)
+  if (
+    id === 'beta_home' ||
+    id === 'beta' ||
+    id === 'beta_user' ||
+    id === 'closed_beta' ||
+    label === 'kapalı beta katılımcısı' ||
+    label === 'yeşil ev' ||
+    label === 'beta katılımcısı' ||
+    label === 'beta' ||
+    label.includes('beta') ||
+    badgeInput.icon === 'home'
+  ) {
     return {
       id: badgeInput.id || 'beta_home',
       label: badgeInput.label || 'Kapalı Beta Katılımcısı',
       description: badgeInput.description || 'Code4Ever platformunun erken aşama kapalı beta test sürecine katılıp platforma destek veren üyelere verilen yeşil ev rozetidir.',
-      weight: 5,
+      weight: 6,
       color: badgeInput.color || '#10b981',
       icon: 'home'
     };
@@ -184,10 +196,28 @@ export const UserBadges: React.FC<UserBadgesProps> = ({
     );
     if (!hasVerifiedInBadges) {
       normalizedList.push(getBadgeDetails({
-        id: 'verified_system',
+        id: 'verified_dev',
         label: 'Doğrulanmış Geliştirici',
         color: '#06b6d4',
         icon: 'check'
+      }, badgeDefinitions));
+    }
+  }
+
+  // Add Beta badge if user.betaStatus is 'approved'
+  if (user?.betaStatus === 'approved') {
+    const hasBetaInBadges = userBadges.some(b =>
+      b.id === 'beta_home' ||
+      b.id === 'beta' ||
+      b.icon === 'home' ||
+      (b.label || '').toLowerCase().includes('beta')
+    );
+    if (!hasBetaInBadges) {
+      normalizedList.push(getBadgeDetails({
+        id: 'beta_home',
+        label: 'Kapalı Beta Katılımcısı',
+        color: '#10b981',
+        icon: 'home'
       }, badgeDefinitions));
     }
   }
@@ -258,13 +288,24 @@ export const UserBadges: React.FC<UserBadgesProps> = ({
     }
   }
 
-  // Sort descending by weight (highest weight first: 10, 9, 8, 5, 1)
-  normalizedList.sort((a, b) => b.weight - a.weight);
+  // Deduplicate badges by normalized ID
+  const seenIds = new Set<string>();
+  const uniqueList: NormalizedBadge[] = [];
+  for (const item of normalizedList) {
+    const key = item.id.toLowerCase();
+    if (!seenIds.has(key)) {
+      seenIds.add(key);
+      uniqueList.push(item);
+    }
+  }
 
-  // Filter if singleHighestWeightOnly is requested (Feed Mode)
+  // Sort descending by weight (highest weight first: 10, 9, 8, 7, 6, 1)
+  uniqueList.sort((a, b) => b.weight - a.weight);
+
+  // In compact/singleHighestWeightOnly mode, show up to 3 badges so Beta, Verified, etc. can all be visible
   const displayBadges = singleHighestWeightOnly
-    ? (normalizedList.length > 0 ? [normalizedList[0]] : [])
-    : normalizedList;
+    ? uniqueList.slice(0, 3)
+    : uniqueList;
 
   if (displayBadges.length === 0) return null;
 

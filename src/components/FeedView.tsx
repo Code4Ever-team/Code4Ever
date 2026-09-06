@@ -1105,30 +1105,37 @@ export const FeedView: React.FC<FeedViewProps> = ({
 
                     {post.comments && post.comments.length > 0 && (
                       <div className="space-y-2 pt-1">
-                        {post.comments.map((comment) => (
-                          <div
-                            key={comment.id}
-                            className="p-2.5 rounded-xl bg-zinc-950/80 border border-zinc-800/80 text-xs space-y-1"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <span
-                                  onClick={() => onSelectUser(comment.author.username)}
-                                  className="font-bold text-white hover:underline cursor-pointer"
-                                >
-                                  {comment.author.display_name}
-                                </span>
-                                <span className="text-zinc-500 font-mono text-[10px]">
-                                  @{comment.author.username}
+                        {post.comments.map((comment) => {
+                          const commentAuthor = allUsers.find(
+                            (u) => u.username?.toLowerCase() === comment.author.username?.toLowerCase()
+                          ) || comment.author;
+
+                          return (
+                            <div
+                              key={comment.id}
+                              className="p-2.5 rounded-xl bg-zinc-950/80 border border-zinc-800/80 text-xs space-y-1"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span
+                                    onClick={() => onSelectUser(comment.author.username)}
+                                    className="font-bold text-white hover:underline cursor-pointer"
+                                  >
+                                    {comment.author.display_name}
+                                  </span>
+                                  <UserBadges user={commentAuthor} showTextLabels={false} />
+                                  <span className="text-zinc-500 font-mono text-[10px]">
+                                    @{comment.author.username}
+                                  </span>
+                                </div>
+                                <span className="text-zinc-600 font-mono text-[10px]">
+                                  {formatTimeAgo(comment.created_at || 'Az önce', language)}
                                 </span>
                               </div>
-                              <span className="text-zinc-600 font-mono text-[10px]">
-                                {formatTimeAgo(comment.created_at || 'Az önce', language)}
-                              </span>
+                              <p className="text-zinc-300 leading-relaxed">{comment.content}</p>
                             </div>
-                            <p className="text-zinc-300 leading-relaxed">{comment.content}</p>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>

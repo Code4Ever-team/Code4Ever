@@ -11,8 +11,10 @@ import {
   ClosedBetaSettings,
   SubscriptionPlan,
   BadgeDefinition,
+  BadgeItem,
   PlatformSettings,
   ChatMessage,
+  GitHubRepo,
   ChatGroup,
   GroupInvite,
   GroupMember,
@@ -32,6 +34,9 @@ export const STORAGE_KEYS = {
   DELETED_POSTS: 'c4e_deleted_post_ids_v2',
   COMMUNITIES: 'c4e_supabase_communities',
   JOB_LISTINGS: 'c4e_supabase_job_listings',
+  DELETED_JOBS: 'c4e_deleted_job_ids_v2',
+  ALERTED_NOTIFICATIONS: 'c4e_alerted_notification_ids',
+  ALERTED_JOB_APPLICATIONS: 'c4e_alerted_job_applications',
   NOTIFICATIONS: 'c4e_supabase_notifications',
   MESSAGES: 'c4e_supabase_messages',
   GROUPS: 'c4e_supabase_groups',
@@ -49,6 +54,82 @@ export const STORAGE_KEYS = {
   POST_REPORTS: 'c4e_post_reports',
   CUSTOM_CATEGORIES: 'c4e_custom_categories'
 };
+
+export function loadDeletedJobIds(): string[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.DELETED_JOBS);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveDeletedJobId(jobId: string): void {
+  if (!jobId) return;
+  try {
+    const current = loadDeletedJobIds();
+    if (!current.includes(jobId)) {
+      current.push(jobId);
+      localStorage.setItem(STORAGE_KEYS.DELETED_JOBS, JSON.stringify(current));
+    }
+  } catch {}
+}
+
+export function isJobListingDeleted(jobId?: string): boolean {
+  if (!jobId) return false;
+  const deleted = loadDeletedJobIds();
+  return deleted.includes(jobId);
+}
+
+export function hasNotificationBeenAlerted(notifId: string): boolean {
+  if (!notifId) return false;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.ALERTED_NOTIFICATIONS);
+    const set: string[] = raw ? JSON.parse(raw) : [];
+    return set.includes(notifId);
+  } catch {
+    return false;
+  }
+}
+
+export function markNotificationAsAlerted(notifId: string): void {
+  if (!notifId) return;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.ALERTED_NOTIFICATIONS);
+    const set: string[] = raw ? JSON.parse(raw) : [];
+    if (!set.includes(notifId)) {
+      set.push(notifId);
+      if (set.length > 500) set.splice(0, set.length - 500);
+      localStorage.setItem(STORAGE_KEYS.ALERTED_NOTIFICATIONS, JSON.stringify(set));
+    }
+  } catch {}
+}
+
+export function hasJobApplicationBeenAlerted(jobId: string, applicantUsername: string): boolean {
+  if (!jobId || !applicantUsername) return false;
+  const key = `${jobId}_${applicantUsername.toLowerCase().trim()}`;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.ALERTED_JOB_APPLICATIONS);
+    const list: string[] = raw ? JSON.parse(raw) : [];
+    return list.includes(key);
+  } catch {
+    return false;
+  }
+}
+
+export function markJobApplicationAsAlerted(jobId: string, applicantUsername: string): void {
+  if (!jobId || !applicantUsername) return;
+  const key = `${jobId}_${applicantUsername.toLowerCase().trim()}`;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.ALERTED_JOB_APPLICATIONS);
+    const list: string[] = raw ? JSON.parse(raw) : [];
+    if (!list.includes(key)) {
+      list.push(key);
+      if (list.length > 500) list.splice(0, list.length - 500);
+      localStorage.setItem(STORAGE_KEYS.ALERTED_JOB_APPLICATIONS, JSON.stringify(list));
+    }
+  } catch {}
+}
 
 export function getActiveSupabaseCredentials(): {
   url: string;
@@ -265,9 +346,24 @@ export async function getOrFormatUserProfile(user: SupabaseUser): Promise<UserPr
         .maybeSingle();
 
       if (data && !error) {
+        const remoteWebsite = data.website || data.custom_fields?.website || defaultProfile.website;
+        const remotePinned = (Array.isArray(data.pinned_repos) && data.pinned_repos.length > 0)
+          ? data.pinned_repos
+          : (Array.isArray(data.custom_fields?.pinned_repos) && data.custom_fields.pinned_repos.length > 0)
+          ? data.custom_fields.pinned_repos
+          : defaultProfile.pinned_repos || [];
+
         return {
           ...defaultProfile,
           ...data,
+          website: remoteWebsite,
+          pinned_repos: remotePinned,
+          custom_fields: {
+            ...(defaultProfile.custom_fields || {}),
+            ...(data.custom_fields || {}),
+            website: remoteWebsite || '',
+            pinned_repos: remotePinned
+          },
           id: user.id
         };
       } else {
@@ -282,6 +378,7 @@ export async function getOrFormatUserProfile(user: SupabaseUser): Promise<UserPr
           role: defaultProfile.role,
           verified: defaultProfile.verified,
           email: defaultProfile.email,
+          custom_fields: defaultProfile.custom_fields || {},
           created_at: defaultProfile.created_at,
           updated_at: defaultProfile.updated_at
         });
@@ -1246,6 +1343,7 @@ export async function fetchJobListingsFromSupabase(): Promise<JobListing[]> {
   const client = getSupabaseClient();
   const localListings = loadStoredJobListings();
   const listingsMap = new Map<string, JobListing>();
+  const deletedJobs = loadDeletedJobIds();
 
   if (client) {
     try {
@@ -1256,7 +1354,7 @@ export async function fetchJobListingsFromSupabase(): Promise<JobListing[]> {
 
       if (!error && Array.isArray(data)) {
         data.forEach((item: any) => {
-          if (item && item.id) {
+          if (item && item.id && !deletedJobs.includes(item.id)) {
             let parsedAuthor: any = {
               username: item.author_username || item.username || 'anonim',
               display_name: item.author_name || item.display_name || item.author_username || 'Geliştirici',
@@ -1363,7 +1461,7 @@ export async function fetchJobListingsFromSupabase(): Promise<JobListing[]> {
   // Preserve any very recent local listings (< 10 mins) not yet fetched
   const now = Date.now();
   localListings.forEach((lj) => {
-    if (lj && lj.id && !listingsMap.has(lj.id)) {
+    if (lj && lj.id && !listingsMap.has(lj.id) && !deletedJobs.includes(lj.id)) {
       const jobTime = new Date(lj.created_at || '').getTime();
       if (!isNaN(jobTime) && now - jobTime < 10 * 60 * 1000) {
         listingsMap.set(lj.id, lj);
@@ -1533,12 +1631,26 @@ export async function createJobListing(listing: JobListing): Promise<void> {
 }
 
 export async function deleteJobListing(jobId: string): Promise<void> {
+  if (!jobId) return;
+
+  // 1. Mark as permanently deleted in local blacklist
+  saveDeletedJobId(jobId);
+
+  // 2. Remove from local job listings cache
   const current = loadStoredJobListings();
   const updated = current.filter((j) => j.id !== jobId);
   saveStoredJobListings(updated);
 
+  // 3. Purge all related job application notifications locally
+  const currentNotifs = loadStoredNotifications();
+  const filteredNotifs = currentNotifs.filter(
+    (n) => !(n.type === 'job_application' && n.target_id === jobId)
+  );
+  saveStoredNotifications(filteredNotifs);
+
   try {
     window.dispatchEvent(new CustomEvent('c4e_job_broadcast', { detail: { deletedId: jobId } }));
+    window.dispatchEvent(new CustomEvent('c4e_notification_update', { detail: { filteredNotifs } }));
   } catch {}
 
   const client = getSupabaseClient();
@@ -1551,7 +1663,12 @@ export async function deleteJobListing(jobId: string): Promise<void> {
         event: 'delete_job',
         payload: { id: jobId }
       });
+      // Delete listing from job_listings
       await client.from('job_listings').delete().eq('id', jobId);
+      // Delete all related applications from job_applications
+      await client.from('job_applications').delete().eq('job_id', jobId);
+      // Delete all related notifications from notifications table
+      await client.from('notifications').delete().match({ type: 'job_application', target_id: jobId });
     } catch (err) {
       console.warn('Supabase job listing delete error:', err);
     }
@@ -1568,6 +1685,22 @@ export async function deleteJobListing(jobId: string): Promise<void> {
           Prefer: 'return=minimal'
         }
       }).catch(() => {});
+      fetch(`${cleanUrl}/rest/v1/job_applications?job_id=eq.${encodeURIComponent(jobId)}`, {
+        method: 'DELETE',
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          Prefer: 'return=minimal'
+        }
+      }).catch(() => {});
+      fetch(`${cleanUrl}/rest/v1/notifications?type=eq.job_application&target_id=eq.${encodeURIComponent(jobId)}`, {
+        method: 'DELETE',
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${config.anonKey}`,
+          Prefer: 'return=minimal'
+        }
+      }).catch(() => {});
     } catch {}
   }
 }
@@ -1576,48 +1709,60 @@ export async function submitJobApplication(
   application: JobApplication,
   onNotifyAuthor?: (notification: NotificationItem) => void
 ): Promise<boolean> {
-  const currentListings = loadStoredJobListings();
-  let targetJob = currentListings.find((j) => j.id === application.job_id);
+  const cleanApplicant = (application.applicant_username || '').toLowerCase().trim();
+  const jobId = application.job_id;
 
-  const cleanApp: JobApplication = {
-    ...application,
-    name: sanitizeText(application.name),
-    experience: sanitizeText(application.experience),
-    languages: sanitizeText(application.languages),
-    description: sanitizeText(application.description)
-  };
+  // 1. Guard against applying to deleted jobs
+  if (!jobId || isJobListingDeleted(jobId)) {
+    console.warn('Job listing has been deleted. Application aborted.');
+    return false;
+  }
+
+  const currentListings = loadStoredJobListings();
+  let targetJob = currentListings.find((j) => j.id === jobId);
 
   const client = getSupabaseClient();
 
   if (!targetJob && client) {
     try {
-      const { data } = await client.from('job_listings').select('*').eq('id', application.job_id).maybeSingle();
+      const { data } = await client.from('job_listings').select('*').eq('id', jobId).maybeSingle();
       if (data) {
         targetJob = data as JobListing;
       }
     } catch {}
   }
 
+  // If job listing is not found or has been removed, do not proceed with fake listing
   if (!targetJob) {
-    targetJob = {
-      id: application.job_id,
-      title: 'İlan',
-      description: '',
-      type: 'job',
-      quota: 1,
-      status: 'active',
-      author: {
-        id: '',
-        username: '',
-        display_name: 'İlan Sahibi',
-        avatar_url: ''
-      },
-      applications: [],
-      applications_count: 0,
-      applied_by: [],
-      created_at: new Date().toISOString()
-    };
+    console.warn('Target job listing not found or removed.');
+    return false;
   }
+
+  // 2. Prevent duplicate applications from the same user to the same listing
+  const alreadyApplied =
+    (targetJob.applied_by || []).some((u) => (u || '').toLowerCase() === cleanApplicant) ||
+    (targetJob.applications || []).some((a) => (a.applicant_username || '').toLowerCase() === cleanApplicant);
+
+  if (alreadyApplied) {
+    console.info('Applicant has already submitted an application for this listing.');
+    return true; // Gracefully acknowledge without re-firing notifications
+  }
+
+  // 3. Ensure this application alerts the author AT MOST ONCE
+  if (hasJobApplicationBeenAlerted(jobId, cleanApplicant)) {
+    console.info('Application notification already alerted once.');
+    return true;
+  }
+  markJobApplicationAsAlerted(jobId, cleanApplicant);
+
+  const cleanApp: JobApplication = {
+    ...application,
+    id: application.id || `app_${jobId}_${cleanApplicant}`,
+    name: sanitizeText(application.name),
+    experience: sanitizeText(application.experience),
+    languages: sanitizeText(application.languages),
+    description: sanitizeText(application.description)
+  };
 
   const updatedApps = [...(targetJob.applications || []), cleanApp];
   const appliedBy = Array.from(
@@ -1641,8 +1786,12 @@ export async function submitJobApplication(
     window.dispatchEvent(new CustomEvent('c4e_job_broadcast', { detail: { listing: updatedJob } }));
   } catch {}
 
+  // Deterministic Notification ID prevents duplicate rows and repeated alerts
+  const notifId = `notif_job_app_${targetJob.id}_${cleanApplicant}`;
+  markNotificationAsAlerted(notifId);
+
   const notification: NotificationItem = {
-    id: `notif_app_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    id: notifId,
     type: 'job_application',
     recipient_id: targetJob.author.username,
     actor: {
@@ -1657,24 +1806,33 @@ export async function submitJobApplication(
     created_at: new Date().toISOString()
   };
 
-  if (onNotifyAuthor && targetJob.author.username !== application.applicant_username) {
-    onNotifyAuthor(notification);
-  }
+  // Only call local author callback if current user IS the author (e.g. self-test)
+  try {
+    const localUser = loadStoredProfile();
+    if (
+      localUser &&
+      targetJob.author.username &&
+      localUser.username.toLowerCase() === targetJob.author.username.toLowerCase() &&
+      onNotifyAuthor
+    ) {
+      onNotifyAuthor(notification);
+    }
+  } catch {}
 
   // Send real-time and database persistent notification to job author
   await sendNotificationService(notification);
 
-  // Send an automatic DM to the job author so they can view applicant details and chat directly
+  // Send an automatic DM to the job author once
   try {
     const authorUser = (targetJob.author?.username || '').toLowerCase();
-    const applicantUser = (application.applicant_username || '').toLowerCase();
+    const applicantUser = cleanApplicant;
     if (authorUser && applicantUser && authorUser !== applicantUser) {
       const sorted = [applicantUser, authorUser].sort();
       const convId = `dm_${sorted.join('_')}`;
       const introText = `💼 Merhaba! "${targetJob.title}" başlıklı ${targetJob.type === 'team' ? 'ekip' : 'iş'} ilanınıza başvuru yaptım.\n\n👤 Başvuran: ${cleanApp.name}\n🎂 Yaş: ${cleanApp.age}\n💼 Deneyim: ${cleanApp.experience}\n🛠️ Diller/Teknolojiler: ${cleanApp.languages}\n📝 Açıklama: ${cleanApp.description}`;
       const { encrypted, durationMs } = await encryptE2EEMessage(introText, convId);
       const directMsg: ChatMessage = {
-        id: `msg_app_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        id: `msg_app_${targetJob.id}_${applicantUser}`,
         conversation_id: convId,
         is_group: false,
         sender_id: application.applicant_user_id || `usr_${applicantUser}`,
@@ -1698,7 +1856,9 @@ export async function submitJobApplication(
     const localUser = loadStoredProfile();
     if (localUser && targetJob.author.username && localUser.username.toLowerCase() === targetJob.author.username.toLowerCase()) {
       const storedNotifs = loadStoredNotifications();
-      saveStoredNotifications([notification, ...storedNotifs]);
+      if (!storedNotifs.some((n) => n.id === notification.id)) {
+        saveStoredNotifications([notification, ...storedNotifs]);
+      }
     }
   } catch {}
 
@@ -1771,7 +1931,16 @@ export function loadStoredNotifications(): NotificationItem[] {
     const data = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
     if (data) {
       const parsed = JSON.parse(data);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        // Automatically purge any stale notifications for deleted job listings
+        const filtered = parsed.filter(
+          (n) => !(n && n.type === 'job_application' && isJobListingDeleted(n.target_id))
+        );
+        if (filtered.length !== parsed.length) {
+          saveStoredNotifications(filtered);
+        }
+        return filtered;
+      }
     }
   } catch {}
   return [];
@@ -1779,7 +1948,10 @@ export function loadStoredNotifications(): NotificationItem[] {
 
 export function saveStoredNotifications(notifications: NotificationItem[]): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
+    const clean = (notifications || []).filter(
+      (n) => !(n && n.type === 'job_application' && isJobListingDeleted(n.target_id))
+    );
+    localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(clean));
   } catch {}
 }
 
@@ -1799,8 +1971,18 @@ export async function fetchNotificationsFromSupabase(currentUsername: string): P
 
     if (!error && Array.isArray(data)) {
       const map = new Map<string, NotificationItem>();
-      local.forEach((n) => map.set(n.id, n));
+      local.forEach((n) => {
+        if (!(n.type === 'job_application' && isJobListingDeleted(n.target_id))) {
+          map.set(n.id, n);
+        }
+      });
+
       data.forEach((item: any) => {
+        // Ignore notifications for deleted jobs
+        if (item.type === 'job_application' && isJobListingDeleted(item.target_id)) {
+          return;
+        }
+
         let actor = item.actor;
         if (typeof actor === 'string') {
           try {
@@ -1835,6 +2017,11 @@ export async function sendNotificationService(notification: NotificationItem): P
   const recipient = (notification.recipient_id || '').toLowerCase().trim();
   if (!recipient) return;
 
+  // Abort if notification belongs to a deleted job listing
+  if (notification.type === 'job_application' && isJobListingDeleted(notification.target_id)) {
+    return;
+  }
+
   // 1. Same-window local event
   try {
     window.dispatchEvent(new CustomEvent('c4e_notification_broadcast', { detail: notification }));
@@ -1843,7 +2030,8 @@ export async function sendNotificationService(notification: NotificationItem): P
   const client = getSupabaseClient();
   if (client) {
     // 2. Realtime Broadcast to recipient
-    const notifyChan = client.channel(`c4e_notify_${recipient}`);
+    const chanName = `c4e_send_notify_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const notifyChan = client.channel(chanName);
     notifyChan.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         notifyChan.send({
@@ -1856,9 +2044,9 @@ export async function sendNotificationService(notification: NotificationItem): P
       }
     });
 
-    // 3. Insert into Supabase notifications table
+    // 3. Insert into Supabase notifications table (upsert avoids duplicate key errors)
     try {
-      await client.from('notifications').insert({
+      await client.from('notifications').upsert({
         id: notification.id,
         recipient_id: recipient,
         type: notification.type,
@@ -1867,7 +2055,7 @@ export async function sendNotificationService(notification: NotificationItem): P
         is_read: Boolean(notification.is_read),
         target_id: notification.target_id || null,
         created_at: notification.created_at || new Date().toISOString()
-      });
+      }, { onConflict: 'id' });
     } catch (err) {
       console.warn('Supabase notification insert error:', err);
     }
@@ -1890,11 +2078,31 @@ export function subscribeToUserNotifications(
 
   const handleNewNotif = (notif: NotificationItem) => {
     if (!notif || !notif.id) return;
+
+    // Discard any notification for a deleted job listing
+    if (notif.type === 'job_application' && isJobListingDeleted(notif.target_id)) {
+      return;
+    }
+
     const current = loadStoredNotifications();
-    if (!current.some((n) => n.id === notif.id)) {
+    const alreadyStored = current.some((n) => n.id === notif.id);
+    const alreadyAlerted = hasNotificationBeenAlerted(notif.id) ||
+      (notif.type === 'job_application' && notif.target_id && notif.actor?.username
+        ? hasJobApplicationBeenAlerted(notif.target_id, notif.actor.username)
+        : false);
+
+    if (!alreadyStored) {
       const updated = [notif, ...current];
       saveStoredNotifications(updated);
       onUpdate(updated);
+    }
+
+    // STRICT ONE-TIME ALERT: Only trigger sound and native notification once per lifecycle
+    if (!alreadyAlerted) {
+      markNotificationAsAlerted(notif.id);
+      if (notif.type === 'job_application' && notif.target_id && notif.actor?.username) {
+        markJobApplicationAsAlerted(notif.target_id, notif.actor.username);
+      }
       if (onNewNotification) onNewNotification(notif);
     }
   };
@@ -1905,6 +2113,13 @@ export function subscribeToUserNotifications(
     }
   };
   window.addEventListener('c4e_notification_broadcast', handleCustomEvent);
+
+  const handleNotificationUpdate = (e: any) => {
+    if (e.detail?.filteredNotifs) {
+      onUpdate(e.detail.filteredNotifs);
+    }
+  };
+  window.addEventListener('c4e_notification_update', handleNotificationUpdate);
 
   const client = getSupabaseClient();
   let channel: any = null;
@@ -1947,6 +2162,7 @@ export function subscribeToUserNotifications(
 
   return () => {
     window.removeEventListener('c4e_notification_broadcast', handleCustomEvent);
+    window.removeEventListener('c4e_notification_update', handleNotificationUpdate);
     if (channel && client) {
       client.removeChannel(channel);
     }
@@ -1974,27 +2190,107 @@ export function saveStoredProfile(profile: UserProfile): void {
 }
 
 export function loadStoredAllUsers(): UserProfile[] {
+  try {
+    const raw = localStorage.getItem('c4e_all_users_cache');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map(normalizeProfile);
+      }
+    }
+  } catch {}
   const local = loadStoredProfile();
-  return local ? [local] : [];
+  return local ? [normalizeProfile(local)] : [];
+}
+
+export function saveStoredAllUsers(users: UserProfile[]): void {
+  try {
+    localStorage.setItem('c4e_all_users_cache', JSON.stringify(users));
+  } catch {}
+}
+
+export function normalizeProfile(raw: any): UserProfile {
+  if (!raw) return raw;
+  const cf = raw.custom_fields || {};
+  const website = raw.website || cf.website || undefined;
+  const pinnedRepos = Array.isArray(raw.pinned_repos) && raw.pinned_repos.length > 0
+    ? raw.pinned_repos
+    : Array.isArray(cf.pinned_repos) && cf.pinned_repos.length > 0
+    ? cf.pinned_repos
+    : [];
+
+  let badges: BadgeItem[] = [];
+  if (Array.isArray(raw.badges) && raw.badges.length > 0) {
+    badges = raw.badges;
+  } else if (Array.isArray(cf.badges) && cf.badges.length > 0) {
+    badges = cf.badges;
+  } else if (typeof cf.badges === 'string') {
+    try {
+      const parsed = JSON.parse(cf.badges);
+      if (Array.isArray(parsed)) badges = parsed;
+    } catch {}
+  } else if (typeof raw.badges === 'string') {
+    try {
+      const parsed = JSON.parse(raw.badges);
+      if (Array.isArray(parsed)) badges = parsed;
+    } catch {}
+  }
+
+  const betaStatus = raw.betaStatus || cf.betaStatus;
+  const betaContact = raw.betaContact || cf.betaContact;
+  const isBanned = raw.isBanned !== undefined ? raw.isBanned : cf.isBanned;
+  const banReason = raw.banReason || cf.banReason;
+  const suspendedUntil = raw.suspendedUntil || cf.suspendedUntil;
+  const subscription = raw.subscription || cf.subscription;
+
+  return {
+    ...raw,
+    website,
+    pinned_repos: pinnedRepos,
+    badges,
+    betaStatus,
+    betaContact,
+    isBanned,
+    banReason,
+    suspendedUntil,
+    subscription,
+    custom_fields: {
+      ...cf,
+      website: website || '',
+      pinned_repos: pinnedRepos,
+      badges,
+      betaStatus,
+      betaContact,
+      subscription
+    }
+  };
 }
 
 export function subscribeToAllUsers(onUpdate: (users: UserProfile[]) => void): () => void {
   const client = getSupabaseClient();
   if (!client) {
-    const local = loadStoredProfile();
-    onUpdate(local ? [local] : []);
+    const local = loadStoredAllUsers();
+    onUpdate(local);
     return () => {};
   }
 
   client.from('profiles').select('*').then(({ data }) => {
-    if (data) onUpdate(data as UserProfile[]);
+    if (data) {
+      const normalized = data.map(normalizeProfile);
+      saveStoredAllUsers(normalized);
+      onUpdate(normalized);
+    }
   });
 
   const channel = client
     .channel('public:profiles')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async () => {
       const { data } = await client.from('profiles').select('*');
-      if (data) onUpdate(data as UserProfile[]);
+      if (data) {
+        const normalized = data.map(normalizeProfile);
+        saveStoredAllUsers(normalized);
+        onUpdate(normalized);
+      }
     })
     .subscribe();
 
@@ -2014,6 +2310,7 @@ export const ALLOWED_PROFILE_COLUMNS = new Set([
   'verified',
   'email',
   'website',
+  'pinned_repos',
   'theme_color',
   'accent_color',
   'joined_communities',
@@ -2031,14 +2328,101 @@ export const ALLOWED_PROFILE_COLUMNS = new Set([
 
 export async function updateUserProfileInSupabase(userId: string, updateData: Partial<UserProfile>): Promise<{ success: boolean; error?: string }> {
   const local = loadStoredProfile();
+
+  // Merge custom_fields so that website & pinned_repos are always stored inside custom_fields JSONB as fallback
+  const existingCustomFields = local?.custom_fields || {};
+  const updateCustomFields = updateData.custom_fields || {};
+  const mergedCustomFields: Record<string, any> = {
+    ...existingCustomFields,
+    ...updateCustomFields
+  };
+
+  const finalWebsite = updateData.website !== undefined 
+    ? updateData.website 
+    : (updateCustomFields.website !== undefined ? updateCustomFields.website : existingCustomFields.website);
+
+  const rawFinalPinned = updateData.pinned_repos !== undefined
+    ? updateData.pinned_repos
+    : (updateCustomFields.pinned_repos !== undefined ? updateCustomFields.pinned_repos : (existingCustomFields.pinned_repos || local?.pinned_repos || []));
+
+  let finalPinnedRepos: GitHubRepo[] = [];
+  if (Array.isArray(rawFinalPinned)) {
+    finalPinnedRepos = rawFinalPinned;
+  } else if (typeof rawFinalPinned === 'string') {
+    try {
+      const parsed = JSON.parse(rawFinalPinned);
+      finalPinnedRepos = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      finalPinnedRepos = [];
+    }
+  }
+
+  if (finalWebsite !== undefined) {
+    mergedCustomFields.website = finalWebsite;
+  }
+  mergedCustomFields.pinned_repos = finalPinnedRepos;
+
+  if (updateData.badges !== undefined) {
+    mergedCustomFields.badges = updateData.badges;
+  }
+  if (updateData.betaStatus !== undefined) {
+    mergedCustomFields.betaStatus = updateData.betaStatus;
+  }
+  if (updateData.betaContact !== undefined) {
+    mergedCustomFields.betaContact = updateData.betaContact;
+  }
+  if (updateData.subscription !== undefined) {
+    mergedCustomFields.subscription = updateData.subscription;
+  }
+  if (updateData.isBanned !== undefined) {
+    mergedCustomFields.isBanned = updateData.isBanned;
+  }
+  if (updateData.banReason !== undefined) {
+    mergedCustomFields.banReason = updateData.banReason;
+  }
+  if (updateData.suspendedUntil !== undefined) {
+    mergedCustomFields.suspendedUntil = updateData.suspendedUntil;
+  }
+
+  const updatedUser: UserProfile = {
+    ...(local || {} as UserProfile),
+    ...updateData,
+    website: finalWebsite || undefined,
+    pinned_repos: finalPinnedRepos,
+    custom_fields: mergedCustomFields
+  };
+
   if (local && (local.id === userId || local.username === (updateData as any).username || !local.id)) {
-    const updatedUser = { ...local, ...updateData };
     saveStoredProfile(updatedUser);
   }
 
+  // Also update cached allUsers so other views reflect the update immediately
+  try {
+    const cachedUsers = loadStoredAllUsers();
+    const idx = cachedUsers.findIndex(
+      (u) => u.id === userId || (u.username && updateData.username && u.username.toLowerCase() === updateData.username.toLowerCase())
+    );
+    if (idx !== -1) {
+      cachedUsers[idx] = {
+        ...cachedUsers[idx],
+        ...updateData,
+        custom_fields: mergedCustomFields
+      };
+      saveStoredAllUsers(cachedUsers);
+    } else {
+      cachedUsers.push({
+        ...updatedUser,
+        id: userId,
+        custom_fields: mergedCustomFields
+      });
+      saveStoredAllUsers(cachedUsers);
+    }
+  } catch {}
+
   // Map frontend fields to PostgreSQL table column names
   const sanitizedUpdate: Record<string, any> = {
-    updated_at: new Date().toISOString()
+    updated_at: new Date().toISOString(),
+    custom_fields: mergedCustomFields
   };
 
   if ('isAdmin' in updateData) {
@@ -2052,6 +2436,13 @@ export async function updateUserProfileInSupabase(userId: string, updateData: Pa
     if (ALLOWED_PROFILE_COLUMNS.has(key)) {
       sanitizedUpdate[key] = val;
     }
+  }
+
+  if (finalPinnedRepos !== undefined) {
+    sanitizedUpdate.pinned_repos = finalPinnedRepos;
+  }
+  if (finalWebsite !== undefined) {
+    sanitizedUpdate.website = finalWebsite;
   }
 
   return resilientSupabaseUpdate('profiles', 'id', userId, sanitizedUpdate);
@@ -2203,6 +2594,24 @@ export const DEFAULT_BADGE_DEFINITIONS: BadgeDefinition[] = [
     isDefault: true
   },
   {
+    id: 'spark',
+    label: 'Spark Destekçi',
+    description: 'Code4Ever açık kaynak projesine maddi destekte bulunan özel Spark destekçi rozetidir. 250MB tek seferde dosya yükleme ayrıcalığı tanır.',
+    color: '#f59e0b',
+    icon: 'sparkles',
+    weight: 7,
+    isDefault: true
+  },
+  {
+    id: 'beta_home',
+    label: 'Kapalı Beta Katılımcısı',
+    description: 'Code4Ever platformunun erken aşama kapalı beta test sürecine katılıp platforma destek veren üyelere verilen yeşil ev rozetidir.',
+    color: '#10b981',
+    icon: 'home',
+    weight: 6,
+    isDefault: true
+  },
+  {
     id: 'normal_user',
     label: 'Normal Kullanıcı',
     description: 'Code4Ever kayıtlı aktif üye rozeti.',
@@ -2217,7 +2626,17 @@ export function loadStoredBadgeDefinitions(): BadgeDefinition[] {
   const data = localStorage.getItem(STORAGE_KEYS.BADGES);
   if (data) {
     try {
-      return JSON.parse(data);
+      const parsed: BadgeDefinition[] = JSON.parse(data);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const ids = new Set(parsed.map((b) => b.id));
+        const merged = [...parsed];
+        DEFAULT_BADGE_DEFINITIONS.forEach((def) => {
+          if (!ids.has(def.id)) {
+            merged.push(def);
+          }
+        });
+        return merged;
+      }
     } catch {
       return DEFAULT_BADGE_DEFINITIONS;
     }

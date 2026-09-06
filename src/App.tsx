@@ -36,6 +36,7 @@ import {
   loadLanguage,
   saveLanguage,
   saveGitHubToken,
+  loadStoredAllUsers,
   subscribeToAllUsers,
   updateUserProfileInSupabase,
   deleteUserFromSupabase,
@@ -124,7 +125,7 @@ export default function App() {
 
   const [notifications, setNotifications] = useState<NotificationItem[]>(() => loadStoredNotifications());
   const [directChatTargetUser, setDirectChatTargetUser] = useState<UserProfile | null>(null);
-  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+  const [allUsers, setAllUsers] = useState<UserProfile[]>(() => loadStoredAllUsers());
   const [closedBetaSettings, setClosedBetaSettings] = useState<ClosedBetaSettings>(loadStoredBetaSettings());
   const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>(loadStoredSubscriptionPlans());
   const [badgeDefinitions, setBadgeDefinitions] = useState<BadgeDefinition[]>(loadStoredBadgeDefinitions());
@@ -284,7 +285,18 @@ export default function App() {
       if (currentStored && currentStored.id) {
         const foundSelf = realtimeUsers.find((u) => u.id === currentStored.id);
         if (foundSelf) {
-          setUser((prev) => ({ ...prev, ...foundSelf }));
+          const selfPinned: GitHubRepo[] = (foundSelf.pinned_repos && Array.isArray(foundSelf.pinned_repos) && foundSelf.pinned_repos.length > 0)
+            ? foundSelf.pinned_repos
+            : (foundSelf.custom_fields?.pinned_repos && Array.isArray(foundSelf.custom_fields.pinned_repos) && foundSelf.custom_fields.pinned_repos.length > 0)
+            ? foundSelf.custom_fields.pinned_repos
+            : (currentStored.pinned_repos || []);
+
+          setUser((prev) => ({
+            ...prev,
+            ...foundSelf,
+            website: foundSelf.website || foundSelf.custom_fields?.website || prev.website || currentStored.website,
+            pinned_repos: selfPinned
+          }));
         }
       }
     });
@@ -433,6 +445,9 @@ export default function App() {
     const merged = { ...user, ...updated };
     setUser(merged);
     saveStoredProfile(merged);
+    setAllUsers((prev) =>
+      prev.map((u) => (u.id === merged.id || (u.username && merged.username && u.username.toLowerCase() === merged.username.toLowerCase()) ? { ...u, ...merged } : u))
+    );
     if (merged.id) {
       updateUserProfileInSupabase(merged.id, merged);
     }
@@ -953,6 +968,9 @@ export default function App() {
 
   const handleAdminUpdateUser = (userId: string, updatedFields: Partial<UserProfile>) => {
     updateUserProfileInSupabase(userId, updatedFields);
+    setAllUsers((prev) =>
+      prev.map((u) => (u.id === userId ? { ...u, ...updatedFields } : u))
+    );
     if (user.id === userId) {
       const updatedUser = { ...user, ...updatedFields };
       setUser(updatedUser);

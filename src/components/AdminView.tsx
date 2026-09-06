@@ -251,7 +251,13 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
   const handleApproveBetaUser = (user: UserProfile) => {
     const existingBadges = user.badges || [];
-    const hasHome = existingBadges.some((b) => b.id === 'beta_home' || b.icon === 'home');
+    const hasHome = existingBadges.some(
+      (b) =>
+        b.id === 'beta_home' ||
+        b.id === 'beta' ||
+        b.icon === 'home' ||
+        (b.label || '').toLowerCase().includes('beta')
+    );
 
     const updatedBadges = hasHome
       ? existingBadges
@@ -261,7 +267,8 @@ export const AdminView: React.FC<AdminViewProps> = ({
             id: 'beta_home',
             label: 'Kapalı Beta Katılımcısı',
             color: '#10b981',
-            icon: 'home'
+            icon: 'home' as const,
+            description: 'Code4Ever platformunun erken aşama kapalı beta test sürecine katılıp platforma destek veren üyelere verilen yeşil ev rozetidir.'
           }
         ];
 
@@ -289,25 +296,48 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
   const handleToggleGreenHomeBadge = (user: UserProfile) => {
     const existingBadges = user.badges || [];
-    const hasHome = existingBadges.some((b) => b.id === 'beta_home' || b.icon === 'home');
+    const hasHome =
+      existingBadges.some(
+        (b) =>
+          b.id === 'beta_home' ||
+          b.id === 'beta' ||
+          b.icon === 'home' ||
+          (b.label || '').toLowerCase().includes('beta')
+      ) || user.betaStatus === 'approved';
 
     const updatedBadges = hasHome
-      ? existingBadges.filter((b) => b.id !== 'beta_home' && b.icon !== 'home')
+      ? existingBadges.filter(
+          (b) =>
+            b.id !== 'beta_home' &&
+            b.id !== 'beta' &&
+            b.icon !== 'home' &&
+            !(b.label || '').toLowerCase().includes('beta')
+        )
       : [
           ...existingBadges,
           {
             id: 'beta_home',
             label: 'Kapalı Beta Katılımcısı',
             color: '#10b981',
-            icon: 'home'
+            icon: 'home' as const,
+            description: 'Code4Ever platformunun erken aşama kapalı beta test sürecine katılıp platforma destek veren üyelere verilen yeşil ev rozetidir.'
           }
         ];
 
-    onUpdateUser(user.id, { badges: updatedBadges });
+    const newBetaStatus = hasHome ? 'pending' : 'approved';
+
+    onUpdateUser(user.id, {
+      badges: updatedBadges,
+      betaStatus: newBetaStatus
+    });
     if (selectedUserForBadges?.id === user.id) {
-      setSelectedUserForBadges({ ...selectedUserForBadges, badges: updatedBadges });
+      setSelectedUserForBadges({
+        ...selectedUserForBadges,
+        badges: updatedBadges,
+        betaStatus: newBetaStatus
+      });
     }
-    showNotification(`@${user.username} için Yeşil Ev Rozeti: ${hasHome ? 'Kaldırıldı' : 'Eklendi'}`);
+    showNotification(`@${user.username} için Yeşil Ev (Beta) Rozeti: ${hasHome ? 'Kaldırıldı' : 'Eklendi'}`);
   };
 
   const handleToggleNamedBadge = (
@@ -1251,7 +1281,13 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   <button
                     onClick={() => handleToggleGreenHomeBadge(selectedUserForBadges)}
                     className={`p-3 rounded-2xl border text-left transition-all flex items-center justify-between ${
-                      selectedUserForBadges.badges?.some((b) => b.id === 'beta_home' || b.icon === 'home')
+                      selectedUserForBadges.badges?.some(
+                        (b) =>
+                          b.id === 'beta_home' ||
+                          b.id === 'beta' ||
+                          b.icon === 'home' ||
+                          (b.label || '').toLowerCase().includes('beta')
+                      ) || selectedUserForBadges.betaStatus === 'approved'
                         ? 'bg-emerald-600/10 border-emerald-500/40 text-emerald-400'
                         : 'bg-zinc-950 border-zinc-800 text-zinc-400'
                     }`}
@@ -1261,7 +1297,13 @@ export const AdminView: React.FC<AdminViewProps> = ({
                       <span className="text-xs font-bold">Yeşil Ev (Beta)</span>
                     </div>
                     <span className="text-[10px] font-mono font-bold">
-                      {selectedUserForBadges.badges?.some((b) => b.id === 'beta_home' || b.icon === 'home')
+                      {selectedUserForBadges.badges?.some(
+                        (b) =>
+                          b.id === 'beta_home' ||
+                          b.id === 'beta' ||
+                          b.icon === 'home' ||
+                          (b.label || '').toLowerCase().includes('beta')
+                      ) || selectedUserForBadges.betaStatus === 'approved'
                         ? 'AÇIK'
                         : 'KAPALI'}
                     </span>

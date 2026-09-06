@@ -27,6 +27,7 @@ import {
   sendNativeNotification
 } from '../utils/notificationSound';
 import { IntegrationsSettings } from './IntegrationsSettings';
+import { sanitizeUrl } from '../utils/securityHelper';
 
 interface SettingsViewProps {
   user: UserProfile;
@@ -123,9 +124,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         .toLowerCase()
         .replace(/[^a-z0-9_]/g, '') || user.username;
 
-    const updatedProfile = {
+    const rawWebsite = (formData.website || '').trim();
+    const sanitizedWeb = rawWebsite ? sanitizeUrl(rawWebsite) : '';
+
+    const updatedProfile: UserProfile = {
+      ...user,
       ...formData,
-      username: cleanUsername
+      username: cleanUsername,
+      website: sanitizedWeb || undefined,
+      pinned_repos: user.pinned_repos || [],
+      custom_fields: {
+        ...(user.custom_fields || {}),
+        ...(formData.custom_fields || {}),
+        website: sanitizedWeb,
+        pinned_repos: user.pinned_repos || []
+      }
     };
 
     onUpdateProfile(updatedProfile);
@@ -450,6 +463,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   }
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-white focus:outline-none"
                 />
+              </div>
+
+              <div>
+                <label className="text-zinc-300 block mb-1 font-medium">
+                  {language === 'tr' ? 'Web Sitesi (URL)' : 'Website (URL)'}
+                </label>
+                <div className="relative">
+                  <Globe className="w-3.5 h-3.5 absolute left-3 top-3 text-zinc-500" />
+                  <input
+                    type="text"
+                    value={formData.website || ''}
+                    onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                    placeholder="https://myportfolio.dev"
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-9 pr-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-zinc-500"
+                  />
+                </div>
               </div>
             </div>
 

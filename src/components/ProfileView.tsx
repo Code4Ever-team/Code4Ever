@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { UserProfile, DynamicTheme, Community, Post } from '../types';
+import { UserProfile, DynamicTheme, Community, Post, GitHubRepo } from '../types';
 import { UserBadges } from './UserBadges';
 import { CodeSnippetBlock } from './CodeSnippetBlock';
 import {
@@ -75,6 +75,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<UserProfile>(user);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [profileTab, setProfileTab] = useState<'posts' | 'reposts' | 'likes' | 'media' | 'communities'>('posts');
   const [activeCommentPostId, setActiveCommentPostId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
@@ -198,6 +199,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       return;
     }
 
+    const rawWebsite = (formData.website || '').trim();
+    const sanitizedWeb = rawWebsite ? sanitizeUrl(rawWebsite) : '';
+    const finalPinned = formData.pinned_repos !== undefined ? formData.pinned_repos : (user.pinned_repos || []);
+
     // Sanitize user-provided text & URLs, and safeguard protected role & badges
     const updatedProfile: UserProfile = {
       ...user,
@@ -206,17 +211,26 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       avatar_url: sanitizeUrl(formData.avatar_url) || user.avatar_url,
       banner_url: sanitizeUrl(formData.banner_url) || user.banner_url,
       bio: sanitizeText(formData.bio, 500),
-      website: formData.website ? sanitizeUrl(formData.website) : undefined,
-      pinned_repos: formData.pinned_repos || user.pinned_repos,
+      website: sanitizedWeb || undefined,
+      pinned_repos: finalPinned,
       custom_fields: {
+        ...(user.custom_fields || {}),
+        ...(formData.custom_fields || {}),
         github: sanitizeText(formData.custom_fields?.github, 100),
-        location: sanitizeText(formData.custom_fields?.location, 100)
+        location: sanitizeText(formData.custom_fields?.location, 100),
+        website: sanitizedWeb,
+        pinned_repos: finalPinned
       },
       updated_at: new Date().toISOString()
     };
 
     onUpdateProfile(updatedProfile);
     setIsEditing(false);
+    setErrorMessage(null);
+    setSuccessMessage(language === 'tr' ? 'Profil ve bağlantı bilgileriniz başarıyla kaydedildi!' : 'Profile details saved successfully!');
+    setTimeout(() => {
+      setSuccessMessage(null);
+    }, 4000);
   };
 
   const handleCommentSubmit = (postId: string, e: React.FormEvent) => {
@@ -296,6 +310,13 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
       </div>
 
       <div className="p-5 w-full space-y-4">
+        {successMessage && (
+          <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-emerald-400 font-mono text-xs flex items-center gap-2 animate-in fade-in">
+            <Check className="w-4 h-4 flex-shrink-0" />
+            <span>{successMessage}</span>
+          </div>
+        )}
+
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-xl font-bold text-white tracking-tight">{formData.display_name}</h2>
@@ -315,16 +336,16 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
             {formData.custom_fields?.location || 'Türkiye'}
           </span>
 
-          {(formData.website || user.website) && (
+          {(formData.website || user.website || formData.custom_fields?.website || user.custom_fields?.website) && (
             <a
-              href={sanitizeUrl(formData.website || user.website)}
+              href={sanitizeUrl(formData.website || user.website || formData.custom_fields?.website || user.custom_fields?.website)}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1 text-zinc-200 hover:text-white transition-colors"
             >
               <Globe className="w-3.5 h-3.5 text-zinc-400" />
               <span className="truncate max-w-[200px]">
-                {(formData.website || user.website)?.replace(/^https?:\/\//, '')}
+                {(formData.website || user.website || formData.custom_fields?.website || user.custom_fields?.website)?.replace(/^https?:\/\//, '')}
               </span>
               <ExternalLink className="w-2.5 h-2.5 text-zinc-500" />
             </a>
@@ -366,19 +387,32 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
             )}
           </div>
 
-          {(!user.pinned_repos || user.pinned_repos.length === 0) ? (
-            <div className="py-4 text-center text-xs text-zinc-500 font-mono">
-              {isOwnProfile
-                ? (language === 'tr' ? 'Profilinde açık kaynaklı depolarını sergilemek için "Vitrini Düzenle" butonuna tıkla.' : 'Click "Manage Showcase" to feature your open-source projects here.')
-                : (language === 'tr' ? 'Kullanıcı henüz vitrine bir depo eklemedi.' : 'No repositories pinned yet.')}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {user.pinned_repos.map((repo) => (
-                <div
-                  key={repo.name}
-                  className="p-3.5 bg-zinc-950 border border-zinc-800/80 hover:border-zinc-700 rounded-xl transition-all flex flex-col justify-between space-y-2 group"
-                >
+          {(() => {
+            const displayedRepos: GitHubRepo[] = (user.pinned_repos && Array.isArray(user.pinned_repos) && user.pinned_repos.length > 0)
+              ? user.pinned_repos
+              : (user.custom_fields?.pinned_repos && Array.isArray(user.custom_fields.pinned_repos) && user.custom_fields.pinned_repos.length > 0)
+              ? user.custom_fields.pinned_repos
+              : (formData.pinned_repos && Array.isArray(formData.pinned_repos) && formData.pinned_repos.length > 0)
+              ? formData.pinned_repos
+              : (Array.isArray(formData.custom_fields?.pinned_repos) ? formData.custom_fields.pinned_repos : []);
+
+            if (!displayedRepos || displayedRepos.length === 0) {
+              return (
+                <div className="py-4 text-center text-xs text-zinc-500 font-mono">
+                  {isOwnProfile
+                    ? (language === 'tr' ? 'Profilinde açık kaynaklı depolarını sergilemek için "Vitrini Düzenle" butonuna tıkla.' : 'Click "Manage Showcase" to feature your open-source projects here.')
+                    : (language === 'tr' ? 'Kullanıcı henüz vitrine bir depo eklemedi.' : 'No repositories pinned yet.')}
+                </div>
+              );
+            }
+
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {displayedRepos.map((repo) => (
+                  <div
+                    key={repo.name}
+                    className="p-3.5 bg-zinc-950 border border-zinc-800/80 hover:border-zinc-700 rounded-xl transition-all flex flex-col justify-between space-y-2 group"
+                  >
                   <div className="space-y-1">
                     <div className="flex items-center justify-between gap-2">
                       <a
@@ -417,7 +451,8 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
                 </div>
               ))}
             </div>
-          )}
+          );
+        })()}
         </div>
 
         {/* Profile Tabs */}
@@ -890,6 +925,13 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
               </div>
             )}
 
+            {successMessage && (
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 font-mono text-[11px] flex items-center gap-2 animate-in fade-in">
+                <Check className="w-4 h-4 flex-shrink-0" />
+                <span>{successMessage}</span>
+              </div>
+            )}
+
             <div className="space-y-2 text-xs">
               <div>
                 <label className="text-zinc-400 block mb-1 font-medium">
@@ -983,7 +1025,7 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
                 <div className="relative">
                   <Globe className="w-3.5 h-3.5 absolute left-3 top-2.5 text-zinc-500" />
                   <input
-                    type="url"
+                    type="text"
                     value={formData.website || ''}
                     onChange={(e) => setFormData({ ...formData, website: e.target.value })}
                     placeholder="https://myportfolio.dev"
@@ -1027,10 +1069,25 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
             const updated = {
               ...user,
               pinned_repos: repos,
+              custom_fields: {
+                ...(user.custom_fields || {}),
+                pinned_repos: repos
+              },
               updated_at: new Date().toISOString()
             };
             onUpdateProfile(updated);
-            setFormData((prev) => ({ ...prev, pinned_repos: repos }));
+            setFormData((prev) => ({
+              ...prev,
+              pinned_repos: repos,
+              custom_fields: {
+                ...(prev.custom_fields || {}),
+                pinned_repos: repos
+              }
+            }));
+            setSuccessMessage(language === 'tr' ? 'Vitrin depoları başarıyla güncellendi!' : 'Showcase repositories updated successfully!');
+            setTimeout(() => {
+              setSuccessMessage(null);
+            }, 4000);
           }}
         />
       )}

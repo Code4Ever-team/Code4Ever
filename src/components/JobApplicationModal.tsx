@@ -31,9 +31,33 @@ export const JobApplicationModal: React.FC<JobApplicationModalProps> = ({
 
   if (!isOpen || !listing) return null;
 
+  const isOwner = Boolean(
+    currentUser?.username &&
+    listing?.author?.username &&
+    listing.author.username.toLowerCase() === currentUser.username.toLowerCase()
+  );
+
+  const alreadyApplied = Boolean(
+    currentUser?.username &&
+    (
+      (listing.applied_by || []).some((u) => (u || '').toLowerCase() === currentUser.username.toLowerCase()) ||
+      (listing.applications || []).some((a) => (a.applicant_username || '').toLowerCase() === currentUser.username.toLowerCase())
+    )
+  );
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (alreadyApplied) {
+      setError(language === 'tr' ? 'Bu ilana zaten başvuru yaptınız.' : 'You have already applied to this listing.');
+      return;
+    }
+
+    if (isOwner) {
+      setError(language === 'tr' ? 'Kendi ilanınıza başvuru yapamazsınız.' : 'You cannot apply to your own listing.');
+      return;
+    }
 
     const cleanName = sanitizeText(name.trim());
     const numAge = typeof age === 'string' ? parseInt(age) : age;
@@ -134,12 +158,34 @@ export const JobApplicationModal: React.FC<JobApplicationModalProps> = ({
             </h3>
             <p className="text-xs text-zinc-400">
               {language === 'tr'
-                ? 'İlan sahibine anlık bildirim gönderildi.'
-                : 'The listing creator has been notified.'}
+                ? 'İlan sahibine tek seferlik bildirim gönderildi.'
+                : 'The listing creator has been notified once.'}
             </p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-3.5 overflow-y-auto">
+            {alreadyApplied && (
+              <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-amber-400" />
+                <span>
+                  {language === 'tr'
+                    ? 'Bu ilana daha önce başvuru yaptınız. Başvurunuz ilan sahibine iletilmiştir.'
+                    : 'You have already applied to this listing. Your application has been sent.'}
+                </span>
+              </div>
+            )}
+
+            {isOwner && (
+              <div className="p-3 rounded-2xl bg-zinc-800/60 border border-zinc-700/60 text-zinc-300 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 text-zinc-400" />
+                <span>
+                  {language === 'tr'
+                    ? 'Bu ilan size aittir, kendinize başvuru yapamazsınız.'
+                    : 'This is your own listing, you cannot apply to it.'}
+                </span>
+              </div>
+            )}
+
             {error && (
               <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 flex-shrink-0" />
@@ -239,11 +285,17 @@ export const JobApplicationModal: React.FC<JobApplicationModalProps> = ({
             <div className="pt-2">
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-zinc-950 bg-zinc-100 hover:bg-white transition-all shadow-md active:scale-[0.99] disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                disabled={isSubmitting || alreadyApplied || isOwner}
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-zinc-950 bg-zinc-100 hover:bg-white transition-all shadow-md active:scale-[0.99] disabled:opacity-40 disabled:pointer-events-none cursor-pointer flex items-center justify-center gap-2"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>{language === 'tr' ? 'Başvuru Yap' : 'Submit Application'}</span>
+                <span>
+                  {alreadyApplied
+                    ? (language === 'tr' ? 'Zaten Başvuruldu' : 'Already Applied')
+                    : isOwner
+                    ? (language === 'tr' ? 'Kendi İlanınız' : 'Your Listing')
+                    : (language === 'tr' ? 'Başvuru Yap' : 'Submit Application')}
+                </span>
               </button>
             </div>
           </form>

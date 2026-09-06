@@ -48,7 +48,7 @@ export interface UserProfile {
   verified?: boolean;
   theme_color?: string;
   accent_color?: string;
-  custom_fields?: Record<string, string>;
+  custom_fields?: Record<string, any>;
   joined_communities?: string[];
   created_at?: string;
   updated_at?: string;

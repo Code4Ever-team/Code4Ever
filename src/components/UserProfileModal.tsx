@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   X,
-  Shield,
   MapPin,
   Github,
   Calendar,
@@ -21,7 +20,7 @@ import {
 import { UserProfile, Community } from '../types';
 import { UserBadges } from './UserBadges';
 import { sanitizeUrl } from '../utils/securityHelper';
-import { getSupabaseClient, loadStoredAllUsers } from '../services/supabaseClient';
+import { getSupabaseClient, loadStoredAllUsers, normalizeProfile } from '../services/supabaseClient';
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -138,7 +137,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             .maybeSingle();
 
           if (data) {
-            setProfileData(data as UserProfile);
+            setProfileData(normalizeProfile(data));
             setLoading(false);
             return;
           }
@@ -419,11 +418,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     alt={profileData.display_name}
                     className="w-20 h-20 rounded-2xl object-cover ring-4 ring-[#121215] shadow-xl bg-zinc-900"
                   />
-                  {profileData.verified && (
-                    <div className="absolute -bottom-1 -right-1 bg-blue-600 text-white p-1 rounded-lg border-2 border-[#121215]" title="Doğrulanmış Hesap">
-                      <Shield className="w-3.5 h-3.5 fill-current" />
-                    </div>
-                  )}
                 </div>
 
                 {currentUser.username?.toLowerCase() !== profileData.username?.toLowerCase() && (

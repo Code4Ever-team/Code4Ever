@@ -76,6 +76,7 @@ export function validateUsername(username?: string | null): { isValid: boolean; 
 export function sanitizeUrl(url?: string | null): string {
   if (!url || typeof url !== 'string') return '';
   const trimmed = url.trim();
+  if (!trimmed || trimmed === '#' || trimmed === 'about:blank') return '';
   
   // Check for dangerous schemes & encoding tricks
   const lower = trimmed.toLowerCase();
@@ -88,7 +89,7 @@ export function sanitizeUrl(url?: string | null): string {
     lower.includes('%3c') ||
     lower.includes('%3e')
   ) {
-    return '#';
+    return '';
   }
   
   // Allow data:image and data:video URIs for local media uploads
@@ -101,7 +102,7 @@ export function sanitizeUrl(url?: string | null): string {
     return trimmed;
   }
   
-  // If it's a domain-like string (e.g. github.com/user), prepend https://
+  // If it's a domain-like string (e.g. github.com/user, mydomain.com), prepend https://
   if (trimmed.includes('.') && !trimmed.startsWith('/')) {
     return `https://${trimmed}`;
   }
@@ -111,7 +112,7 @@ export function sanitizeUrl(url?: string | null): string {
     return trimmed;
   }
   
-  return '#';
+  return '';
 }
 
 /**
