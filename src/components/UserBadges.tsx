@@ -183,7 +183,13 @@ export const UserBadges: React.FC<UserBadgesProps> = ({
   const [selectedBadgeForDetail, setSelectedBadgeForDetail] = useState<NormalizedBadge | null>(null);
 
   const isVerified = user ? user.verified : verifiedProp;
-  const userBadges = user ? (user.badges || []) : (badgesProp || []);
+  const userBadges = user
+    ? (Array.isArray(user.badges) && user.badges.length > 0
+        ? user.badges
+        : Array.isArray(user.custom_fields?.badges) && user.custom_fields.badges.length > 0
+        ? user.custom_fields.badges
+        : [])
+    : (badgesProp || []);
   const userSub = user?.subscription;
 
   const normalizedList: NormalizedBadge[] = [];

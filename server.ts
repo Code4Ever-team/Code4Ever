@@ -760,94 +760,93 @@ app.post('/api/bynogame/check-donation', async (req: Request, res: Response) => 
         hasDonation: true,
         donation: matched,
         streamId: targetStreamId,
-        message: 'ByNoGame bağışınız doğrulandı! Spark Destekçisi rozetiniz ve 250MB yükleme yetkiniz tanımlandı.'
+        message: 'Bağışınız doğrulandı! Spark Destekçisi rozetiniz ve 250MB yükleme yetkiniz tanımlandı.'
       });
       return;
     }
 
-    // 2) Try querying ByNoGame stream overlay / API endpoints directly
-    // ByNoGame stream endpoints format attempt
-    const streamEndpoints = [
-      `https://stream.bynogame.com/api/v1/stream/${targetStreamId}`,
-      `https://stream.bynogame.com/stream/${targetStreamId}/donations`,
-      `https://stream.bynogame.com/overlay/${targetStreamId}`
-    ];
-
-    let remoteFound: any = null;
-
-    for (const url of streamEndpoints) {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 2500);
-
-        const response = await fetch(url, {
-          signal: controller.signal,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            Accept: 'application/json, text/plain, */*'
-          }
-        });
-        clearTimeout(timeout);
-
-        if (response.ok) {
-          const contentType = response.headers.get('content-type') || '';
-          if (contentType.includes('application/json')) {
-            const data: any = await response.json();
-            const list = Array.isArray(data) ? data : data.donations || data.items || [];
-            const foundInList = list.find((item: any) => {
-              const name = (item.user || item.username || item.donor || item.name || '').toString().toLowerCase();
-              return name.includes(cleanUsername) || cleanUsername.includes(name);
-            });
-            if (foundInList) {
-              remoteFound = foundInList;
-              break;
-            }
-          }
-        }
-      } catch (fetchErr) {
-        // Continue to next endpoint or fallback
-      }
-    }
-
-    if (remoteFound) {
-      const newRecord: ByNoGameDonationRecord = {
-        id: 'bng_' + Date.now(),
-        streamId: targetStreamId,
-        username: cleanUsername,
-        usernameNormalized: cleanUsername,
-        amount: remoteFound.amount || 'ByNoGame Bağışı',
-        currency: remoteFound.currency || 'TL',
-        message: remoteFound.message || '',
-        timestamp: new Date().toISOString(),
-        verified: true,
-        claimedAt: new Date().toISOString()
-      };
-      donations.push(newRecord);
-      saveByNoGameDonations(donations);
-
-      res.json({
-        success: true,
-        hasDonation: true,
-        donation: newRecord,
-        streamId: targetStreamId,
-        message: 'ByNoGame akışından bağışınız otomatik olarak tespit edildi ve doğrulandı!'
-      });
-      return;
-    }
-
-    // Not found yet
+    // Not found in verified registry yet
     res.json({
       success: true,
       hasDonation: false,
       streamId: targetStreamId,
       username: cleanUsername,
       message:
-        'ByNoGame Stream ID (5595ad22-dd5a-47c2-93ba-d7bf9a3f85ed) üzerinde henüz @' +
-        cleanUsername +
-        ' kullanıcı adıyla kayıtlı bir bağış tespit edilemedi. Bağışınızı yeni yaptıysanız lütfen birkaç saniye bekleyip tekrar deneyiniz.'
+        `Henüz @${cleanUsername} adına kayıtlı bağış bulunamadı. Bağış yaptıysanız referans/işlem numaranızı girerek bildirimde bulunabilir veya yöneticiden onay talep edebilirsiniz.`
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err?.message || 'Bağış kontrol edilirken hata oluştu.' });
+    res.status(200).json({
+      success: false,
+      hasDonation: false,
+      message: 'Bağış kontrolü yapılırken servis yanıt veremedi. Lütfen referans kodunuzu girerek bildirimde bulunun.'
+    });
+  }
+});
+
+// 2.1 ByNoGame Claim Donation (User reports a donation)
+app.post('/api/bynogame/claim-donation', (req: Request, res: Response) => {
+  try {
+    const { username, amount, message, reference_code } = req.body || {};
+    if (!username) {
+      res.status(400).json({ error: 'Username is required' });
+      return;
+    }
+
+    const cleanUsername = username.replace(/^@/, '').trim().toLowerCase();
+    const donations = loadByNoGameDonations();
+
+    const newRecord: ByNoGameDonationRecord = {
+      id: 'bng_claim_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+      streamId: BYNOGAME_STREAM_ID,
+      username: cleanUsername,
+      usernameNormalized: cleanUsername,
+      amount: amount || 'Destek',
+      currency: 'TL',
+      message: message || (reference_code ? `Referans: ${reference_code}` : 'Bağış Bildirimi'),
+      timestamp: new Date().toISOString(),
+      verified: false
+    };
+
+    donations.unshift(newRecord);
+    saveByNoGameDonations(donations);
+
+    res.json({ success: true, recorded: newRecord });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Bağış bildirimi kaydedilemedi' });
+  }
+});
+
+// 2.2 ByNoGame Admin Approve Donation
+app.post('/api/bynogame/approve-donation', (req: Request, res: Response) => {
+  try {
+    const { claimId, username, adminUsername } = req.body || {};
+    const donations = loadByNoGameDonations();
+    const cleanUsername = (username || '').replace(/^@/, '').trim().toLowerCase();
+
+    let matched = donations.find((d) => (claimId && d.id === claimId) || d.usernameNormalized === cleanUsername);
+    if (!matched && cleanUsername) {
+      matched = {
+        id: 'bng_manual_' + Date.now(),
+        streamId: BYNOGAME_STREAM_ID,
+        username: cleanUsername,
+        usernameNormalized: cleanUsername,
+        amount: 'Destek',
+        currency: 'TL',
+        message: `Yönetici (@${adminUsername || 'admin'}) tarafından onaylandı`,
+        timestamp: new Date().toISOString(),
+        verified: true,
+        claimedAt: new Date().toISOString()
+      };
+      donations.unshift(matched);
+    } else if (matched) {
+      matched.verified = true;
+      matched.claimedAt = new Date().toISOString();
+    }
+
+    saveByNoGameDonations(donations);
+    res.json({ success: true, approved: matched });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Onaylama başarısız' });
   }
 });
 

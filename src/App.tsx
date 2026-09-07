@@ -296,12 +296,28 @@ export default function App() {
             ? foundSelf.custom_fields.pinned_repos
             : (currentStored.pinned_repos || []);
 
-          setUser((prev) => ({
-            ...prev,
-            ...foundSelf,
-            website: foundSelf.website || foundSelf.custom_fields?.website || prev.website || currentStored.website,
-            pinned_repos: selfPinned
-          }));
+          // CRUCIAL BADGE PROTECTION: NEVER wipe out active badges with an empty array from a remote sync event!
+          const mergedBadges = (foundSelf.badges && Array.isArray(foundSelf.badges) && foundSelf.badges.length > 0)
+            ? foundSelf.badges
+            : (foundSelf.custom_fields?.badges && Array.isArray(foundSelf.custom_fields.badges) && foundSelf.custom_fields.badges.length > 0)
+            ? foundSelf.custom_fields.badges
+            : (currentStored.badges && Array.isArray(currentStored.badges) && currentStored.badges.length > 0)
+            ? currentStored.badges
+            : [];
+
+          setUser((prev) => {
+            const finalBadges = mergedBadges.length > 0 ? mergedBadges : (prev.badges || []);
+            const updated = {
+              ...prev,
+              ...foundSelf,
+              badges: finalBadges,
+              website: foundSelf.website || foundSelf.custom_fields?.website || prev.website || currentStored.website,
+              pinned_repos: selfPinned,
+              subscription: foundSelf.subscription?.isActive ? foundSelf.subscription : (prev.subscription?.isActive ? prev.subscription : currentStored.subscription)
+            };
+            saveStoredProfile(updated);
+            return updated;
+          });
         }
       }
     });
@@ -465,7 +481,24 @@ export default function App() {
   };
 
   const handleUpdateProfile = (updated: Partial<UserProfile> | UserProfile) => {
-    const merged = { ...user, ...updated };
+    const finalBadges = Array.isArray(updated.badges)
+      ? updated.badges
+      : (Array.isArray(user.badges) && user.badges.length > 0)
+      ? user.badges
+      : (user.custom_fields?.badges && Array.isArray(user.custom_fields.badges))
+      ? user.custom_fields.badges
+      : [];
+
+    const merged: UserProfile = {
+      ...user,
+      ...updated,
+      badges: finalBadges,
+      custom_fields: {
+        ...(user.custom_fields || {}),
+        ...(updated.custom_fields || {}),
+        badges: finalBadges
+      }
+    };
     setUser(merged);
     saveStoredProfile(merged);
     setAllUsers((prev) =>
