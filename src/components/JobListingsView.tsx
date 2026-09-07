@@ -15,6 +15,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { UserProfile, JobListing, JobApplication } from '../types';
+import { markJobApplicationAsAnsweredOrRead } from '../services/supabaseClient';
 import { NewJobListingModal } from './NewJobListingModal';
 import { JobApplicationModal } from './JobApplicationModal';
 import { JobApplicantsModal } from './JobApplicantsModal';
@@ -294,7 +295,10 @@ export const JobListingsView: React.FC<JobListingsViewProps> = ({
                     {isOwner ? (
                       <button
                         type="button"
-                        onClick={() => setSelectedListingForApplicants(job)}
+                        onClick={() => {
+                          markJobApplicationAsAnsweredOrRead(job.id);
+                          setSelectedListingForApplicants(job);
+                        }}
                         className="px-3.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                       >
                         <Eye className="w-3.5 h-3.5 text-zinc-300" />

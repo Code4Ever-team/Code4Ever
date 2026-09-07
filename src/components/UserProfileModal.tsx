@@ -15,7 +15,11 @@ import {
   Mail,
   Share2,
   Link2,
-  Crown
+  Crown,
+  Globe,
+  GitBranch,
+  Star,
+  GitFork
 } from 'lucide-react';
 import { UserProfile, Community } from '../types';
 import { UserBadges } from './UserBadges';
@@ -496,12 +500,84 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                       <ExternalLink className="w-2.5 h-2.5" />
                     </a>
                   )}
+                  {(profileData.website || profileData.custom_fields?.website) && (
+                    <a
+                      href={sanitizeUrl(profileData.website || profileData.custom_fields?.website)}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="flex items-center gap-1 hover:text-zinc-200 transition-colors text-zinc-300"
+                    >
+                      <Globe className="w-3.5 h-3.5 text-zinc-500" />
+                      <span className="truncate max-w-[160px]">
+                        {(profileData.website || profileData.custom_fields?.website)?.replace(/^https?:\/\//, '')}
+                      </span>
+                      <ExternalLink className="w-2.5 h-2.5 text-zinc-500" />
+                    </a>
+                  )}
                   <span className="flex items-center gap-1 text-zinc-500">
                     <Calendar className="w-3.5 h-3.5" />
                     <span>Üyelik: {new Date(profileData.created_at || Date.now()).toLocaleDateString()}</span>
                   </span>
                 </div>
               </div>
+
+              {/* Showcase / Vitrin Depoları */}
+              {(() => {
+                const repos = (profileData.pinned_repos && Array.isArray(profileData.pinned_repos) && profileData.pinned_repos.length > 0)
+                  ? profileData.pinned_repos
+                  : (profileData.custom_fields?.pinned_repos && Array.isArray(profileData.custom_fields.pinned_repos) && profileData.custom_fields.pinned_repos.length > 0)
+                  ? profileData.custom_fields.pinned_repos
+                  : [];
+                if (repos.length === 0) return null;
+                return (
+                  <div className="mt-4 pt-3 border-t border-zinc-800/80">
+                    <h4 className="text-xs font-bold text-zinc-300 mb-2 flex items-center gap-1.5">
+                      <GitBranch className="w-3.5 h-3.5 text-orange-400" />
+                      <span>{language === 'tr' ? 'Vitrin Depoları' : 'Showcase Repositories'}</span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-zinc-800 font-mono text-zinc-400 font-bold">
+                        {repos.length}
+                      </span>
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {repos.map((repo, idx) => (
+                        <a
+                          key={repo.name || idx}
+                          href={sanitizeUrl(repo.html_url) || `https://github.com/${profileData.username}/${repo.name}`}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="p-2.5 rounded-xl bg-zinc-950/80 border border-zinc-800/80 hover:border-zinc-700 transition-all group block"
+                        >
+                          <div className="flex items-center justify-between text-xs font-semibold text-white group-hover:text-blue-400">
+                            <span className="truncate">{repo.name}</span>
+                            <ExternalLink className="w-3 h-3 text-zinc-500 group-hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                          {repo.description && (
+                            <p className="text-[11px] text-zinc-400 line-clamp-2 mt-1 leading-relaxed">
+                              {repo.description}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-3 mt-2 text-[10px] text-zinc-500 font-mono">
+                            {repo.language && (
+                              <span className="flex items-center gap-1 text-zinc-300">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                                <span>{repo.language}</span>
+                              </span>
+                            )}
+                            <span className="flex items-center gap-1 text-amber-400">
+                              <Star className="w-3 h-3" />
+                              <span>{repo.stargazers_count || 0}</span>
+                            </span>
+                            <span className="flex items-center gap-1 text-zinc-400">
+                              <GitFork className="w-3 h-3" />
+                              <span>{repo.forks_count || 0}</span>
+                            </span>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Joined Communities list if any */}
               {communities && communities.filter(c => c.is_joined).length > 0 && (

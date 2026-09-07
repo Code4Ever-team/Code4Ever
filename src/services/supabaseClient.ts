@@ -52,7 +52,8 @@ export const STORAGE_KEYS = {
   PLATFORM: 'c4e_platform_settings',
   SYSTEM_ERROR_REPORTS: 'c4e_system_error_reports',
   POST_REPORTS: 'c4e_post_reports',
-  CUSTOM_CATEGORIES: 'c4e_custom_categories'
+  CUSTOM_CATEGORIES: 'c4e_custom_categories',
+  ANSWERED_JOB_APPLICATIONS: 'c4e_answered_job_apps'
 };
 
 export function loadDeletedJobIds(): string[] {
@@ -76,9 +77,60 @@ export function saveDeletedJobId(jobId: string): void {
 }
 
 export function isJobListingDeleted(jobId?: string): boolean {
-  if (!jobId) return false;
+  if (!jobId) return true;
   const deleted = loadDeletedJobIds();
-  return deleted.includes(jobId);
+  if (deleted.includes(jobId)) return true;
+
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.JOB_LISTINGS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const found = parsed.some((j: any) => j && j.id === jobId);
+        if (!found) {
+          return true;
+        }
+      }
+    }
+  } catch {}
+
+  return false;
+}
+
+export function isJobApplicationAnsweredOrRead(jobId: string, applicantUsername?: string): boolean {
+  if (!jobId) return true;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.ANSWERED_JOB_APPLICATIONS);
+    const list: string[] = raw ? JSON.parse(raw) : [];
+    if (list.includes(jobId)) return true;
+    if (applicantUsername) {
+      const key = `${jobId}_${applicantUsername.toLowerCase().trim()}`;
+      if (list.includes(key)) return true;
+    }
+  } catch {}
+  return false;
+}
+
+export function markJobApplicationAsAnswered(jobId: string, applicantUsername?: string): void {
+  if (!jobId) return;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.ANSWERED_JOB_APPLICATIONS);
+    const list: string[] = raw ? JSON.parse(raw) : [];
+    const keysToAdd = [jobId];
+    if (applicantUsername) {
+      keysToAdd.push(`${jobId}_${applicantUsername.toLowerCase().trim()}`);
+    }
+    let changed = false;
+    keysToAdd.forEach((k) => {
+      if (!list.includes(k)) {
+        list.push(k);
+        changed = true;
+      }
+    });
+    if (changed) {
+      localStorage.setItem(STORAGE_KEYS.ANSWERED_JOB_APPLICATIONS, JSON.stringify(list));
+    }
+  } catch {}
 }
 
 export function hasNotificationBeenAlerted(notifId: string): boolean {
@@ -346,12 +398,37 @@ export async function getOrFormatUserProfile(user: SupabaseUser): Promise<UserPr
         .maybeSingle();
 
       if (data && !error) {
-        const remoteWebsite = data.website || data.custom_fields?.website || defaultProfile.website;
-        const remotePinned = (Array.isArray(data.pinned_repos) && data.pinned_repos.length > 0)
-          ? data.pinned_repos
-          : (Array.isArray(data.custom_fields?.pinned_repos) && data.custom_fields.pinned_repos.length > 0)
-          ? data.custom_fields.pinned_repos
-          : defaultProfile.pinned_repos || [];
+        const localStored = loadStoredProfile();
+        const fallbackWebsite = (localStored?.id === user.id || localStored?.username === defaultProfile.username)
+          ? (localStored?.website || localStored?.custom_fields?.website)
+          : undefined;
+        const fallbackPinned = (localStored?.id === user.id || localStored?.username === defaultProfile.username)
+          ? ((localStored?.pinned_repos && localStored.pinned_repos.length > 0)
+              ? localStored.pinned_repos
+              : (localStored?.custom_fields?.pinned_repos && Array.isArray(localStored.custom_fields.pinned_repos))
+              ? localStored.custom_fields.pinned_repos
+              : [])
+          : [];
+
+        let remoteWebsite = data.website || data.custom_fields?.website || defaultProfile.website;
+        if (!remoteWebsite && fallbackWebsite) {
+          remoteWebsite = fallbackWebsite;
+        }
+
+        let rawDataPinned = data.pinned_repos;
+        if (typeof rawDataPinned === 'string') {
+          try { rawDataPinned = JSON.parse(rawDataPinned); } catch {}
+        }
+        let rawCfPinned = data.custom_fields?.pinned_repos;
+        if (typeof rawCfPinned === 'string') {
+          try { rawCfPinned = JSON.parse(rawCfPinned); } catch {}
+        }
+
+        const remotePinned = (Array.isArray(rawDataPinned) && rawDataPinned.length > 0)
+          ? rawDataPinned
+          : (Array.isArray(rawCfPinned) && rawCfPinned.length > 0)
+          ? rawCfPinned
+          : (fallbackPinned.length > 0 ? fallbackPinned : defaultProfile.pinned_repos || []);
 
         return {
           ...defaultProfile,
@@ -790,12 +867,37 @@ export async function resilientSupabaseUpsert(
   return { success: false, error: 'Supabase client and REST fallback failed' };
 }
 
+function extractMissingColumn(errMsg: string): string | null {
+  if (!errMsg) return null;
+  // PostgREST schema cache: Could not find the 'xyz' column of 'table' in the schema cache
+  const m1 = errMsg.match(/Could not find the '([^']+)' column/i);
+  if (m1 && m1[1]) return m1[1];
+
+  // PostgREST alternate: Could not find the column 'xyz'
+  const m2 = errMsg.match(/Could not find the column '([^']+)'/i);
+  if (m2 && m2[1]) return m2[1];
+
+  // Postgres relation column error: column "xyz" of relation "table" does not exist
+  const m3 = errMsg.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+of\s+relation/i);
+  if (m3 && m3[1]) return m3[1];
+
+  // Postgres column does not exist: column "xyz" does not exist
+  const m4 = errMsg.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+does not exist/i);
+  if (m4 && m4[1]) return m4[1];
+
+  // Table.column does not exist: column table.xyz does not exist
+  const m5 = errMsg.match(/column\s+[a-zA-Z0-9_]+\.([a-zA-Z0-9_]+)\s+does not exist/i);
+  if (m5 && m5[1]) return m5[1];
+
+  return null;
+}
+
 export async function resilientSupabaseUpdate(
   table: string,
   matchColumn: string,
   matchValue: any,
   updateData: Record<string, any>,
-  maxRetries = 4
+  maxRetries = 5
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   const client = getSupabaseClient();
   const config = getSupabaseConfig();
@@ -804,16 +906,20 @@ export async function resilientSupabaseUpdate(
   if (client) {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        const { data, error } = await client.from(table).update(currentUpdate).eq(matchColumn, matchValue);
+        const { data, error } = await client.from(table).update(currentUpdate).eq(matchColumn, matchValue).select();
         if (!error) {
+          // If no rows were updated, row might not exist in Supabase yet, attempt upsert
+          if (Array.isArray(data) && data.length === 0) {
+            const upsertPayload = { ...currentUpdate, [matchColumn]: matchValue };
+            await client.from(table).upsert(upsertPayload, { onConflict: matchColumn });
+          }
           return { success: true, data };
         }
 
         const errMsg = error.message || '';
-        const missingColMatch = errMsg.match(/Could not find the '([^']+)' column/i);
-        if (missingColMatch && missingColMatch[1] && currentUpdate.hasOwnProperty(missingColMatch[1])) {
-          const missingCol = missingColMatch[1];
-          console.warn(`[Supabase Auto-Recovery] Table '${table}' schema cache missing column '${missingCol}'. Stripping from update.`);
+        const missingCol = extractMissingColumn(errMsg);
+        if (missingCol && currentUpdate.hasOwnProperty(missingCol)) {
+          console.warn(`[Supabase Auto-Recovery] Table '${table}' missing column '${missingCol}'. Stripping from update.`);
           delete currentUpdate[missingCol];
           if (Object.keys(currentUpdate).length === 0) return { success: true };
           continue;
@@ -1633,8 +1739,9 @@ export async function createJobListing(listing: JobListing): Promise<void> {
 export async function deleteJobListing(jobId: string): Promise<void> {
   if (!jobId) return;
 
-  // 1. Mark as permanently deleted in local blacklist
+  // 1. Mark as permanently deleted in local blacklist & answered apps
   saveDeletedJobId(jobId);
+  markJobApplicationAsAnswered(jobId);
 
   // 2. Remove from local job listings cache
   const current = loadStoredJobListings();
@@ -1644,7 +1751,7 @@ export async function deleteJobListing(jobId: string): Promise<void> {
   // 3. Purge all related job application notifications locally
   const currentNotifs = loadStoredNotifications();
   const filteredNotifs = currentNotifs.filter(
-    (n) => !(n.type === 'job_application' && n.target_id === jobId)
+    (n) => !(n.type === 'job_application' && (n.target_id === jobId || isJobListingDeleted(n.target_id)))
   );
   saveStoredNotifications(filteredNotifs);
 
@@ -1669,6 +1776,8 @@ export async function deleteJobListing(jobId: string): Promise<void> {
       await client.from('job_applications').delete().eq('job_id', jobId);
       // Delete all related notifications from notifications table
       await client.from('notifications').delete().match({ type: 'job_application', target_id: jobId });
+      await client.from('notifications').delete().eq('target_id', jobId);
+      await client.from('notifications').delete().ilike('id', `notif_job_app_${jobId}_%`);
     } catch (err) {
       console.warn('Supabase job listing delete error:', err);
     }
@@ -1955,6 +2064,156 @@ export function saveStoredNotifications(notifications: NotificationItem[]): void
   } catch {}
 }
 
+export async function markNotificationAsReadInSupabase(notifId: string): Promise<void> {
+  if (!notifId) return;
+  const current = loadStoredNotifications();
+  let targetJobId: string | undefined;
+  let applicantUser: string | undefined;
+
+  const updated = current.map((n) => {
+    if (n.id === notifId) {
+      if (n.type === 'job_application') {
+        targetJobId = n.target_id;
+        applicantUser = n.actor?.username;
+      }
+      return { ...n, is_read: true };
+    }
+    return n;
+  });
+
+  saveStoredNotifications(updated);
+  if (targetJobId) {
+    markJobApplicationAsAnswered(targetJobId, applicantUser);
+  }
+
+  try {
+    window.dispatchEvent(new CustomEvent('c4e_notification_update', { detail: { filteredNotifs: updated } }));
+  } catch {}
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client.from('notifications').update({ is_read: true }).eq('id', notifId);
+    } catch (err) {
+      console.warn('Supabase markNotificationAsRead error:', err);
+    }
+  }
+}
+
+export async function markAllNotificationsAsReadInSupabase(username: string): Promise<void> {
+  const cleanUser = (username || '').toLowerCase().trim();
+  const current = loadStoredNotifications();
+  current.forEach((n) => {
+    if (n.type === 'job_application' && n.target_id) {
+      markJobApplicationAsAnswered(n.target_id, n.actor?.username);
+    }
+  });
+  const updated = current.map((n) => ({ ...n, is_read: true }));
+  saveStoredNotifications(updated);
+
+  try {
+    window.dispatchEvent(new CustomEvent('c4e_notification_update', { detail: { filteredNotifs: updated } }));
+  } catch {}
+
+  const client = getSupabaseClient();
+  if (client && cleanUser) {
+    try {
+      await client.from('notifications').update({ is_read: true }).ilike('recipient_id', cleanUser);
+    } catch (err) {
+      console.warn('Supabase markAllNotificationsAsRead error:', err);
+    }
+  }
+}
+
+export async function markJobApplicationAsAnsweredOrRead(jobId?: string, applicantUsername?: string): Promise<void> {
+  if (!jobId) return;
+  markJobApplicationAsAnswered(jobId, applicantUsername);
+
+  const current = loadStoredNotifications();
+  const cleanApplicant = (applicantUsername || '').toLowerCase().trim();
+  let hasChange = false;
+
+  const updated = current.map((n) => {
+    if (n.type === 'job_application' && n.target_id === jobId) {
+      if (!cleanApplicant || (n.actor?.username || '').toLowerCase().trim() === cleanApplicant) {
+        hasChange = true;
+        return { ...n, is_read: true };
+      }
+    }
+    return n;
+  });
+
+  if (hasChange) {
+    saveStoredNotifications(updated);
+    try {
+      window.dispatchEvent(new CustomEvent('c4e_notification_update', { detail: { filteredNotifs: updated } }));
+    } catch {}
+  }
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client.from('notifications').update({ is_read: true }).eq('type', 'job_application').eq('target_id', jobId);
+    } catch (err) {
+      console.warn('Supabase markJobApplicationAsAnsweredOrRead error:', err);
+    }
+  }
+}
+
+export async function markNotificationsFromUserAsRead(actorUsername: string): Promise<void> {
+  const cleanActor = (actorUsername || '').toLowerCase().trim();
+  if (!cleanActor) return;
+
+  const current = loadStoredNotifications();
+  let hasChange = false;
+
+  const updated = current.map((n) => {
+    const notifActor = (n.actor?.username || '').toLowerCase().trim();
+    if (notifActor === cleanActor && !n.is_read) {
+      hasChange = true;
+      if (n.type === 'job_application' && n.target_id) {
+        markJobApplicationAsAnswered(n.target_id, notifActor);
+      }
+      return { ...n, is_read: true };
+    }
+    return n;
+  });
+
+  if (hasChange) {
+    saveStoredNotifications(updated);
+    try {
+      window.dispatchEvent(new CustomEvent('c4e_notification_update', { detail: { filteredNotifs: updated } }));
+    } catch {}
+  }
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client
+        .from('notifications')
+        .update({ is_read: true })
+        .filter('actor->>username', 'ilike', cleanActor);
+    } catch {}
+  }
+}
+
+export async function clearAllNotificationsInSupabase(username: string): Promise<void> {
+  const cleanUser = (username || '').toLowerCase().trim();
+  saveStoredNotifications([]);
+  try {
+    window.dispatchEvent(new CustomEvent('c4e_notification_update', { detail: { filteredNotifs: [] } }));
+  } catch {}
+
+  const client = getSupabaseClient();
+  if (client && cleanUser) {
+    try {
+      await client.from('notifications').delete().ilike('recipient_id', cleanUser);
+    } catch (err) {
+      console.warn('Supabase clearAllNotifications error:', err);
+    }
+  }
+}
+
 export async function fetchNotificationsFromSupabase(currentUsername: string): Promise<NotificationItem[]> {
   const cleanUser = (currentUsername || '').toLowerCase().trim();
   const local = loadStoredNotifications();
@@ -1978,8 +2237,11 @@ export async function fetchNotificationsFromSupabase(currentUsername: string): P
       });
 
       data.forEach((item: any) => {
-        // Ignore notifications for deleted jobs
+        // Automatically purge and delete notifications for deleted jobs from Supabase
         if (item.type === 'job_application' && isJobListingDeleted(item.target_id)) {
+          if (client && item.id) {
+            Promise.resolve(client.from('notifications').delete().eq('id', item.id)).catch(() => {});
+          }
           return;
         }
 
@@ -1989,13 +2251,22 @@ export async function fetchNotificationsFromSupabase(currentUsername: string): P
             actor = JSON.parse(actor);
           } catch {}
         }
+
+        // Check if locally marked as read or if this application has been answered
+        const localItem = map.get(item.id);
+        const answered = item.type === 'job_application' && item.target_id
+          ? isJobApplicationAnsweredOrRead(item.target_id, actor?.username)
+          : false;
+
+        const isRead = Boolean(localItem ? (localItem.is_read || item.is_read || answered) : (item.is_read || answered));
+
         map.set(item.id, {
           id: item.id,
           recipient_id: item.recipient_id,
           type: item.type,
           actor: actor || { username: 'anonim', display_name: 'Biri' },
           content: item.content,
-          is_read: Boolean(item.is_read),
+          is_read: isRead,
           target_id: item.target_id,
           created_at: item.created_at || new Date().toISOString(),
           time_ago: 'Az önce'
@@ -2084,21 +2355,33 @@ export function subscribeToUserNotifications(
       return;
     }
 
+    const isAnswered = notif.type === 'job_application' && notif.target_id
+      ? isJobApplicationAnsweredOrRead(notif.target_id, notif.actor?.username)
+      : false;
+
+    if (isAnswered) {
+      notif.is_read = true;
+    }
+
     const current = loadStoredNotifications();
     const alreadyStored = current.some((n) => n.id === notif.id);
     const alreadyAlerted = hasNotificationBeenAlerted(notif.id) ||
       (notif.type === 'job_application' && notif.target_id && notif.actor?.username
-        ? hasJobApplicationBeenAlerted(notif.target_id, notif.actor.username)
+        ? (hasJobApplicationBeenAlerted(notif.target_id, notif.actor.username) || isAnswered)
         : false);
 
     if (!alreadyStored) {
       const updated = [notif, ...current];
       saveStoredNotifications(updated);
       onUpdate(updated);
+    } else {
+      const updated = current.map((n) => (n.id === notif.id ? { ...n, is_read: n.is_read || notif.is_read } : n));
+      saveStoredNotifications(updated);
+      onUpdate(updated);
     }
 
-    // STRICT ONE-TIME ALERT: Only trigger sound and native notification once per lifecycle
-    if (!alreadyAlerted) {
+    // STRICT ONE-TIME ALERT: Only trigger sound and native notification once per lifecycle, and never for read/answered
+    if (!alreadyAlerted && !notif.is_read) {
       markNotificationAsAlerted(notif.id);
       if (notif.type === 'job_application' && notif.target_id && notif.actor?.username) {
         markJobApplicationAsAlerted(notif.target_id, notif.actor.username);
@@ -2157,6 +2440,25 @@ export function subscribeToUserNotifications(
           }
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'notifications',
+          filter: `recipient_id=eq.${cleanUser}`
+        },
+        (payload) => {
+          if (payload.new) {
+            const current = loadStoredNotifications();
+            const updated = current.map((n) =>
+              n.id === payload.new.id ? { ...n, is_read: Boolean(payload.new.is_read) } : n
+            );
+            saveStoredNotifications(updated);
+            onUpdate(updated);
+          }
+        }
+      )
       .subscribe();
   }
 
@@ -2211,13 +2513,38 @@ export function saveStoredAllUsers(users: UserProfile[]): void {
 
 export function normalizeProfile(raw: any): UserProfile {
   if (!raw) return raw;
-  const cf = raw.custom_fields || {};
+  let cf: Record<string, any> = {};
+  if (typeof raw.custom_fields === 'string') {
+    try {
+      cf = JSON.parse(raw.custom_fields);
+    } catch {
+      cf = {};
+    }
+  } else if (typeof raw.custom_fields === 'object' && raw.custom_fields !== null) {
+    cf = { ...raw.custom_fields };
+  }
+
   const website = raw.website || cf.website || undefined;
-  const pinnedRepos = Array.isArray(raw.pinned_repos) && raw.pinned_repos.length > 0
-    ? raw.pinned_repos
-    : Array.isArray(cf.pinned_repos) && cf.pinned_repos.length > 0
-    ? cf.pinned_repos
-    : [];
+
+  let pinnedRepos: GitHubRepo[] = [];
+  if (Array.isArray(raw.pinned_repos) && raw.pinned_repos.length > 0) {
+    pinnedRepos = raw.pinned_repos;
+  } else if (typeof raw.pinned_repos === 'string') {
+    try {
+      const parsed = JSON.parse(raw.pinned_repos);
+      if (Array.isArray(parsed) && parsed.length > 0) pinnedRepos = parsed;
+    } catch {}
+  }
+  if (pinnedRepos.length === 0) {
+    if (Array.isArray(cf.pinned_repos) && cf.pinned_repos.length > 0) {
+      pinnedRepos = cf.pinned_repos;
+    } else if (typeof cf.pinned_repos === 'string') {
+      try {
+        const parsed = JSON.parse(cf.pinned_repos);
+        if (Array.isArray(parsed) && parsed.length > 0) pinnedRepos = parsed;
+      } catch {}
+    }
+  }
 
   let badges: BadgeItem[] = [];
   if (Array.isArray(raw.badges) && raw.badges.length > 0) {
@@ -2241,7 +2568,13 @@ export function normalizeProfile(raw: any): UserProfile {
   const isBanned = raw.isBanned !== undefined ? raw.isBanned : cf.isBanned;
   const banReason = raw.banReason || cf.banReason;
   const suspendedUntil = raw.suspendedUntil || cf.suspendedUntil;
-  const subscription = raw.subscription || cf.subscription;
+
+  let subscription = raw.subscription !== undefined ? raw.subscription : cf.subscription;
+  if (subscription && typeof subscription === 'object') {
+    if (subscription.isActive === false || (!subscription.planId && !subscription.planName)) {
+      subscription = { ...subscription, isActive: false };
+    }
+  }
 
   return {
     ...raw,
@@ -2329,9 +2662,22 @@ export const ALLOWED_PROFILE_COLUMNS = new Set([
 export async function updateUserProfileInSupabase(userId: string, updateData: Partial<UserProfile>): Promise<{ success: boolean; error?: string }> {
   const local = loadStoredProfile();
 
-  // Merge custom_fields so that website & pinned_repos are always stored inside custom_fields JSONB as fallback
-  const existingCustomFields = local?.custom_fields || {};
-  const updateCustomFields = updateData.custom_fields || {};
+  // Safely parse existing custom_fields
+  let existingCustomFields: Record<string, any> = {};
+  if (typeof local?.custom_fields === 'string') {
+    try { existingCustomFields = JSON.parse(local.custom_fields); } catch {}
+  } else if (typeof local?.custom_fields === 'object' && local?.custom_fields !== null) {
+    existingCustomFields = { ...local.custom_fields };
+  }
+
+  // Safely parse update custom_fields
+  let updateCustomFields: Record<string, any> = {};
+  if (typeof updateData.custom_fields === 'string') {
+    try { updateCustomFields = JSON.parse(updateData.custom_fields); } catch {}
+  } else if (typeof updateData.custom_fields === 'object' && updateData.custom_fields !== null) {
+    updateCustomFields = { ...updateData.custom_fields };
+  }
+
   const mergedCustomFields: Record<string, any> = {
     ...existingCustomFields,
     ...updateCustomFields
@@ -2371,8 +2717,12 @@ export async function updateUserProfileInSupabase(userId: string, updateData: Pa
   if (updateData.betaContact !== undefined) {
     mergedCustomFields.betaContact = updateData.betaContact;
   }
-  if (updateData.subscription !== undefined) {
-    mergedCustomFields.subscription = updateData.subscription;
+  if ('subscription' in updateData) {
+    if (!updateData.subscription) {
+      mergedCustomFields.subscription = { planId: '', planName: '', isActive: false, assignedAt: '', expiresAt: '' };
+    } else {
+      mergedCustomFields.subscription = updateData.subscription;
+    }
   }
   if (updateData.isBanned !== undefined) {
     mergedCustomFields.isBanned = updateData.isBanned;
@@ -2384,11 +2734,16 @@ export async function updateUserProfileInSupabase(userId: string, updateData: Pa
     mergedCustomFields.suspendedUntil = updateData.suspendedUntil;
   }
 
+  const resolvedSubscription = ('subscription' in updateData)
+    ? (updateData.subscription || { planId: '', planName: '', isActive: false, assignedAt: '', expiresAt: '' })
+    : (local?.subscription || mergedCustomFields.subscription);
+
   const updatedUser: UserProfile = {
     ...(local || {} as UserProfile),
     ...updateData,
     website: finalWebsite || undefined,
     pinned_repos: finalPinnedRepos,
+    subscription: resolvedSubscription,
     custom_fields: mergedCustomFields
   };
 
@@ -2406,6 +2761,9 @@ export async function updateUserProfileInSupabase(userId: string, updateData: Pa
       cachedUsers[idx] = {
         ...cachedUsers[idx],
         ...updateData,
+        website: finalWebsite || undefined,
+        pinned_repos: finalPinnedRepos,
+        subscription: resolvedSubscription,
         custom_fields: mergedCustomFields
       };
       saveStoredAllUsers(cachedUsers);
@@ -2535,7 +2893,7 @@ export const DEFAULT_SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     badgeId: 'c4e_admin',
     badgeLabel: 'Code4Ever Yetkilisi',
     badgeColor: '#a855f7',
-    badgeIcon: 'shield',
+    badgeIcon: 'check',
     isActive: true
   }
 ];
@@ -2571,7 +2929,7 @@ export const DEFAULT_BADGE_DEFINITIONS: BadgeDefinition[] = [
     label: 'Code4Ever Yetkilisi',
     description: 'Code4Ever yönetim ekibine verilen resmi yetkili unvan rozeti.',
     color: '#a855f7',
-    icon: 'shield',
+    icon: 'check',
     weight: 9,
     isDefault: true
   },

@@ -67,6 +67,7 @@ import {
   subscribeToGroupInvitesService,
   sendGroupInviteService,
   respondToGroupInviteService,
+  markNotificationsFromUserAsRead,
   getSupabaseClient
 } from '../services/supabaseClient';
 import { encryptE2EEMessage, decryptE2EEMessage, getOrCreateDeviceMasterToken } from '../utils/e2eeHelper';
@@ -120,6 +121,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
       setSelectedConversationId(convId);
       setSelectedTargetUser(initialTargetUser);
       setSelectedGroup(null);
+      markNotificationsFromUserAsRead(initialTargetUser.username);
     }
   }, [initialTargetUser, user?.username]);
 
@@ -457,6 +459,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     setSelectedTargetUser(targetUser);
     setSelectedGroup(null);
     setIsNewChatModalOpen(false);
+    markNotificationsFromUserAsRead(targetUser.username);
   };
 
   // Handle opening a group chat
@@ -594,6 +597,10 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     // Optimistic local state update
     setDecryptedTextMap((prev) => ({ ...prev, [messageId]: textToSend }));
     await sendMessageService(newMsg);
+
+    if (selectedTargetUser?.username) {
+      markNotificationsFromUserAsRead(selectedTargetUser.username);
+    }
 
     // Update group last message if applicable
     if (selectedGroup) {

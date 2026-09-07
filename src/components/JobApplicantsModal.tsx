@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { X, Users, User, Calendar, Code, FileText, CheckCircle2, MessageSquare } from 'lucide-react';
 import { JobListing, JobApplication, UserProfile } from '../types';
+import { markJobApplicationAsAnsweredOrRead } from '../services/supabaseClient';
 
 interface JobApplicantsModalProps {
   isOpen: boolean;
@@ -19,6 +20,12 @@ export const JobApplicantsModal: React.FC<JobApplicantsModalProps> = ({
   onSelectUser,
   onStartDirectChat
 }) => {
+  useEffect(() => {
+    if (isOpen && listing?.id) {
+      markJobApplicationAsAnsweredOrRead(listing.id);
+    }
+  }, [isOpen, listing?.id]);
+
   if (!isOpen || !listing) return null;
 
   const applications = listing.applications || [];
@@ -106,6 +113,7 @@ export const JobApplicantsModal: React.FC<JobApplicantsModalProps> = ({
                     <button
                       type="button"
                       onClick={() => {
+                        markJobApplicationAsAnsweredOrRead(listing.id, app.applicant_username);
                         onStartDirectChat({
                           id: app.applicant_user_id || `usr_${app.applicant_username}`,
                           username: app.applicant_username,

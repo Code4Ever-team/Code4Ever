@@ -72,7 +72,7 @@ export const getBadgeDetails = (
       description: badgeInput.description || 'Code4Ever yönetim ve topluluk moderasyon ekibine verilen resmi yetkili unvan rozeti.',
       weight: 9,
       color: badgeInput.color || '#a855f7',
-      icon: 'shield'
+      icon: 'check'
     };
   }
 
@@ -256,7 +256,7 @@ export const UserBadges: React.FC<UserBadgesProps> = ({
     if (!hasSubBadgeInList) {
       let subColor = '#f59e0b';
       let subBadgeLabel = subPlanNameClean;
-      let subIcon: 'code' | 'shield' | 'git' | 'star' | 'sparkles' = 'sparkles';
+      let subIcon: 'code' | 'shield' | 'check' | 'git' | 'star' | 'sparkles' = 'sparkles';
       let subDesc = `Code4Ever ${userSub.planName} desteği kapsamında kullanıcıya tanımlanan özel destekçi rozeti.`;
 
       if (subPlanNameClean.toLowerCase().includes('spark') || subPlanNameClean.toLowerCase().includes('destek')) {
@@ -275,7 +275,7 @@ export const UserBadges: React.FC<UserBadgesProps> = ({
       } else if (subPlanNameClean.toLowerCase().includes('enterprise')) {
         subBadgeLabel = 'Code4Ever Yetkilisi';
         subColor = '#a855f7'; // Purple
-        subIcon = 'shield';
+        subIcon = 'check';
       }
 
       normalizedList.push(getBadgeDetails({
@@ -317,7 +317,8 @@ export const UserBadges: React.FC<UserBadgesProps> = ({
       return <Code className={`${sizeClass} flex-shrink-0`} style={{ color: badge.color }} />;
     }
     if (badge.icon === 'shield') {
-      return <Shield className={`${sizeClass} flex-shrink-0`} style={{ color: badge.color }} />;
+      // Shield icon completely removed per user request: replace with clean verified checkmark
+      return <CheckCircle2 className={`${sizeClass} flex-shrink-0 fill-current/20`} style={{ color: badge.color }} />;
     }
     if (badge.icon === 'check') {
       return <CheckCircle2 className={`${sizeClass} flex-shrink-0 fill-current/20`} style={{ color: badge.color }} />;

@@ -35,6 +35,10 @@ export const ShowcaseReposModal: React.FC<ShowcaseReposModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
+    setSelectedList(pinnedRepos || []);
+  }, [pinnedRepos]);
+
+  useEffect(() => {
     if (!user.username) return;
     const fetchRepos = async () => {
       setLoadingRepos(true);

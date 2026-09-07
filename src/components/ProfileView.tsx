@@ -72,8 +72,27 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onSelectUser,
   onStartDirectChat
 }) => {
+  const getInitialFormData = (u: UserProfile): UserProfile => {
+    const web = u.website || u.custom_fields?.website || '';
+    const pinned = (u.pinned_repos && u.pinned_repos.length > 0)
+      ? u.pinned_repos
+      : (u.custom_fields?.pinned_repos && Array.isArray(u.custom_fields.pinned_repos))
+      ? u.custom_fields.pinned_repos
+      : [];
+    return {
+      ...u,
+      website: web,
+      pinned_repos: pinned,
+      custom_fields: {
+        ...(u.custom_fields || {}),
+        website: web,
+        pinned_repos: pinned
+      }
+    };
+  };
+
   const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState<UserProfile>(user);
+  const [formData, setFormData] = useState<UserProfile>(() => getInitialFormData(user));
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [profileTab, setProfileTab] = useState<'posts' | 'reposts' | 'likes' | 'media' | 'communities'>('posts');
@@ -85,7 +104,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [postToDelete, setPostToDelete] = useState<Post | null>(null);
 
   useEffect(() => {
-    setFormData(user);
+    setFormData(getInitialFormData(user));
   }, [user]);
 
   const activeUser = currentUser || user;
@@ -199,9 +218,20 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       return;
     }
 
-    const rawWebsite = (formData.website || '').trim();
-    const sanitizedWeb = rawWebsite ? sanitizeUrl(rawWebsite) : '';
-    const finalPinned = formData.pinned_repos !== undefined ? formData.pinned_repos : (user.pinned_repos || []);
+    const rawWebsite = (formData.website || formData.custom_fields?.website || '').trim();
+    let sanitizedWeb = '';
+    if (rawWebsite) {
+      const withProto = /^https?:\/\//i.test(rawWebsite) ? rawWebsite : `https://${rawWebsite}`;
+      sanitizedWeb = sanitizeUrl(withProto) || '';
+    }
+
+    const finalPinned = (formData.pinned_repos && formData.pinned_repos.length > 0)
+      ? formData.pinned_repos
+      : (user.pinned_repos && user.pinned_repos.length > 0)
+      ? user.pinned_repos
+      : (user.custom_fields?.pinned_repos && Array.isArray(user.custom_fields.pinned_repos))
+      ? user.custom_fields.pinned_repos
+      : [];
 
     // Sanitize user-provided text & URLs, and safeguard protected role & badges
     const updatedProfile: UserProfile = {
@@ -1026,8 +1056,12 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
                   <Globe className="w-3.5 h-3.5 absolute left-3 top-2.5 text-zinc-500" />
                   <input
                     type="text"
-                    value={formData.website || ''}
-                    onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                    value={formData.website || formData.custom_fields?.website || ''}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      website: e.target.value,
+                      custom_fields: { ...(formData.custom_fields || {}), website: e.target.value }
+                    })}
                     placeholder="https://myportfolio.dev"
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-8 pr-3 py-1.5 text-white font-mono focus:outline-none focus:border-zinc-500 text-xs"
                   />
@@ -1062,7 +1096,13 @@ const profileUrl = `app.lanux.online/@${formData.username || 'user'}`;
         <ShowcaseReposModal
           isOpen={isShowcaseModalOpen}
           user={user}
-          pinnedRepos={user.pinned_repos || []}
+          pinnedRepos={
+            (user.pinned_repos && user.pinned_repos.length > 0)
+              ? user.pinned_repos
+              : (user.custom_fields?.pinned_repos && Array.isArray(user.custom_fields.pinned_repos) && user.custom_fields.pinned_repos.length > 0)
+              ? user.custom_fields.pinned_repos
+              : (formData.pinned_repos || [])
+          }
           language={language}
           onClose={() => setIsShowcaseModalOpen(false)}
           onSavePinnedRepos={(repos) => {

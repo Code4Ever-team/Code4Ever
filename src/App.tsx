@@ -61,7 +61,12 @@ import {
   loadStoredNotifications,
   saveStoredNotifications,
   subscribeToUserNotifications,
-  fetchNotificationsFromSupabase
+  fetchNotificationsFromSupabase,
+  markNotificationAsReadInSupabase,
+  markAllNotificationsAsReadInSupabase,
+  markJobApplicationAsAnsweredOrRead,
+  markNotificationsFromUserAsRead,
+  clearAllNotificationsInSupabase
 } from './services/supabaseClient';
 import { decryptE2EEMessage } from './utils/e2eeHelper';
 import {
@@ -424,21 +429,39 @@ export default function App() {
     });
   };
 
-  const handleMarkAllNotificationsAsRead = () => {
+  const handleMarkNotificationAsRead = async (notifId: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notifId ? { ...n, is_read: true } : n))
+    );
+    await markNotificationAsReadInSupabase(notifId);
+  };
+
+  const handleMarkAllNotificationsAsRead = async () => {
     const updated = notifications.map((n) => ({ ...n, is_read: true }));
     setNotifications(updated);
-    saveStoredNotifications(updated);
+    await markAllNotificationsAsReadInSupabase(user.username);
   };
 
-  const handleClearNotifications = () => {
+  const handleClearNotifications = async () => {
     setNotifications([]);
-    saveStoredNotifications([]);
+    await clearAllNotificationsInSupabase(user.username);
   };
 
-  const handleStartDirectChat = (targetUser: UserProfile) => {
+  const handleStartDirectChat = async (targetUser: UserProfile) => {
     setDirectChatTargetUser(targetUser);
     setActiveTab('messages');
     setSelectedModalUsername(null);
+
+    if (targetUser?.username) {
+      setNotifications((prev) =>
+        prev.map((n) =>
+          (n.actor?.username || '').toLowerCase() === (targetUser.username || '').toLowerCase()
+            ? { ...n, is_read: true }
+            : n
+        )
+      );
+      await markNotificationsFromUserAsRead(targetUser.username);
+    }
   };
 
   const handleUpdateProfile = (updated: Partial<UserProfile> | UserProfile) => {
@@ -1159,6 +1182,7 @@ export default function App() {
               language={language}
               onMarkAllAsRead={handleMarkAllNotificationsAsRead}
               onClearNotifications={handleClearNotifications}
+              onMarkAsRead={handleMarkNotificationAsRead}
               onSelectTab={(tab) => setActiveTab(tab)}
             />
           )}

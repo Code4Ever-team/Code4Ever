@@ -48,8 +48,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onLogout,
   onOpenInstallPWA
 }) => {
+  const getInitialFormData = (u: UserProfile): UserProfile => {
+    const web = u.website || u.custom_fields?.website || '';
+    const pinned = (u.pinned_repos && u.pinned_repos.length > 0)
+      ? u.pinned_repos
+      : (u.custom_fields?.pinned_repos && Array.isArray(u.custom_fields.pinned_repos))
+      ? u.custom_fields.pinned_repos
+      : [];
+    return {
+      ...u,
+      website: web,
+      pinned_repos: pinned,
+      custom_fields: {
+        ...(u.custom_fields || {}),
+        website: web,
+        pinned_repos: pinned
+      }
+    };
+  };
+
   const [activeSection, setActiveSection] = useState<SettingsSection>('overview');
-  const [formData, setFormData] = useState<UserProfile>(user);
+  const [formData, setFormData] = useState<UserProfile>(() => getInitialFormData(user));
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>('default');
@@ -57,7 +76,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   useEffect(() => {
     setIsStandalone(isPWARunningStandalone());
     setNotifPermission(getNotificationPermission());
-    setFormData(user);
+    setFormData(getInitialFormData(user));
   }, [user]);
 
   const handleRequestNotif = async () => {
@@ -124,20 +143,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         .toLowerCase()
         .replace(/[^a-z0-9_]/g, '') || user.username;
 
-    const rawWebsite = (formData.website || '').trim();
-    const sanitizedWeb = rawWebsite ? sanitizeUrl(rawWebsite) : '';
+    const rawWebsite = (formData.website || formData.custom_fields?.website || '').trim();
+    let sanitizedWeb = '';
+    if (rawWebsite) {
+      const withProto = /^https?:\/\//i.test(rawWebsite) ? rawWebsite : `https://${rawWebsite}`;
+      sanitizedWeb = sanitizeUrl(withProto) || '';
+    }
+
+    const effectivePinned = (formData.pinned_repos && formData.pinned_repos.length > 0)
+      ? formData.pinned_repos
+      : (user.pinned_repos && user.pinned_repos.length > 0)
+      ? user.pinned_repos
+      : (user.custom_fields?.pinned_repos && Array.isArray(user.custom_fields.pinned_repos))
+      ? user.custom_fields.pinned_repos
+      : [];
 
     const updatedProfile: UserProfile = {
       ...user,
       ...formData,
       username: cleanUsername,
       website: sanitizedWeb || undefined,
-      pinned_repos: user.pinned_repos || [],
+      pinned_repos: effectivePinned,
       custom_fields: {
         ...(user.custom_fields || {}),
         ...(formData.custom_fields || {}),
         website: sanitizedWeb,
-        pinned_repos: user.pinned_repos || []
+        pinned_repos: effectivePinned
       }
     };
 
@@ -473,8 +504,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <Globe className="w-3.5 h-3.5 absolute left-3 top-3 text-zinc-500" />
                   <input
                     type="text"
-                    value={formData.website || ''}
-                    onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                    value={formData.website || formData.custom_fields?.website || ''}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      website: e.target.value,
+                      custom_fields: { ...(formData.custom_fields || {}), website: e.target.value }
+                    })}
                     placeholder="https://myportfolio.dev"
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-9 pr-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-zinc-500"
                   />

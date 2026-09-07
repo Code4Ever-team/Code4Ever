@@ -539,9 +539,49 @@ export const AdminView: React.FC<AdminViewProps> = ({
     showNotification(`@${targetUser.username} kullanıcısına ${targetPlan.name} aboneliği ve rozeti tanımlandı!`);
   };
 
-  const handleCancelSubscription = (user: UserProfile) => {
-    onUpdateUser(user.id, { subscription: undefined });
-    showNotification(`@${user.username} aboneliği iptal edildi.`);
+  const handleCancelSubscription = (targetUser: UserProfile) => {
+    const existingBadges = targetUser.badges || [];
+    const updatedBadges = existingBadges.filter(
+      (b) => !b.id.startsWith('sub_') && b.id !== 'spark' && b.id !== 'c4e_spark' && !(b.label || '').toLowerCase().includes('spark')
+    );
+
+    const isCurrentRoleSpark = (targetUser.role || '').toLowerCase() === 'spark';
+    const newRole = isCurrentRoleSpark ? 'Developer' : targetUser.role;
+
+    const cancelledSub = {
+      planId: '',
+      planName: '',
+      isActive: false,
+      assignedAt: '',
+      expiresAt: ''
+    };
+
+    onUpdateUser(targetUser.id, {
+      role: newRole,
+      subscription: cancelledSub,
+      badges: updatedBadges,
+      custom_fields: {
+        ...(targetUser.custom_fields || {}),
+        subscription: cancelledSub,
+        badges: updatedBadges
+      }
+    });
+
+    if (selectedUserForBadges?.id === targetUser.id) {
+      setSelectedUserForBadges({
+        ...selectedUserForBadges,
+        role: newRole,
+        subscription: cancelledSub,
+        badges: updatedBadges,
+        custom_fields: {
+          ...(selectedUserForBadges.custom_fields || {}),
+          subscription: cancelledSub,
+          badges: updatedBadges
+        }
+      });
+    }
+
+    showNotification(`@${targetUser.username} kullanıcısının aboneliği başarıyla iptal edildi.`);
   };
 
   // Spark / Supporter Role and Badge Removal
@@ -554,10 +594,23 @@ export const AdminView: React.FC<AdminViewProps> = ({
     const isCurrentRoleSpark = (user.role || '').toLowerCase() === 'spark';
     const newRole = isCurrentRoleSpark ? 'Developer' : user.role;
 
+    const cancelledSub = user.subscription?.planId === 'spark' ? {
+      planId: '',
+      planName: '',
+      isActive: false,
+      assignedAt: '',
+      expiresAt: ''
+    } : user.subscription;
+
     onUpdateUser(user.id, {
       role: newRole,
       badges: updatedBadges,
-      subscription: user.subscription?.planId === 'spark' ? undefined : user.subscription
+      subscription: cancelledSub,
+      custom_fields: {
+        ...(user.custom_fields || {}),
+        subscription: cancelledSub,
+        badges: updatedBadges
+      }
     });
 
     if (selectedUserForBadges?.id === user.id) {
@@ -565,7 +618,12 @@ export const AdminView: React.FC<AdminViewProps> = ({
         ...selectedUserForBadges,
         role: newRole,
         badges: updatedBadges,
-        subscription: user.subscription?.planId === 'spark' ? undefined : user.subscription
+        subscription: cancelledSub,
+        custom_fields: {
+          ...(selectedUserForBadges.custom_fields || {}),
+          subscription: cancelledSub,
+          badges: updatedBadges
+        }
       });
     }
 
@@ -1188,7 +1246,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                         selectedUserForBadges,
                         'Code4Ever Yetkilisi',
                         '#a855f7',
-                        'shield',
+                        'check',
                         'c4e_admin'
                       )
                     }
@@ -1201,7 +1259,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                     }`}
                   >
                     <div className="flex items-center gap-2">
-                      <Shield className="w-4 h-4 text-purple-400" />
+                      <CheckCircle2 className="w-4 h-4 text-purple-400" />
                       <span className="text-xs font-bold">C4E Yetkili</span>
                     </div>
                     <span className="text-[10px] font-mono font-bold">
@@ -1409,6 +1467,49 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Destekçi Rolünü Sil</span>
+                  </button>
+                </div>
+              )}
+
+              {/* General Subscription Management & Cancellation Box */}
+              {(selectedUserForBadges.subscription?.isActive ||
+                selectedUserForBadges.subscription?.planName ||
+                (selectedUserForBadges.subscription?.planId && selectedUserForBadges.subscription.planId !== '') ||
+                (selectedUserForBadges.role || '').toLowerCase() === 'spark' ||
+                selectedUserForBadges.badges?.some((b) => b.id.startsWith('sub_') || b.id === 'spark')) && (
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-950/40 via-blue-950/20 to-zinc-950 border border-purple-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 animate-in fade-in">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2.5 rounded-xl bg-purple-500/20 text-purple-400">
+                      <CreditCard className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-white">
+                          Abonelik: {selectedUserForBadges.subscription?.planName || (selectedUserForBadges.role === 'spark' ? 'Spark Destekçi' : 'Özel Plan')}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                          selectedUserForBadges.subscription?.isActive !== false
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            : 'bg-zinc-800 text-zinc-400'
+                        }`}>
+                          {selectedUserForBadges.subscription?.isActive !== false ? 'AKTİF' : 'İPTAL / PASİF'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        {selectedUserForBadges.subscription?.expiresAt
+                          ? `Bitiş Tarihi: ${new Date(selectedUserForBadges.subscription.expiresAt).toLocaleDateString()}`
+                          : 'Süresiz veya aktif abonelik'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCancelSubscription(selectedUserForBadges)}
+                    className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs transition-all flex items-center gap-1.5 shadow-md shadow-red-950/40 cursor-pointer self-stretch md:self-auto justify-center active:scale-95"
+                  >
+                    <XCircle className="w-3.5 h-3.5" />
+                    <span>Aboneliği İptal Et</span>
                   </button>
                 </div>
               )}
@@ -1682,22 +1783,21 @@ export const AdminView: React.FC<AdminViewProps> = ({
                           {isSpark && (
                             <button
                               onClick={() => handleRemoveSupporterRole(supporter)}
-                              className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500 text-red-300 hover:text-white font-bold text-[11px] border border-red-500/30 transition-all flex items-center gap-1"
+                              className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500 text-red-300 hover:text-white font-bold text-[11px] border border-red-500/30 transition-all flex items-center gap-1 cursor-pointer"
                               title="Spark rolü ve rozetini sil"
                             >
                               <Trash2 className="w-3 h-3" />
                               <span>Destekçi Rolünü Sil</span>
                             </button>
                           )}
-                          {supporter.subscription?.isActive && supporter.subscription?.planId !== 'spark' && (
-                            <button
-                              onClick={() => handleCancelSubscription(supporter)}
-                              className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-[11px] border border-zinc-700 transition-all flex items-center gap-1"
-                            >
-                              <XCircle className="w-3 h-3 text-zinc-400" />
-                              <span>Aboneliği İptal Et</span>
-                            </button>
-                          )}
+                          <button
+                            onClick={() => handleCancelSubscription(supporter)}
+                            className="px-3 py-1.5 rounded-xl bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white font-bold text-[11px] border border-red-500/30 transition-all flex items-center gap-1 cursor-pointer shadow-sm active:scale-95"
+                            title="Aboneliği sonlandır ve rozetleri kaldır"
+                          >
+                            <XCircle className="w-3 h-3" />
+                            <span>Aboneliği İptal Et</span>
+                          </button>
                         </div>
                       </div>
                     );

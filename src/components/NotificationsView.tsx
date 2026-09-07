@@ -29,6 +29,7 @@ interface NotificationsViewProps {
   language: 'tr' | 'en';
   onMarkAllAsRead: () => void;
   onClearNotifications: () => void;
+  onMarkAsRead?: (id: string) => void;
   onSelectTab?: (tab: string) => void;
 }
 
@@ -37,6 +38,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
   language,
   onMarkAllAsRead,
   onClearNotifications,
+  onMarkAsRead,
   onSelectTab
 }) => {
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
@@ -201,6 +203,9 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
               <div
                 key={item.id}
                 onClick={() => {
+                  if (!item.is_read && onMarkAsRead) {
+                    onMarkAsRead(item.id);
+                  }
                   if ((item.type === 'message' || item.type === 'group_invite') && onSelectTab) {
                     onSelectTab('messages');
                   } else if (item.type === 'job_application' && onSelectTab) {
@@ -244,9 +249,19 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
                   </span>
                 </div>
 
-                {!item.is_read && (
-                  <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0 mt-2 ring-2 ring-blue-500/30 animate-pulse" />
-                )}
+                {!item.is_read ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMarkAsRead?.(item.id);
+                    }}
+                    title={language === 'tr' ? 'Okundu işaretle' : 'Mark as read'}
+                    className="flex-shrink-0 mt-2 p-1 rounded-full hover:bg-blue-500/20 transition-colors"
+                  >
+                    <div className="w-2.5 h-2.5 rounded-full bg-blue-500 ring-2 ring-blue-500/30 animate-pulse" />
+                  </button>
+                ) : null}
               </div>
             );
           })
