@@ -21,7 +21,8 @@ import {
   SystemErrorReport,
   PostReport,
   PostCategory,
-  INITIAL_CATEGORIES
+  INITIAL_CATEGORIES,
+  UserSubscriptionInfo
 } from '../types';
 import { sanitizeText, sanitizeUrl } from '../utils/securityHelper';
 import { encryptE2EEMessage } from '../utils/e2eeHelper';
@@ -53,7 +54,8 @@ export const STORAGE_KEYS = {
   SYSTEM_ERROR_REPORTS: 'c4e_system_error_reports',
   POST_REPORTS: 'c4e_post_reports',
   CUSTOM_CATEGORIES: 'c4e_custom_categories',
-  ANSWERED_JOB_APPLICATIONS: 'c4e_answered_job_apps'
+  ANSWERED_JOB_APPLICATIONS: 'c4e_answered_job_apps',
+  DONATIONS: 'c4e_bynogame_donations'
 };
 
 export function loadDeletedJobIds(): string[] {
@@ -430,7 +432,7 @@ export async function getOrFormatUserProfile(user: SupabaseUser): Promise<UserPr
           ? rawCfPinned
           : (fallbackPinned.length > 0 ? fallbackPinned : defaultProfile.pinned_repos || []);
 
-        return {
+        const mergedProfile = normalizeProfile({
           ...defaultProfile,
           ...data,
           website: remoteWebsite,
@@ -442,7 +444,19 @@ export async function getOrFormatUserProfile(user: SupabaseUser): Promise<UserPr
             pinned_repos: remotePinned
           },
           id: user.id
-        };
+        });
+
+        // Ensure badges are preserved from local stored profile if remote had none
+        if ((!mergedProfile.badges || mergedProfile.badges.length === 0) && localStored && (localStored.id === user.id || localStored.username === defaultProfile.username)) {
+          if (Array.isArray(localStored.badges) && localStored.badges.length > 0) {
+            mergedProfile.badges = localStored.badges;
+            if (mergedProfile.custom_fields) {
+              mergedProfile.custom_fields.badges = localStored.badges;
+            }
+          }
+        }
+
+        return mergedProfile;
       } else {
         // Insert initial profile to Supabase PostgreSQL
         await client.from('profiles').upsert({
@@ -2563,6 +2577,30 @@ export function normalizeProfile(raw: any): UserProfile {
     } catch {}
   }
 
+  // Fallback: Check local stored cache so real-time sync never inadvertently wipes out badges
+  if (badges.length === 0 && (raw.id || raw.username)) {
+    try {
+      const localProfile = loadStoredProfile();
+      if (
+        localProfile &&
+        (localProfile.id === raw.id ||
+          (localProfile.username &&
+            raw.username &&
+            localProfile.username.toLowerCase() === raw.username.toLowerCase()))
+      ) {
+        if (Array.isArray(localProfile.badges) && localProfile.badges.length > 0) {
+          badges = localProfile.badges;
+        } else if (
+          localProfile.custom_fields?.badges &&
+          Array.isArray(localProfile.custom_fields.badges) &&
+          localProfile.custom_fields.badges.length > 0
+        ) {
+          badges = localProfile.custom_fields.badges;
+        }
+      }
+    } catch {}
+  }
+
   const betaStatus = raw.betaStatus || cf.betaStatus;
   const betaContact = raw.betaContact || cf.betaContact;
   const isBanned = raw.isBanned !== undefined ? raw.isBanned : cf.isBanned;
@@ -2573,6 +2611,65 @@ export function normalizeProfile(raw: any): UserProfile {
   if (subscription && typeof subscription === 'object') {
     if (subscription.isActive === false || (!subscription.planId && !subscription.planName)) {
       subscription = { ...subscription, isActive: false };
+    }
+  }
+
+  // Resilient protection for essential role-based and status badges
+  const roleLower = (raw.role || '').toLowerCase();
+  const isSparkSupporter =
+    roleLower === 'spark' ||
+    roleLower.includes('spark') ||
+    subscription?.planId === 'spark' ||
+    (subscription?.planName || '').toLowerCase().includes('spark');
+
+  if (isSparkSupporter) {
+    const hasSparkBadge = badges.some(
+      (b) => b.id === 'spark' || b.id === 'c4e_spark' || (b.label || '').toLowerCase().includes('spark')
+    );
+    if (!hasSparkBadge) {
+      badges.push({
+        id: 'spark',
+        label: 'Spark Destekçi',
+        color: '#f59e0b',
+        icon: 'sparkles',
+        description:
+          'Code4Ever Bağışçısı özel Spark Destekçi rozetidir. 250MB tek seferde dosya yükleme ayrıcalığı ve altın parıltı tanır.'
+      });
+    }
+  }
+
+  if (betaStatus === 'approved') {
+    const hasBeta = badges.some(
+      (b) =>
+        b.id === 'beta_home' ||
+        b.id === 'beta' ||
+        b.icon === 'home' ||
+        (b.label || '').toLowerCase().includes('beta')
+    );
+    if (!hasBeta) {
+      badges.push({
+        id: 'beta_home',
+        label: 'Kapalı Beta Katılımcısı',
+        color: '#10b981',
+        icon: 'home',
+        description:
+          'Code4Ever platformunun ilk kapalı beta test sürecine katılarak platformun gelişimine öncülük eden ayrıcalıklı geliştirici.'
+      });
+    }
+  }
+
+  if (raw.verified) {
+    const hasVerified = badges.some(
+      (b) => (b.label || '').toLowerCase().includes('doğrulanmış') || (b.id || '').toLowerCase().includes('verified')
+    );
+    if (!hasVerified) {
+      badges.push({
+        id: 'verified_dev',
+        label: 'Doğrulanmış Geliştirici',
+        color: '#06b6d4',
+        icon: 'check',
+        description: 'Code4Ever tarafından kimliği ve geliştirici yetkinliği doğrulanmış resmi hesap rozetidir.'
+      });
     }
   }
 
@@ -2661,13 +2758,29 @@ export const ALLOWED_PROFILE_COLUMNS = new Set([
 
 export async function updateUserProfileInSupabase(userId: string, updateData: Partial<UserProfile>): Promise<{ success: boolean; error?: string }> {
   const local = loadStoredProfile();
+  const cachedUsers = loadStoredAllUsers();
+  const targetUser =
+    local &&
+    (local.id === userId ||
+      (local.username &&
+        updateData.username &&
+        local.username.toLowerCase() === updateData.username.toLowerCase()))
+      ? local
+      : cachedUsers.find(
+          (u) =>
+            u.id === userId ||
+            (u.username &&
+              updateData.username &&
+              u.username.toLowerCase() === updateData.username.toLowerCase())
+        );
 
-  // Safely parse existing custom_fields
+  // Safely parse existing custom_fields from targetUser or local
   let existingCustomFields: Record<string, any> = {};
-  if (typeof local?.custom_fields === 'string') {
-    try { existingCustomFields = JSON.parse(local.custom_fields); } catch {}
-  } else if (typeof local?.custom_fields === 'object' && local?.custom_fields !== null) {
-    existingCustomFields = { ...local.custom_fields };
+  const cfSource = targetUser?.custom_fields || (local?.id === userId ? local?.custom_fields : {});
+  if (typeof cfSource === 'string') {
+    try { existingCustomFields = JSON.parse(cfSource); } catch {}
+  } else if (typeof cfSource === 'object' && cfSource !== null) {
+    existingCustomFields = { ...cfSource };
   }
 
   // Safely parse update custom_fields
@@ -2685,11 +2798,11 @@ export async function updateUserProfileInSupabase(userId: string, updateData: Pa
 
   const finalWebsite = updateData.website !== undefined 
     ? updateData.website 
-    : (updateCustomFields.website !== undefined ? updateCustomFields.website : existingCustomFields.website);
+    : (updateCustomFields.website !== undefined ? updateCustomFields.website : (existingCustomFields.website || targetUser?.website || local?.website));
 
   const rawFinalPinned = updateData.pinned_repos !== undefined
     ? updateData.pinned_repos
-    : (updateCustomFields.pinned_repos !== undefined ? updateCustomFields.pinned_repos : (existingCustomFields.pinned_repos || local?.pinned_repos || []));
+    : (updateCustomFields.pinned_repos !== undefined ? updateCustomFields.pinned_repos : (existingCustomFields.pinned_repos || targetUser?.pinned_repos || local?.pinned_repos || []));
 
   let finalPinnedRepos: GitHubRepo[] = [];
   if (Array.isArray(rawFinalPinned)) {
@@ -2708,9 +2821,19 @@ export async function updateUserProfileInSupabase(userId: string, updateData: Pa
   }
   mergedCustomFields.pinned_repos = finalPinnedRepos;
 
-  if (updateData.badges !== undefined) {
-    mergedCustomFields.badges = updateData.badges;
-  }
+  // Resilient Badge Preservation
+  const finalBadges: BadgeItem[] = Array.isArray(updateData.badges)
+    ? updateData.badges
+    : (Array.isArray(targetUser?.badges) && targetUser.badges.length > 0)
+    ? targetUser.badges
+    : (Array.isArray(existingCustomFields.badges) && existingCustomFields.badges.length > 0)
+    ? existingCustomFields.badges
+    : (local && (local.id === userId || !userId) && Array.isArray(local.badges) && local.badges.length > 0)
+    ? local.badges
+    : [];
+
+  mergedCustomFields.badges = finalBadges;
+
   if (updateData.betaStatus !== undefined) {
     mergedCustomFields.betaStatus = updateData.betaStatus;
   }
@@ -2736,11 +2859,12 @@ export async function updateUserProfileInSupabase(userId: string, updateData: Pa
 
   const resolvedSubscription = ('subscription' in updateData)
     ? (updateData.subscription || { planId: '', planName: '', isActive: false, assignedAt: '', expiresAt: '' })
-    : (local?.subscription || mergedCustomFields.subscription);
+    : (targetUser?.subscription || local?.subscription || mergedCustomFields.subscription);
 
   const updatedUser: UserProfile = {
-    ...(local || {} as UserProfile),
+    ...(targetUser || local || {} as UserProfile),
     ...updateData,
+    badges: finalBadges,
     website: finalWebsite || undefined,
     pinned_repos: finalPinnedRepos,
     subscription: resolvedSubscription,
@@ -2753,7 +2877,6 @@ export async function updateUserProfileInSupabase(userId: string, updateData: Pa
 
   // Also update cached allUsers so other views reflect the update immediately
   try {
-    const cachedUsers = loadStoredAllUsers();
     const idx = cachedUsers.findIndex(
       (u) => u.id === userId || (u.username && updateData.username && u.username.toLowerCase() === updateData.username.toLowerCase())
     );
@@ -2761,6 +2884,7 @@ export async function updateUserProfileInSupabase(userId: string, updateData: Pa
       cachedUsers[idx] = {
         ...cachedUsers[idx],
         ...updateData,
+        badges: finalBadges,
         website: finalWebsite || undefined,
         pinned_repos: finalPinnedRepos,
         subscription: resolvedSubscription,
@@ -2771,6 +2895,7 @@ export async function updateUserProfileInSupabase(userId: string, updateData: Pa
       cachedUsers.push({
         ...updatedUser,
         id: userId,
+        badges: finalBadges,
         custom_fields: mergedCustomFields
       });
       saveStoredAllUsers(cachedUsers);
@@ -4678,6 +4803,274 @@ export async function deletePostReportInSupabase(reportId: string): Promise<void
       }).catch(() => {});
     } catch {}
   }
+}
+
+// -------------------------------------------------------------
+// BYNOGAME DONATION & SPARK SUPPORTER MANAGEMENT
+// -------------------------------------------------------------
+
+export interface ByNoGameDonationClaim {
+  id: string;
+  username: string;
+  amount: string;
+  currency?: string;
+  message?: string;
+  reference_code?: string;
+  status: 'pending' | 'verified' | 'rejected';
+  created_at: string;
+  verified_at?: string;
+  verified_by?: string;
+}
+
+export function loadStoredDonations(): ByNoGameDonationClaim[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.DONATIONS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+export function saveStoredDonations(donations: ByNoGameDonationClaim[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.DONATIONS, JSON.stringify(donations));
+  } catch {}
+}
+
+export async function submitDonationClaim(claimData: {
+  username: string;
+  amount: string;
+  currency?: string;
+  message?: string;
+  reference_code?: string;
+}): Promise<{ success: boolean; claim: ByNoGameDonationClaim; message: string }> {
+  const cleanUsername = (claimData.username || '').replace(/^@/, '').trim();
+  const current = loadStoredDonations();
+
+  const newClaim: ByNoGameDonationClaim = {
+    id: 'bng_claim_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+    username: cleanUsername,
+    amount: claimData.amount || 'Destek',
+    currency: claimData.currency || 'TL',
+    message: claimData.message || '',
+    reference_code: (claimData.reference_code || '').trim(),
+    status: 'pending',
+    created_at: new Date().toISOString()
+  };
+
+  current.unshift(newClaim);
+  saveStoredDonations(current);
+
+  // Dispatch broadcast event for realtime UI sync
+  try {
+    window.dispatchEvent(new CustomEvent('c4e_donation_claim_broadcast', { detail: newClaim }));
+  } catch {}
+
+  // Also notify server endpoint if running
+  try {
+    fetch('/api/bynogame/claim-donation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newClaim)
+    }).catch(() => {});
+  } catch {}
+
+  return {
+    success: true,
+    claim: newClaim,
+    message: 'Bağış bildiriminiz başarıyla iletildi! İncelendikten sonra Spark Destekçi rozetiniz profilinize tanımlanacaktır.'
+  };
+}
+
+export async function grantSparkPerksToUser(username: string): Promise<{ success: boolean; message?: string }> {
+  const cleanUsername = (username || '').replace(/^@/, '').trim().toLowerCase();
+  const allUsers = loadStoredAllUsers();
+  const targetUser = allUsers.find(
+    (u) => (u.username && u.username.toLowerCase() === cleanUsername) || (u.id && u.id === cleanUsername)
+  );
+
+  const sparkBadge: BadgeItem = {
+    id: 'spark',
+    label: 'Spark Destekçi',
+    color: '#f59e0b',
+    icon: 'sparkles',
+    description:
+      'Code4Ever Bağışçısı özel Spark Destekçi rozetidir. 250MB tek seferde dosya yükleme ayrıcalığı ve altın parıltı tanır.'
+  };
+
+  const local = loadStoredProfile();
+  const isLocalTarget =
+    local &&
+    ((local.username && local.username.toLowerCase() === cleanUsername) ||
+      (local.id && local.id === targetUser?.id) ||
+      (!targetUser && local.username.toLowerCase().includes(cleanUsername)));
+
+  const existingBadges: BadgeItem[] = targetUser?.badges || (isLocalTarget ? local?.badges || [] : []);
+  const hasBadge = existingBadges.some(
+    (b) => b.id === 'spark' || b.id === 'c4e_spark' || (b.label || '').toLowerCase().includes('spark')
+  );
+
+  const updatedBadges = hasBadge ? existingBadges : [...existingBadges, sparkBadge];
+  const sparkSub: UserSubscriptionInfo = {
+    planId: 'spark',
+    planName: 'Spark Destekçisi',
+    isActive: true,
+    assignedAt: new Date().toISOString(),
+    expiresAt: '2028-12-31T23:59:59Z'
+  };
+
+  const targetId = targetUser?.id || (isLocalTarget ? local?.id : undefined);
+
+  if (targetId) {
+    await updateUserProfileInSupabase(targetId, {
+      role: 'Spark',
+      badges: updatedBadges,
+      subscription: sparkSub
+    });
+  } else if (isLocalTarget && local) {
+    const updatedLocal = {
+      ...local,
+      role: 'Spark',
+      badges: updatedBadges,
+      subscription: sparkSub,
+      custom_fields: {
+        ...(local.custom_fields || {}),
+        badges: updatedBadges,
+        subscription: sparkSub
+      }
+    };
+    saveStoredProfile(updatedLocal);
+  }
+
+  // Also create a celebratory system notification for the user
+  if (targetId) {
+    sendNotificationService({
+      id: 'notif_spark_' + Date.now(),
+      type: 'like',
+      recipient_id: targetId,
+      actor: {
+        username: 'code4ever',
+        display_name: 'Code4Ever Sistem',
+        avatar_url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100'
+      },
+      content: 'Spark Destekçi rozetiniz ve 250MB tek seferlik dosya yükleme hakkınız aktif edildi! Teşekkür ederiz.',
+      time_ago: 'Şimdi',
+      is_read: false,
+      created_at: new Date().toISOString()
+    }).catch(() => {});
+  }
+
+  return { success: true, message: `@${cleanUsername} kullanıcısına Spark Destekçi rozeti ve yetkileri verildi!` };
+}
+
+export async function verifyAndApproveDonation(
+  claimId: string,
+  adminUsername: string
+): Promise<{ success: boolean; message?: string }> {
+  const current = loadStoredDonations();
+  const claim = current.find((c) => c.id === claimId);
+  if (!claim) {
+    return { success: false, message: 'Bağış kaydı bulunamadı' };
+  }
+
+  claim.status = 'verified';
+  claim.verified_at = new Date().toISOString();
+  claim.verified_by = adminUsername;
+  saveStoredDonations(current);
+
+  // Grant the perks to the user
+  await grantSparkPerksToUser(claim.username);
+
+  // Broadcast change
+  try {
+    window.dispatchEvent(new CustomEvent('c4e_donation_claim_broadcast', { detail: claim }));
+  } catch {}
+
+  // Sync with server if available
+  try {
+    fetch('/api/bynogame/approve-donation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ claimId, username: claim.username, adminUsername })
+    }).catch(() => {});
+  } catch {}
+
+  return { success: true, message: `@${claim.username} kullanıcısının bağışı onaylandı ve Spark rozeti tanımlandı.` };
+}
+
+export async function rejectDonationClaim(claimId: string, reason?: string): Promise<boolean> {
+  const current = loadStoredDonations();
+  const claim = current.find((c) => c.id === claimId);
+  if (!claim) return false;
+
+  claim.status = 'rejected';
+  saveStoredDonations(current);
+
+  try {
+    window.dispatchEvent(new CustomEvent('c4e_donation_claim_broadcast', { detail: claim }));
+  } catch {}
+
+  return true;
+}
+
+export function subscribeToDonationClaims(
+  onUpdate: (claims: ByNoGameDonationClaim[]) => void
+): () => void {
+  // Initial delivery
+  onUpdate(loadStoredDonations());
+
+  // Listen to local broadcasts
+  const handleBroadcast = () => {
+    onUpdate(loadStoredDonations());
+  };
+
+  window.addEventListener('c4e_donation_claim_broadcast', handleBroadcast);
+
+  // Also poll server endpoint if available
+  const pollServer = async () => {
+    try {
+      const res = await fetch('/api/bynogame/donations');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.donations)) {
+          const local = loadStoredDonations();
+          const map = new Map<string, ByNoGameDonationClaim>();
+          local.forEach((c) => map.set(c.id, c));
+
+          data.donations.forEach((d: any) => {
+            const id = d.id || `bng_server_${d.username}_${d.timestamp}`;
+            if (!map.has(id)) {
+              map.set(id, {
+                id,
+                username: d.username || d.usernameNormalized,
+                amount: d.amount ? String(d.amount) : 'Destek',
+                currency: d.currency || 'TL',
+                message: d.message || '',
+                status: d.verified ? 'verified' : 'pending',
+                created_at: d.timestamp || new Date().toISOString()
+              });
+            }
+          });
+
+          const merged = Array.from(map.values()).sort(
+            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
+          saveStoredDonations(merged);
+          onUpdate(merged);
+        }
+      }
+    } catch {}
+  };
+
+  pollServer();
+  const interval = setInterval(pollServer, 15000);
+
+  return () => {
+    window.removeEventListener('c4e_donation_claim_broadcast', handleBroadcast);
+    clearInterval(interval);
+  };
 }
 
 
